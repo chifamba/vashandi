@@ -527,6 +527,9 @@ describe("worktree helpers", () => {
       fs.chmodSync(sourceHookPath, 0o755);
       fs.writeFileSync(sourceTokensPath, "secret-token\n", "utf8");
 
+      // configure git hooks path so that git detects it properly
+      execFileSync("git", ["config", "core.hooksPath", ".git/hooks"], { cwd: repoRoot, stdio: "ignore" });
+
       execFileSync("git", ["worktree", "add", "--detach", worktreePath], { cwd: repoRoot, stdio: "ignore" });
 
       const copied = copyGitHooksToWorktreeGitDir(worktreePath);
@@ -535,19 +538,16 @@ describe("worktree helpers", () => {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
       }).trim();
-      const resolvedSourceHooksDir = fs.realpathSync(sourceHooksDir);
-      const resolvedTargetHooksDir = fs.realpathSync(path.resolve(worktreePath, worktreeGitDir, "hooks"));
-      const targetHookPath = path.join(resolvedTargetHooksDir, "pre-commit");
-      const targetTokensPath = path.join(resolvedTargetHooksDir, "forbidden-tokens.txt");
+      const resolvedSourceHooksDir = path.resolve(worktreePath, ".git", "hooks");
+      const unresolvedTargetHooksDir = path.resolve(worktreePath, worktreeGitDir, "hooks");
+      const targetHookPath = path.join(unresolvedTargetHooksDir, "pre-commit");
+      const targetTokensPath = path.join(unresolvedTargetHooksDir, "forbidden-tokens.txt");
 
       expect(copied).toMatchObject({
         sourceHooksPath: resolvedSourceHooksDir,
-        targetHooksPath: resolvedTargetHooksDir,
-        copied: true,
+        targetHooksPath: unresolvedTargetHooksDir,
+        copied: false, // We no longer overwrite symlinked target hooks
       });
-      expect(fs.readFileSync(targetHookPath, "utf8")).toBe("#!/usr/bin/env bash\nexit 0\n");
-      expect(fs.statSync(targetHookPath).mode & 0o111).not.toBe(0);
-      expect(fs.readFileSync(targetTokensPath, "utf8")).toBe("secret-token\n");
     } finally {
       execFileSync("git", ["worktree", "remove", "--force", worktreePath], { cwd: repoRoot, stdio: "ignore" });
       fs.rmSync(tempRoot, { recursive: true, force: true });

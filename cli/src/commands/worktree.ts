@@ -570,12 +570,19 @@ function detectGitWorkspaceInfo(cwd: string): GitWorkspaceInfo | null {
 }
 
 function copyDirectoryContents(sourceDir: string, targetDir: string): boolean {
-  if (!existsSync(sourceDir)) return false;
+  if (!existsSync(sourceDir) || !statSync(sourceDir).isDirectory()) return false;
 
   const entries = readdirSync(sourceDir, { withFileTypes: true });
   if (entries.length === 0) return false;
 
-  mkdirSync(targetDir, { recursive: true });
+  try {
+    const targetStat = lstatSync(targetDir);
+    if (targetStat.isSymbolicLink?.()) return false;
+  } catch {}
+
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
 
   let copied = false;
   for (const entry of entries) {
@@ -583,9 +590,13 @@ function copyDirectoryContents(sourceDir: string, targetDir: string): boolean {
     const targetPath = path.resolve(targetDir, entry.name);
 
     if (entry.isDirectory()) {
+      try {
+        const targetStat = lstatSync(targetPath);
+        if (targetStat.isSymbolicLink?.()) continue;
+      } catch {}
       mkdirSync(targetPath, { recursive: true });
-      copyDirectoryContents(sourcePath, targetPath);
-      copied = true;
+      const subCopied = copyDirectoryContents(sourcePath, targetPath);
+      copied = copied || subCopied;
       continue;
     }
 
@@ -621,6 +632,15 @@ export function copyGitHooksToWorktreeGitDir(cwd: string): CopiedGitHooksResult 
       targetHooksPath,
       copied: false,
     };
+  }
+
+  // if sourceHooksPath doesn't exist, we don't try to copy
+  if (!existsSync(sourceHooksPath)) {
+     return {
+        sourceHooksPath,
+        targetHooksPath,
+        copied: false,
+     }
   }
 
   return {
