@@ -32,6 +32,8 @@ import {
   parseGeminiJsonl,
 } from "./parse.js";
 import { firstNonEmptyLine } from "./utils.js";
+import type { RunProcessResult } from "@paperclipai/adapter-utils/server-utils";
+
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -130,6 +132,79 @@ async function ensureGeminiSkillsInjected(
       );
     }
   }
+}
+
+
+function buildLoginResult(input: {
+  proc: RunProcessResult;
+  loginUrl: string | null;
+}) {
+  return {
+    exitCode: input.proc.exitCode,
+    signal: input.proc.signal,
+    timedOut: input.proc.timedOut,
+    stdout: input.proc.stdout,
+    stderr: input.proc.stderr,
+    loginUrl: input.loginUrl,
+  };
+}
+
+export async function runGeminiLogin(input: {
+  runId: string;
+  agent: AdapterExecutionContext["agent"];
+  config: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  authToken?: string;
+  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
+}) {
+  const onLog = input.onLog ?? (async () => {});
+
+  const command = asString(input.config.command, "gemini");
+  const context = input.context ?? {};
+
+  const workspaceContext = parseObject(context.paperclipWorkspace);
+  const workspaceCwd = asString(workspaceContext.cwd, "");
+  const workspaceSource = asString(workspaceContext.source, "");
+
+  const configuredCwd = asString(input.config.cwd, "");
+  const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
+  const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
+  const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
+  await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
+
+  const env: Record<string, string> = { ...buildPaperclipEnv(input.agent) };
+  env.PAPERCLIP_RUN_ID = input.runId;
+
+  const envConfig = parseObject(input.config.env);
+  for (const [k, v] of Object.entries(envConfig)) {
+    if (typeof v === "string") env[k] = renderTemplate(v, context);
+  }
+
+  ensurePathInEnv(env);
+  const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
+  await ensureCommandResolvable(command, cwd, runtimeEnv);
+
+  const timeoutSec = asNumber(input.config.timeoutSec, 180);
+  const graceSec = asNumber(input.config.graceSec, 10);
+
+  const proc = await runChildProcess(input.runId, command, ["auth", "login"], {
+    cwd,
+    env: runtimeEnv as Record<string, string>,
+    timeoutSec,
+    graceSec,
+    onLog,
+  });
+
+  const loginMeta = detectGeminiAuthRequired({
+    parsed: null,
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+  });
+
+  return buildLoginResult({
+    proc,
+    loginUrl: loginMeta.loginUrl,
+  });
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
