@@ -96,11 +96,9 @@ describe("gemini execute", () => {
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.argv).toContain("--output-format");
       expect(capture.argv).toContain("stream-json");
-      expect(capture.argv).toContain("--prompt");
       expect(capture.argv).toContain("--approval-mode");
       expect(capture.argv).toContain("yolo");
-      const promptFlagIndex = capture.argv.indexOf("--prompt");
-      const promptArg = promptFlagIndex >= 0 ? capture.argv[promptFlagIndex + 1] : "";
+      const promptArg = capture.argv[capture.argv.length - 1];
       expect(promptArg).toContain("Follow the paperclip heartbeat.");
       expect(promptArg).toContain("Paperclip runtime note:");
       expect(capture.paperclipEnvKeys).toEqual(

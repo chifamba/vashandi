@@ -100,7 +100,7 @@ describe("gemini_local environment diagnostics", () => {
     expect(args).toContain("gemini-2.5-pro");
     expect(args).toContain("--approval-mode");
     expect(args).toContain("yolo");
-    expect(args).toContain("--prompt");
+    expect(args).toContain("Respond with hello.");
     await fs.rm(root, { recursive: true, force: true });
   });
 
