@@ -5,6 +5,7 @@ import {
   agentsApi,
   type AgentKey,
   type ClaudeLoginResult,
+  type GeminiLoginResult,
   type AgentPermissionUpdate,
 } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
@@ -2900,9 +2901,11 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
   const metrics = runMetrics(run);
   const [sessionOpen, setSessionOpen] = useState(false);
   const [claudeLoginResult, setClaudeLoginResult] = useState<ClaudeLoginResult | null>(null);
+  const [geminiLoginResult, setGeminiLoginResult] = useState<GeminiLoginResult | null>(null);
 
   useEffect(() => {
     setClaudeLoginResult(null);
+    setGeminiLoginResult(null);
   }, [run.id]);
 
   const cancelRun = useMutation({
@@ -2998,6 +3001,14 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(run.agentId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(run.agentId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.runIssues(run.id) });
+    },
+  });
+
+
+  const runGeminiLogin = useMutation({
+    mutationFn: () => agentsApi.loginWithGemini(run.agentId, run.companyId),
+    onSuccess: (data) => {
+      setGeminiLoginResult(data);
     },
   });
 
@@ -3157,6 +3168,40 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
                     {!!claudeLoginResult.stderr && (
                       <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">
                         {claudeLoginResult.stderr}
+                      </pre>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            {run.errorCode === "gemini_auth_required" && adapterType === "gemini_local" && (
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => runGeminiLogin.mutate()}
+                  disabled={runGeminiLogin.isPending}
+                >
+                  {runGeminiLogin.isPending ? "Running gemini login..." : "Login to Gemini CLI"}
+                </Button>
+                {runGeminiLogin.isError && (
+                  <p className="text-xs text-destructive">
+                    {runGeminiLogin.error instanceof Error
+                      ? runGeminiLogin.error.message
+                      : "Failed to run Gemini login"}
+                  </p>
+                )}
+                {geminiLoginResult && (
+                  <>
+                    {!!geminiLoginResult.stdout && (
+                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
+                        {geminiLoginResult.stdout}
+                      </pre>
+                    )}
+                    {!!geminiLoginResult.stderr && (
+                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">
+                        {geminiLoginResult.stderr}
                       </pre>
                     )}
                   </>
