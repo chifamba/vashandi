@@ -6,10 +6,13 @@ import {
   computeInboxBadgeData,
   getApprovalsForTab,
   getInboxWorkItems,
+  getInboxKeyboardSelectionIndex,
   getRecentTouchedIssues,
   getUnreadTouchedIssues,
+  isMineInboxTab,
   loadLastInboxTab,
   RECENT_ISSUES_LIMIT,
+  resolveInboxSelectionIndex,
   saveLastInboxTab,
   shouldShowInboxSection,
 } from "./inbox";
@@ -342,6 +345,26 @@ describe("inbox helpers", () => {
     ]);
   });
 
+  it("sorts self-touched issues without external comments by updatedAt", () => {
+    const recentSelfTouched = makeIssue("recent", false);
+    recentSelfTouched.lastExternalCommentAt = null as unknown as Date;
+    recentSelfTouched.updatedAt = new Date("2026-03-11T05:00:00.000Z");
+    recentSelfTouched.myLastTouchAt = new Date("2026-03-11T05:00:00.000Z");
+
+    const olderCommented = makeIssue("older", false);
+    olderCommented.lastExternalCommentAt = new Date("2026-03-11T03:00:00.000Z");
+
+    const items = getInboxWorkItems({
+      issues: [olderCommented, recentSelfTouched],
+      approvals: [],
+    });
+
+    expect(items.map((i) => (i.kind === "issue" ? i.issue.id : ""))).toEqual([
+      "recent",
+      "older",
+    ]);
+  });
+
   it("can include sections on recent without forcing them to be unread", () => {
     expect(
       shouldShowInboxSection({
@@ -399,5 +422,25 @@ describe("inbox helpers", () => {
   it("maps legacy new-tab storage to mine", () => {
     localStorage.setItem("paperclip:inbox:last-tab", "new");
     expect(loadLastInboxTab()).toBe("mine");
+  });
+
+  it("enables swipe archive only on the mine tab", () => {
+    expect(isMineInboxTab("mine")).toBe(true);
+    expect(isMineInboxTab("recent")).toBe(false);
+    expect(isMineInboxTab("unread")).toBe(false);
+    expect(isMineInboxTab("all")).toBe(false);
+  });
+
+  it("anchors Mine selection to the first available inbox row", () => {
+    expect(resolveInboxSelectionIndex(-1, 3)).toBe(-1);
+    expect(resolveInboxSelectionIndex(5, 3)).toBe(2);
+    expect(resolveInboxSelectionIndex(1, 0)).toBe(-1);
+  });
+
+  it("selects the first row only after keyboard navigation starts", () => {
+    expect(getInboxKeyboardSelectionIndex(-1, 3, "next")).toBe(0);
+    expect(getInboxKeyboardSelectionIndex(-1, 3, "previous")).toBe(0);
+    expect(getInboxKeyboardSelectionIndex(0, 3, "next")).toBe(1);
+    expect(getInboxKeyboardSelectionIndex(0, 3, "previous")).toBe(0);
   });
 });

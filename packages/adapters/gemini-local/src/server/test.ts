@@ -142,7 +142,7 @@ export async function testEnvironment(
         return asStringArray(config.args);
       })();
 
-      const args = ["--output-format", "stream-json", "--prompt", ""];
+      const args = ["--output-format", "stream-json", "--prompt", "Respond with hello."];
       if (model && model !== DEFAULT_GEMINI_LOCAL_MODEL) args.push("--model", model);
       if (approvalMode !== "default") args.push("--approval-mode", approvalMode);
       if (sandbox) {
@@ -159,7 +159,6 @@ export async function testEnvironment(
         {
           cwd,
           env,
-          stdin: "Respond with hello.",
           timeoutSec: helloProbeTimeoutSec,
           graceSec: 5,
           onLog: async () => { },
@@ -208,7 +207,7 @@ export async function testEnvironment(
           ...(hasHello
             ? {}
             : {
-              hint: "Try `echo \"Respond with hello.\" | gemini --output-format json` manually to inspect full output.",
+              hint: "Try `gemini --output-format json \"Respond with hello.\"` manually to inspect full output.",
             }),
         });
       } else if (authMeta.requiresAuth) {
@@ -225,7 +224,7 @@ export async function testEnvironment(
           level: "error",
           message: "Gemini hello probe failed.",
           ...(detail ? { detail } : {}),
-          hint: "Run `echo \"Respond with hello.\" | gemini --output-format json` manually in this working directory to debug.",
+          hint: "Run `gemini --output-format json \"Respond with hello.\"` manually in this working directory to debug.",
         });
       }
     }

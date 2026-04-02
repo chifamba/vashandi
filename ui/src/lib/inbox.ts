@@ -98,6 +98,31 @@ export function saveLastInboxTab(tab: InboxTab) {
   }
 }
 
+export function isMineInboxTab(tab: InboxTab): boolean {
+  return tab === "mine";
+}
+
+export function resolveInboxSelectionIndex(
+  previousIndex: number,
+  itemCount: number,
+): number {
+  if (itemCount === 0) return -1;
+  if (previousIndex < 0) return -1;
+  return Math.min(previousIndex, itemCount - 1);
+}
+
+export function getInboxKeyboardSelectionIndex(
+  previousIndex: number,
+  itemCount: number,
+  direction: "next" | "previous",
+): number {
+  if (itemCount === 0) return -1;
+  if (previousIndex < 0) return 0;
+  return direction === "next"
+    ? Math.min(previousIndex + 1, itemCount - 1)
+    : Math.max(previousIndex - 1, 0);
+}
+
 export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
   const sorted = [...runs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -123,11 +148,7 @@ export function issueLastActivityTimestamp(issue: Issue): number {
   const lastExternalCommentAt = normalizeTimestamp(issue.lastExternalCommentAt);
   if (lastExternalCommentAt > 0) return lastExternalCommentAt;
 
-  const updatedAt = normalizeTimestamp(issue.updatedAt);
-  const myLastTouchAt = normalizeTimestamp(issue.myLastTouchAt);
-  if (myLastTouchAt > 0 && updatedAt <= myLastTouchAt) return 0;
-
-  return updatedAt;
+  return normalizeTimestamp(issue.updatedAt);
 }
 
 export function sortIssuesByMostRecentActivity(a: Issue, b: Issue): number {
