@@ -63,7 +63,7 @@ export async function promptServer(opts?: {
     defaultValue: currentServer?.host ?? hostDefault,
     placeholder: hostDefault,
     validate: (val) => {
-      if (!val.trim()) return "Host is required";
+      if (!val?.trim()) return "Host is required";
     },
   });
 
@@ -97,7 +97,7 @@ export async function promptServer(opts?: {
       placeholder: "dotta-macbook-pro, your-host.tailnet.ts.net",
       validate: (val) => {
         try {
-          parseHostnameCsv(val);
+          parseHostnameCsv(val ?? "");
           return;
         } catch (err) {
           return err instanceof Error ? err.message : "Invalid hostname list";
@@ -120,7 +120,7 @@ export async function promptServer(opts?: {
       defaultValue: currentAuth?.publicBaseUrl ?? "",
       placeholder: "https://paperclip.example.com",
       validate: (val) => {
-        const candidate = val.trim();
+        const candidate = (val ?? "").trim();
         if (!candidate) return "Public base URL is required for public exposure";
         try {
           const url = new URL(candidate);

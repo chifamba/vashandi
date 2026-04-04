@@ -26,7 +26,7 @@ import {
   Check,
   ChevronRight,
   Download,
-  Github,
+  GitBranch,
   Package,
   Upload,
 } from "lucide-react";
@@ -1102,7 +1102,7 @@ export function CompanyImport() {
         <div className="grid gap-2 md:grid-cols-2">
           {(
             [
-              { key: "github", icon: Github, label: "GitHub repo" },
+              { key: "github", icon: GitBranch, label: "GitHub repo" },
               { key: "local", icon: Upload, label: "Local zip" },
             ] as const
           ).map(({ key, icon: Icon, label }) => (
