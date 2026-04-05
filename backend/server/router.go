@@ -19,7 +19,7 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Use(middleware.Recoverer)
 
 	// Routes
-	r.Get("/health", routes.HealthHandler(db))
+	r.Get("/health", routes.HealthHandler(db, routes.HealthOpts{}))
 
 	// Dashboard Routes
 	r.Get("/companies/{companyId}/dashboard", routes.DashboardHandler(db))
