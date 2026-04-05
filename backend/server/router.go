@@ -81,5 +81,14 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Post("/agents/{id}/keys", routes.CreateAgentKeyHandler(db))
 	r.Delete("/keys/{id}", routes.RevokeAgentKeyHandler(db))
 
+	// Issues Routes
+	r.Get("/companies/{companyId}/issues", routes.ListIssuesHandler(db))
+	r.Post("/companies/{companyId}/issues", routes.CreateIssueHandler(db))
+	r.Get("/issues/{id}", routes.GetIssueHandler(db))
+	r.Patch("/issues/{id}", routes.UpdateIssueHandler(db))
+	r.Delete("/issues/{id}", routes.DeleteIssueHandler(db))
+	r.Get("/issues/{id}/comments", routes.ListIssueCommentsHandler(db))
+	r.Post("/issues/{id}/comments", routes.CreateIssueCommentHandler(db))
+
 	return r
 }
