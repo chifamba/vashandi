@@ -6,7 +6,7 @@
 |---|---|---|
 | 1 | Go Workspace Initialization and Shared Models | Complete |
 | 2 | Database Layer and Migrations | Complete (All models successfully mapped to GORM schemas) |
-| 3 | Core Server Implementation (HTTP) | Complete (Core routes like Health, Dashboard, Activity, Goals, Companies, Costs, Projects, Approvals, Agents, Issues have been ported as GORM HTTP handlers) |
+| 3 | Core Server Implementation (HTTP) | Complete (Core routes like Health, Dashboard, Activity, Goals, Companies, Costs, Projects, Approvals, Agents, Issues, Assets have been ported as GORM HTTP handlers) |
 | 4 | WebSockets and Realtime Functionality | Not Started |
 | 5 | Adapters and Plugins Architecture | Not Started |
 | 6 | CLI Porting | In Progress (Cobra initialized; Doctor command ported; other commands scaffolded as stubs pending configuration architecture) |
@@ -30,3 +30,4 @@
 *   **2024-04-xx:** Stubbed `run` and remaining commands in Cobra. Phase 6 scaffolding complete.
 *   **2024-04-xx:** Completed porting all remaining database models, specifically plugin integration models and workspace operations. Fully deepened the implementations for Dashboard and Health server routes to eliminate remaining stubs.
 *   **2024-04-xx:** Ported `issues` API to Go.
+*   **2024-04-xx:** Ported `assets` API to Go (stubbed multipart).

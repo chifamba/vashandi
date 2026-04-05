@@ -90,5 +90,9 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Get("/issues/{id}/comments", routes.ListIssueCommentsHandler(db))
 	r.Post("/issues/{id}/comments", routes.CreateIssueCommentHandler(db))
 
+	// Assets Routes
+	r.Post("/companies/{companyId}/assets", routes.CreateAssetHandler(db))
+	r.Get("/assets/{assetId}/content", routes.GetAssetContentHandler(db))
+
 	return r
 }
