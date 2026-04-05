@@ -87,6 +87,13 @@ func UpdateCompanyHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
+
 		if err := db.Model(&company).Updates(updates).Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to update company"})
@@ -126,6 +133,8 @@ func ArchiveCompanyHandler(db *gorm.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		id := chi.URLParam(r, "id")
 
+
+
 		if err := db.Model(&models.Company{}).Where("id = ?", id).Update("archived_at", "now()").Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to archive company"})
@@ -146,6 +155,8 @@ func CompanyStatsHandler(db *gorm.DB) http.HandlerFunc {
 			Count     int    `json:"count"`
 		}
 		var results []StatResult
+
+
 
 		if err := db.Model(&models.Agent{}).Select("company_id, count(*) as count").Group("company_id").Scan(&results).Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

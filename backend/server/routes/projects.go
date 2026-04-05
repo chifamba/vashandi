@@ -91,6 +91,13 @@ func UpdateProjectHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
+
 		if err := db.Model(&project).Updates(updates).Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to update project"})
@@ -106,6 +113,8 @@ func ArchiveProjectHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		id := chi.URLParam(r, "id")
+
+
 
 		if err := db.Model(&models.Project{}).Where("id = ?", id).Update("archived_at", "now()").Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

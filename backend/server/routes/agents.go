@@ -48,6 +48,13 @@ func UpdateAgentHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
+
 		if err := db.Model(&agent).Updates(updates).Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to update agent"})
@@ -79,6 +86,13 @@ func PauseAgentHandler(db *gorm.DB) http.HandlerFunc {
 			"pause_reason": "manual",
 			"paused_at":    "now()",
 		}
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
+
 		if err := db.Model(&models.Agent{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -96,6 +110,13 @@ func ResumeAgentHandler(db *gorm.DB) http.HandlerFunc {
 			"pause_reason": nil,
 			"paused_at":    nil,
 		}
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
+
 		if err := db.Model(&models.Agent{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -108,6 +129,8 @@ func ResumeAgentHandler(db *gorm.DB) http.HandlerFunc {
 func TerminateAgentHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+
+
 		if err := db.Model(&models.Agent{}).Where("id = ?", id).Update("status", "terminated").Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -171,6 +194,8 @@ func CreateAgentKeyHandler(db *gorm.DB) http.HandlerFunc {
 func RevokeAgentKeyHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+
+
 		if err := db.Model(&models.AgentAPIKey{}).Where("id = ?", id).Update("revoked_at", "now()").Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return

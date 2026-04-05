@@ -18,36 +18,8 @@ import (
 func CreateAssetHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		companyID := chi.URLParam(r, "companyId")
-
-		// Simplified: We just read the metadata payload instead of doing multipart/form-data.
-		// In a complete port, we would parse multipart form, validate sizes,
-		// stream to an S3/Local disk adapter, and then save the asset record.
-		var asset models.Asset
-		if err := json.NewDecoder(r.Body).Decode(&asset); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "invalid payload"})
-			return
-		}
-
-		asset.CompanyID = companyID
-
-		// Set some dummy values that would normally come from the storage provider
-		if asset.Provider == "" {
-			asset.Provider = "local_disk"
-		}
-		if asset.ObjectKey == "" {
-			asset.ObjectKey = fmt.Sprintf("assets/%s/dummy_key", companyID)
-		}
-
-		if err := db.Create(&asset).Error; err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": "failed to create asset"})
-			return
-		}
-
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(asset)
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Asset creation is not yet implemented in the Go port (pending storage adapter)"})
 	}
 }
 

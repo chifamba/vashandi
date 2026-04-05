@@ -94,5 +94,22 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Post("/companies/{companyId}/assets", routes.CreateAssetHandler(db))
 	r.Get("/assets/{assetId}/content", routes.GetAssetContentHandler(db))
 
+	// Routines Routes
+	r.Get("/companies/{companyId}/routines", routes.ListRoutinesHandler(db))
+	r.Post("/companies/{companyId}/routines", routes.CreateRoutineHandler(db))
+	r.Get("/routines/{id}", routes.GetRoutineHandler(db))
+	r.Patch("/routines/{id}", routes.UpdateRoutineHandler(db))
+	r.Delete("/routines/{id}", routes.DeleteRoutineHandler(db))
+
+	// Company Skills Routes
+	r.Get("/companies/{companyId}/skills", routes.ListCompanySkillsHandler(db))
+	r.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db))
+	r.Delete("/skills/{id}", routes.DeleteCompanySkillHandler(db))
+
+	// Secrets Routes
+	r.Get("/companies/{companyId}/secrets", routes.ListCompanySecretsHandler(db))
+	r.Post("/companies/{companyId}/secrets", routes.CreateCompanySecretHandler(db))
+	r.Delete("/secrets/{id}", routes.DeleteCompanySecretHandler(db))
+
 	return r
 }

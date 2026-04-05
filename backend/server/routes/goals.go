@@ -91,6 +91,13 @@ func UpdateGoalHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
+
 		if err := db.Model(&goal).Updates(updates).Error; err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to update goal"})

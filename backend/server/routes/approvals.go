@@ -104,6 +104,13 @@ func ApproveApprovalHandler(db *gorm.DB) http.HandlerFunc {
 			"decision_note":      req.DecisionNote,
 		}
 
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
+
 		db.Model(&approval).Updates(updates)
 
 		// Handle hire_agent logic
@@ -157,6 +164,13 @@ func RejectApprovalHandler(db *gorm.DB) http.HandlerFunc {
 			"decided_by_user_id": req.DecidedByUserID,
 			"decision_note":      req.DecisionNote,
 		}
+
+
+		// Sanitize mass assignment
+		delete(updates, "id")
+		delete(updates, "company_id")
+		delete(updates, "created_at")
+		delete(updates, "updated_at")
 
 		db.Model(&approval).Updates(updates)
 
