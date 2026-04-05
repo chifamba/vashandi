@@ -53,5 +53,17 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Patch("/projects/{id}", routes.UpdateProjectHandler(db))
 	r.Delete("/projects/{id}", routes.DeleteProjectHandler(db))
 
+	// Approvals Routes
+	r.Get("/companies/{companyId}/approvals", routes.ListApprovalsHandler(db))
+	r.Post("/companies/{companyId}/approvals", routes.CreateApprovalHandler(db))
+	r.Get("/approvals/{id}", routes.GetApprovalHandler(db))
+	r.Post("/approvals/{id}/approve", routes.ApproveApprovalHandler(db))
+	r.Post("/approvals/{id}/reject", routes.RejectApprovalHandler(db))
+
+	// Agents Routes
+	r.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
+	r.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db))
+	r.Get("/agents/{id}", routes.GetAgentHandler(db))
+
 	return r
 }
