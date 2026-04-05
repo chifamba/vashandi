@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/chifamba/paperclip/backend/shared"
 	"github.com/spf13/cobra"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 var doctorCmd = &cobra.Command{
@@ -13,54 +16,60 @@ var doctorCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Running paperclip doctor...")
 
-		var config string
-		var repair, yes bool
-
-		// In a real CLI these would be grabbed from cmd.Flags()
-		config, _ = cmd.Flags().GetString("config")
-		repair, _ = cmd.Flags().GetBool("repair")
-		yes, _ = cmd.Flags().GetBool("yes")
-
-		fmt.Printf("Config path: %s\n", config)
+		configPath, _ := cmd.Flags().GetString("config")
+		if configPath == "" {
+			configPath = "paperclip.yaml"
+		}
 
 		passed := 0
 		failed := 0
 
-		// Mock check implementations following TS structure
-		fmt.Println("✓ Config file: OK")
-		passed++
+		// 1. Config Check
+		fmt.Print("Checking Config file... ")
+		config, err := shared.ReadConfig(configPath)
+		if err != nil {
+			fmt.Printf("✘ FAILED (%v)\n", err)
+			failed++
+		} else {
+			fmt.Println("✓ OK")
+			passed++
 
-		fmt.Println("✓ Deployment auth: OK")
-		passed++
+			// 2. Database Check
+			fmt.Print("Checking Database... ")
+			if config.Database.Mode == "postgres" {
+				db, err := gorm.Open(postgres.Open(config.Database.ConnectionString), &gorm.Config{})
+				if err != nil {
+					fmt.Printf("✘ FAILED (%v)\n", err)
+					failed++
+				} else {
+					sqlDB, _ := db.DB()
+					if err := sqlDB.Ping(); err != nil {
+						fmt.Printf("✘ FAILED (%v)\n", err)
+						failed++
+					} else {
+						fmt.Println("✓ OK")
+						passed++
+					}
+				}
+			} else {
+				fmt.Println("✓ OK (Embedded)")
+				passed++
+			}
 
-		// Database check implementation
-		fmt.Print("Checking Database... ")
-		// Simulate check (actual database connectivity check should happen here but is skipped as per the 'CLI porting initialization' state)
-		fmt.Println("✓ OK")
-		passed++
-
-		// Secrets check implementation
-		fmt.Print("Checking Secrets... ")
-		fmt.Println("✓ OK")
-		passed++
-
-		// Storage check implementation
-		fmt.Print("Checking Storage... ")
-		fmt.Println("✓ OK")
-		passed++
-
-		// If repair and yes were true, we would run repair logic here.
-		if repair && yes {
-			fmt.Println("Auto-repairing issues... Done")
+			// 3. LLM Check
+			fmt.Print("Checking LLM... ")
+			if config.Llm != nil && config.Llm.ApiKey != "" {
+				fmt.Println("✓ OK")
+				passed++
+			} else {
+				fmt.Println("! WARNING (No LLM API Key)")
+			}
 		}
 
-		fmt.Printf("\nSummary: %d passed, %d warnings, %d failed\n", passed, 0, failed)
+		fmt.Printf("\nSummary: %d passed, %d failed\n", passed, failed)
 
 		if failed > 0 {
-			fmt.Println("Some checks failed. Fix the issues above and re-run doctor.")
 			os.Exit(1)
-		} else {
-			fmt.Println("All checks passed!")
 		}
 	},
 }

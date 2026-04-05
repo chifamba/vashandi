@@ -9,12 +9,13 @@ import (
 type Agent struct {
 	ID                 string         `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
 	CompanyID          string         `gorm:"column:company_id;type:uuid;not null;index:agents_company_status_idx;index:agents_company_reports_to_idx"`
+	Slug               string         `gorm:"column:slug;not null;uniqueIndex:agents_company_slug_uq"`
 	Name               string         `gorm:"column:name;not null"`
 	Role               string         `gorm:"column:role;not null;default:general"`
 	Title              *string        `gorm:"column:title"`
 	Icon               *string        `gorm:"column:icon"`
 	Status             string         `gorm:"column:status;not null;default:idle;index:agents_company_status_idx"`
-	ReportsTo          *string        `gorm:"column:reports_to;type:uuid;index:agents_company_reports_to_idx"`
+	ReportsToID        *string        `gorm:"column:reports_to_id;type:uuid;index:agents_company_reports_to_idx"`
 	Capabilities       *string        `gorm:"column:capabilities"`
 	AdapterType        string         `gorm:"column:adapter_type;not null;default:process"`
 	AdapterConfig      datatypes.JSON `gorm:"column:adapter_config;type:jsonb;not null;default:'{}'"`
@@ -29,7 +30,7 @@ type Agent struct {
 	CreatedAt          time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	UpdatedAt          time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
 
-	ParentAgent *Agent `gorm:"foreignKey:ReportsTo;constraint:OnDelete:SET NULL"`
+	ParentAgent *Agent `gorm:"foreignKey:ReportsToID;constraint:OnDelete:SET NULL"`
 }
 
 func (Agent) TableName() string {

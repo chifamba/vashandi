@@ -9,6 +9,7 @@ import (
 type Project struct {
 	ID                       string         `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
 	CompanyID                string         `gorm:"column:company_id;type:uuid;not null;index:projects_company_idx"`
+	Slug                     string         `gorm:"column:slug;not null;uniqueIndex:projects_company_slug_uq"`
 	GoalID                   *string        `gorm:"column:goal_id;type:uuid"`
 	Name                     string         `gorm:"column:name;not null"`
 	Description              *string        `gorm:"column:description"`

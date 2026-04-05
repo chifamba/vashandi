@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -105,7 +106,28 @@ func ApproveApprovalHandler(db *gorm.DB) http.HandlerFunc {
 
 		db.Model(&approval).Updates(updates)
 
-		// Wake up agent logic is stubbed out for Phase 3
+		// Handle hire_agent logic
+		if approval.Type == "hire_agent" {
+			var payload map[string]interface{}
+			json.Unmarshal(approval.Payload, &payload)
+
+			agentID, _ := payload["agentId"].(string)
+			if agentID != "" {
+				// Activate existing pending agent
+				db.Model(&models.Agent{}).Where("id = ? AND status = ?", agentID, "pending_approval").Update("status", "idle")
+			} else {
+				// Create new agent from payload
+				newAgent := models.Agent{
+					CompanyID:     approval.CompanyID,
+					Name:          fmt.Sprintf("%v", payload["name"]),
+					Role:          fmt.Sprintf("%v", payload["role"]),
+					AdapterType:   fmt.Sprintf("%v", payload["adapterType"]),
+					Status:        "idle",
+				}
+				// Simplified: in a real port, we'd map all fields (adapterConfig, etc.)
+				db.Create(&newAgent)
+			}
+		}
 
 		db.Where("id = ?", id).First(&approval) // Refresh
 		json.NewEncoder(w).Encode(approval)
@@ -137,6 +159,18 @@ func RejectApprovalHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		db.Model(&approval).Updates(updates)
+
+		// Handle hire_agent rejection
+		if approval.Type == "hire_agent" {
+			var payload map[string]interface{}
+			json.Unmarshal(approval.Payload, &payload)
+
+			agentID, _ := payload["agentId"].(string)
+			if agentID != "" {
+				// Terminate pending agent
+				db.Model(&models.Agent{}).Where("id = ? AND status = ?", agentID, "pending_approval").Update("status", "terminated")
+			}
+		}
 
 		db.Where("id = ?", id).First(&approval) // Refresh
 		json.NewEncoder(w).Encode(approval)

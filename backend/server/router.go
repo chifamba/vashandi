@@ -37,10 +37,15 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 
 	// Companies Routes
 	r.Get("/companies", routes.ListCompaniesHandler(db))
+	r.Get("/companies/stats", routes.CompanyStatsHandler(db))
 	r.Post("/companies", routes.CreateCompanyHandler(db))
 	r.Get("/companies/{id}", routes.GetCompanyHandler(db))
 	r.Patch("/companies/{id}", routes.UpdateCompanyHandler(db))
 	r.Delete("/companies/{id}", routes.DeleteCompanyHandler(db))
+	r.Post("/companies/{id}/archive", routes.ArchiveCompanyHandler(db))
+	r.Get("/companies/{companyId}/feedback-traces", routes.ListFeedbackTracesHandler(db))
+	r.Get("/companies/{companyId}/export", routes.ExportCompanyHandler(db))
+	r.Post("/companies/import", routes.ImportCompanyHandler(db))
 
 	// Costs Routes
 	r.Post("/companies/{companyId}/costs/events", routes.ReportCostHandler(db))
@@ -52,6 +57,9 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Get("/projects/{id}", routes.GetProjectHandler(db))
 	r.Patch("/projects/{id}", routes.UpdateProjectHandler(db))
 	r.Delete("/projects/{id}", routes.DeleteProjectHandler(db))
+	r.Post("/projects/{id}/archive", routes.ArchiveProjectHandler(db))
+	r.Get("/projects/{id}/workspaces", routes.ListProjectWorkspacesHandler(db))
+	r.Post("/projects/{id}/workspaces", routes.CreateProjectWorkspaceHandler(db))
 
 	// Approvals Routes
 	r.Get("/companies/{companyId}/approvals", routes.ListApprovalsHandler(db))
@@ -64,6 +72,14 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
 	r.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db))
 	r.Get("/agents/{id}", routes.GetAgentHandler(db))
+	r.Patch("/agents/{id}", routes.UpdateAgentHandler(db))
+	r.Delete("/agents/{id}", routes.DeleteAgentHandler(db))
+	r.Post("/agents/{id}/pause", routes.PauseAgentHandler(db))
+	r.Post("/agents/{id}/resume", routes.ResumeAgentHandler(db))
+	r.Post("/agents/{id}/terminate", routes.TerminateAgentHandler(db))
+	r.Get("/agents/{id}/keys", routes.ListAgentKeysHandler(db))
+	r.Post("/agents/{id}/keys", routes.CreateAgentKeyHandler(db))
+	r.Delete("/keys/{id}", routes.RevokeAgentKeyHandler(db))
 
 	return r
 }

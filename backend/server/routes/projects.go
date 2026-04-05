@@ -101,6 +101,74 @@ func UpdateProjectHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// ArchiveProjectHandler soft-deletes a project
+func ArchiveProjectHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		id := chi.URLParam(r, "id")
+
+		if err := db.Model(&models.Project{}).Where("id = ?", id).Update("archived_at", "now()").Error; err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to archive project"})
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// ListProjectWorkspacesHandler lists workspaces for a project
+func ListProjectWorkspacesHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		id := chi.URLParam(r, "id")
+
+		var workspaces []models.ProjectWorkspace
+		if err := db.Where("project_id = ?", id).Find(&workspaces).Error; err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to fetch workspaces"})
+			return
+		}
+
+		json.NewEncoder(w).Encode(workspaces)
+	}
+}
+
+// CreateProjectWorkspaceHandler creates a new workspace for a project
+func CreateProjectWorkspaceHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		id := chi.URLParam(r, "id")
+
+		var workspace models.ProjectWorkspace
+		if err := json.NewDecoder(r.Body).Decode(&workspace); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid payload"})
+			return
+		}
+
+		// Ensure the project exists and get its companyId
+		var project models.Project
+		if err := db.Where("id = ?", id).First(&project).Error; err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Project not found"})
+			return
+		}
+
+		workspace.ProjectID = id
+		workspace.CompanyID = project.CompanyID
+
+		if err := db.Create(&workspace).Error; err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to create workspace"})
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(workspace)
+	}
+}
+
 // DeleteProjectHandler deletes a project
 func DeleteProjectHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
