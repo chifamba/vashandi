@@ -46,7 +46,7 @@ type IssueLabel struct {
 	CompanyID string    `gorm:"column:company_id;type:uuid;not null;index:issue_labels_company_idx"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 
-	Issue   Issue   `gorm:"foreignKey:IssueID;constraint:OnDelete:CASCADE"`
+	Issue Issue `gorm:"foreignKey:IssueID;constraint:OnDelete:CASCADE"`
 	// Label   Label   `gorm:"foreignKey:LabelID;constraint:OnDelete:CASCADE"` // Will port labels.go shortly
 	Company Company `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 }

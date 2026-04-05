@@ -30,12 +30,12 @@ type JoinRequest struct {
 	CreatedAt             time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now();index:join_requests_company_status_type_created_idx"`
 	UpdatedAt             time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
 
-	Invite         Invite   `gorm:"foreignKey:InviteID"`
-	Company        Company  `gorm:"foreignKey:CompanyID"`
-	RequestingUser *User    `gorm:"foreignKey:RequestingUserID"`
-	CreatedAgent   *Agent   `gorm:"foreignKey:CreatedAgentID"`
-	ApprovedByUser *User    `gorm:"foreignKey:ApprovedByUserID"`
-	RejectedByUser *User    `gorm:"foreignKey:RejectedByUserID"`
+	Invite         Invite  `gorm:"foreignKey:InviteID"`
+	Company        Company `gorm:"foreignKey:CompanyID"`
+	RequestingUser *User   `gorm:"foreignKey:RequestingUserID"`
+	CreatedAgent   *Agent  `gorm:"foreignKey:CreatedAgentID"`
+	ApprovedByUser *User   `gorm:"foreignKey:ApprovedByUserID"`
+	RejectedByUser *User   `gorm:"foreignKey:RejectedByUserID"`
 }
 
 func (JoinRequest) TableName() string {

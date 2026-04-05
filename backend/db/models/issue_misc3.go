@@ -46,12 +46,12 @@ type IssueWorkProduct struct {
 	CreatedAt            time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	UpdatedAt            time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now();index:issue_work_products_company_updated_idx"`
 
-	Company        Company       `gorm:"foreignKey:CompanyID"`
-	Project        *Project      `gorm:"foreignKey:ProjectID"`
-	Issue          Issue         `gorm:"foreignKey:IssueID;constraint:OnDelete:CASCADE"`
+	Company Company  `gorm:"foreignKey:CompanyID"`
+	Project *Project `gorm:"foreignKey:ProjectID"`
+	Issue   Issue    `gorm:"foreignKey:IssueID;constraint:OnDelete:CASCADE"`
 	// ExecutionWorkspace *ExecutionWorkspace `gorm:"foreignKey:ExecutionWorkspaceID"` // Ported shortly
 	// RuntimeService *WorkspaceRuntimeService `gorm:"foreignKey:RuntimeServiceID"` // Ported shortly
-	CreatedByRun   *HeartbeatRun `gorm:"foreignKey:CreatedByRunID;constraint:OnDelete:SET NULL"`
+	CreatedByRun *HeartbeatRun `gorm:"foreignKey:CreatedByRunID;constraint:OnDelete:SET NULL"`
 }
 
 func (IssueWorkProduct) TableName() string {

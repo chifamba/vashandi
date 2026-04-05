@@ -40,9 +40,9 @@ type HeartbeatRun struct {
 	CreatedAt             time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	UpdatedAt             time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
 
-	Company      Company       `gorm:"foreignKey:CompanyID"`
-	Agent        Agent         `gorm:"foreignKey:AgentID"`
-	RetryOfRun   *HeartbeatRun `gorm:"foreignKey:RetryOfRunID;constraint:OnDelete:SET NULL"`
+	Company    Company       `gorm:"foreignKey:CompanyID"`
+	Agent      Agent         `gorm:"foreignKey:AgentID"`
+	RetryOfRun *HeartbeatRun `gorm:"foreignKey:RetryOfRunID;constraint:OnDelete:SET NULL"`
 }
 
 func (HeartbeatRun) TableName() string {

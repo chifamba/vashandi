@@ -23,9 +23,9 @@ type BudgetIncident struct {
 	CreatedAt      time.Time  `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	UpdatedAt      time.Time  `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
 
-	Company  Company   `gorm:"foreignKey:CompanyID"`
+	Company  Company      `gorm:"foreignKey:CompanyID"`
 	Policy   BudgetPolicy `gorm:"foreignKey:PolicyID"` // Not porting budget_policies right this second to avoid circular deps if they exist, but will link later. Wait, let's just make sure it compiles. We don't necessarily need the strict foreign key mapped if the model isn't here yet, but we will add it.
-	Approval *Approval `gorm:"foreignKey:ApprovalID"`
+	Approval *Approval    `gorm:"foreignKey:ApprovalID"`
 }
 
 func (BudgetIncident) TableName() string {

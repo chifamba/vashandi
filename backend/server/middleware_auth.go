@@ -11,9 +11,9 @@ type contextKey string
 const ActorContextKey contextKey = "actor"
 
 type ActorInfo struct {
-	UserID     string
-	IsSystem   bool
-	IsAgent    bool
+	UserID   string
+	IsSystem bool
+	IsAgent  bool
 }
 
 // ActorMiddleware is a stub for the auth middleware that will parse JWTs and session tokens.

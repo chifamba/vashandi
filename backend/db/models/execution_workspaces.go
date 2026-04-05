@@ -32,11 +32,11 @@ type ExecutionWorkspace struct {
 	CreatedAt                       time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	UpdatedAt                       time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
 
-	Company Company `gorm:"foreignKey:CompanyID"`
-	Project Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"`
-	ProjectWorkspace *ProjectWorkspace `gorm:"foreignKey:ProjectWorkspaceID;constraint:OnDelete:SET NULL"`
-	SourceIssue *Issue `gorm:"foreignKey:SourceIssueID;constraint:OnDelete:SET NULL"`
-	DerivedFrom *ExecutionWorkspace `gorm:"foreignKey:DerivedFromExecutionWorkspaceID;constraint:OnDelete:SET NULL"`
+	Company          Company             `gorm:"foreignKey:CompanyID"`
+	Project          Project             `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"`
+	ProjectWorkspace *ProjectWorkspace   `gorm:"foreignKey:ProjectWorkspaceID;constraint:OnDelete:SET NULL"`
+	SourceIssue      *Issue              `gorm:"foreignKey:SourceIssueID;constraint:OnDelete:SET NULL"`
+	DerivedFrom      *ExecutionWorkspace `gorm:"foreignKey:DerivedFromExecutionWorkspaceID;constraint:OnDelete:SET NULL"`
 }
 
 func (ExecutionWorkspace) TableName() string {

@@ -43,13 +43,13 @@ type Issue struct {
 	CreatedAt                    time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	UpdatedAt                    time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
 
-	Company          Company       `gorm:"foreignKey:CompanyID"`
-	Project          *Project      `gorm:"foreignKey:ProjectID"`
-	Parent           *Issue        `gorm:"foreignKey:ParentID"`
-	AssigneeAgent    *Agent        `gorm:"foreignKey:AssigneeAgentID"`
-	CheckoutRun      *HeartbeatRun `gorm:"foreignKey:CheckoutRunID;constraint:OnDelete:SET NULL"`
-	ExecutionRun     *HeartbeatRun `gorm:"foreignKey:ExecutionRunID;constraint:OnDelete:SET NULL"`
-	CreatedByAgent   *Agent        `gorm:"foreignKey:CreatedByAgentID"`
+	Company        Company       `gorm:"foreignKey:CompanyID"`
+	Project        *Project      `gorm:"foreignKey:ProjectID"`
+	Parent         *Issue        `gorm:"foreignKey:ParentID"`
+	AssigneeAgent  *Agent        `gorm:"foreignKey:AssigneeAgentID"`
+	CheckoutRun    *HeartbeatRun `gorm:"foreignKey:CheckoutRunID;constraint:OnDelete:SET NULL"`
+	ExecutionRun   *HeartbeatRun `gorm:"foreignKey:ExecutionRunID;constraint:OnDelete:SET NULL"`
+	CreatedByAgent *Agent        `gorm:"foreignKey:CreatedByAgentID"`
 }
 
 func (Issue) TableName() string {
