@@ -111,5 +111,24 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Post("/companies/{companyId}/secrets", routes.CreateCompanySecretHandler(db))
 	r.Delete("/secrets/{id}", routes.DeleteCompanySecretHandler(db))
 
+	// Execution Workspaces Routes
+	r.Get("/companies/{companyId}/execution-workspaces", routes.ListExecutionWorkspacesHandler(db))
+	r.Get("/execution-workspaces/{id}", routes.GetExecutionWorkspaceHandler(db))
+	r.Patch("/execution-workspaces/{id}", routes.UpdateExecutionWorkspaceHandler(db))
+
+	// Sidebar Badges Routes
+	r.Get("/companies/{companyId}/sidebar-badges", routes.ListSidebarBadgesHandler(db))
+
+	// LLMs Routes
+	r.Get("/llms/agent-configuration.txt", routes.GetLLMConfigTxtHandler(db))
+	r.Get("/llms/agent-icons.txt", routes.GetLLMIconsTxtHandler(db))
+	r.Get("/llms/agent-configuration/{adapterType}.txt", routes.GetLLMAdapterConfigTxtHandler(db))
+
+	// Instance Settings Routes
+	r.Get("/instance/settings/general", routes.GetInstanceSettingsGeneralHandler(db))
+	r.Patch("/instance/settings/general", routes.UpdateInstanceSettingsGeneralHandler(db))
+	r.Get("/instance/settings/experimental", routes.GetInstanceSettingsExperimentalHandler(db))
+	r.Patch("/instance/settings/experimental", routes.UpdateInstanceSettingsExperimentalHandler(db))
+
 	return r
 }

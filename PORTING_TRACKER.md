@@ -6,7 +6,7 @@
 |---|---|---|
 | 1 | Go Workspace Initialization and Shared Models | Complete |
 | 2 | Database Layer and Migrations | Complete (All models successfully mapped to GORM schemas) |
-| 3 | Core Server Implementation (HTTP) | Complete (Core routes like Health, Dashboard, Activity, Goals, Companies, Costs, Projects, Approvals, Agents, Issues, Assets, Routines, CompanySkills, Secrets have been ported as GORM HTTP handlers) |
+| 3 | Core Server Implementation (HTTP) | Complete (Core routes like Health, Dashboard, Activity, Goals, Companies, Costs, Projects, Approvals, Agents, Issues, Assets, Routines, CompanySkills, Secrets, ExecutionWorkspaces, SidebarBadges, LLMs, InstanceSettings have been ported as GORM HTTP handlers) |
 | 4 | WebSockets and Realtime Functionality | Not Started |
 | 5 | Adapters and Plugins Architecture | Not Started |
 | 6 | CLI Porting | In Progress (Cobra initialized; Doctor command ported; other commands scaffolded as stubs pending configuration architecture) |
@@ -37,3 +37,4 @@
 ## Deviations
 *   **Assets API:** Asset creation requires multipart form parsing and a storage adapter (e.g. S3/local disk) which is not yet ported. `CreateAssetHandler` currently returns `501 Not Implemented`.
 *   **Secrets API:** Secret creation requires the `secrets_manager` crypto utilities to encrypt the material before saving to the database. To prevent leaking plaintext secrets, `CreateCompanySecretHandler` currently returns `501 Not Implemented`.
+*   **2024-04-xx:** Ported `execution-workspaces`, `sidebar-badges`, `llms`, and `instance-settings` APIs to Go.
