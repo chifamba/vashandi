@@ -130,5 +130,50 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Get("/instance/settings/experimental", routes.GetInstanceSettingsExperimentalHandler(db))
 	r.Patch("/instance/settings/experimental", routes.UpdateInstanceSettingsExperimentalHandler(db))
 
+	// Access Routes
+	r.Get("/board-claim/{token}", routes.ClaimBoardHandler(db))
+	r.Post("/board-claim/{token}/claim", routes.ProcessBoardClaimHandler(db))
+	r.Post("/cli-auth/challenges", routes.CreateCliAuthChallengeHandler(db))
+	r.Get("/cli-auth/challenges/{id}", routes.GetCliAuthChallengeHandler(db))
+	r.Post("/cli-auth/challenges/{id}/resolve", routes.ResolveCliAuthChallengeHandler(db))
+	r.Get("/cli-auth/me", routes.CliAuthMeHandler(db))
+	r.Post("/cli-auth/revoke-current", routes.RevokeCliAuthHandler(db))
+	r.Get("/invites/{token}", routes.GetInviteHandler(db))
+	r.Get("/invites/{token}/onboarding", routes.GetInviteOnboardingHandler(db))
+	r.Post("/invites/{token}/accept", routes.AcceptInviteHandler(db))
+	r.Post("/invites/{inviteId}/revoke", routes.RevokeInviteHandler(db))
+	r.Get("/companies/{companyId}/join-requests", routes.ListJoinRequestsHandler(db))
+	r.Post("/join-requests/claim-api-key", routes.ClaimJoinRequestApiKeyHandler(db))
+	r.Post("/companies/{companyId}/invites", routes.CreateCompanyInviteHandler(db))
+	r.Get("/companies/{companyId}/members", routes.ListCompanyMembersHandler(db))
+	r.Patch("/companies/{companyId}/members/permissions", routes.UpdateMemberPermissionsHandler(db))
+	r.Put("/admin/users/{userId}/company-access", routes.UpdateUserCompanyAccessHandler(db))
+
+	// Plugins Routes
+	r.Get("/plugins", routes.ListPluginsHandler(db))
+	r.Get("/plugins/examples", routes.ListPluginExamplesHandler(db))
+	r.Get("/plugins/ui-contributions", routes.ListPluginUiContributionsHandler(db))
+	r.Get("/plugins/tools", routes.ListPluginToolsHandler(db))
+	r.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler(db))
+	r.Post("/plugins/install", routes.InstallPluginHandler(db))
+	r.Get("/plugins/{pluginId}", routes.GetPluginHandler(db))
+	r.Delete("/plugins/{pluginId}", routes.DeletePluginHandler(db))
+	r.Post("/plugins/{pluginId}/enable", routes.EnablePluginHandler(db))
+	r.Post("/plugins/{pluginId}/disable", routes.DisablePluginHandler(db))
+	r.Get("/plugins/{pluginId}/health", routes.GetPluginHealthHandler(db))
+	r.Get("/plugins/{pluginId}/logs", routes.GetPluginLogsHandler(db))
+	r.Post("/plugins/{pluginId}/upgrade", routes.UpgradePluginHandler(db))
+	r.Get("/plugins/{pluginId}/config", routes.GetPluginConfigHandler(db))
+	r.Post("/plugins/{pluginId}/config", routes.UpdatePluginConfigHandler(db))
+	r.Post("/plugins/{pluginId}/config/test", routes.TestPluginConfigHandler(db))
+	r.Get("/plugins/{pluginId}/jobs", routes.ListPluginJobsHandler(db))
+	r.Get("/plugins/{pluginId}/jobs/{jobId}/runs", routes.ListPluginJobRunsHandler(db))
+	r.Post("/plugins/{pluginId}/jobs/{jobId}/trigger", routes.TriggerPluginJobHandler(db))
+	r.Post("/plugins/{pluginId}/webhooks/{endpointKey}", routes.PluginWebhookHandler(db))
+	r.Get("/plugins/{pluginId}/dashboard", routes.GetPluginDashboardHandler(db))
+
+	// Org Chart Routes
+	r.Get("/companies/{companyId}/org-chart.svg", routes.GetOrgChartSvgHandler(db))
+
 	return r
 }
