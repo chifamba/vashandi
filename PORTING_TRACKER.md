@@ -7,7 +7,7 @@
 | 1 | Go Workspace Initialization and Shared Models | Complete |
 | 2 | Database Layer and Migrations | Complete (All models successfully mapped to GORM schemas) |
 | 3 | Core Server Implementation (HTTP) | Complete (Core routes like Health, Dashboard, Activity, Goals, Companies, Costs, Projects, Approvals, Agents, Issues, Assets, All APIs have been ported as GORM HTTP handlers) |
-| 4 | WebSockets and Realtime Functionality | Not Started |
+| 4 | WebSockets and Realtime Functionality | Complete (gorilla/websocket Connection Manager implemented) |
 | 5 | Adapters and Plugins Architecture | Not Started |
 | 6 | CLI Porting | In Progress (Cobra initialized; Doctor command ported; other commands scaffolded as stubs pending configuration architecture) |
 | 7 | Testing, CI/CD, and Docker | Not Started |
@@ -44,3 +44,4 @@
 *   **Access API:** Comprehensive auth strategies (OAuth, magic links, invites) require the full Go port of the JWT auth adapters. Most `access` handlers currently return `501 Not Implemented`.
 *   **Plugins API:** Plugin installation and execution relies on Node.js IPC, stdio processes, and JSON-RPC which are slated for Phase 5. All `plugins` handlers currently return `501 Not Implemented`.
 *   **Org Chart SVG:** Dynamic SVG string generation from DB state is deferred. `GetOrgChartSvgHandler` currently returns `501 Not Implemented`.
+*   **2024-04-xx:** Ported `realtime` Websocket functionality using `gorilla/websocket`. Phase 4 is complete.

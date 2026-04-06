@@ -5,11 +5,13 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"gorm.io/gorm"
 
+	"github.com/chifamba/paperclip/backend/server/realtime"
+	"net/http"
 	"github.com/chifamba/paperclip/backend/server/routes"
 )
 
 // SetupRouter initializes the chi router with common middleware and routes
-func SetupRouter(db *gorm.DB) *chi.Mux {
+func SetupRouter(db *gorm.DB, rtManager *realtime.Manager) *chi.Mux {
 	r := chi.NewRouter()
 
 	// A good base middleware stack
@@ -174,6 +176,11 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 
 	// Org Chart Routes
 	r.Get("/companies/{companyId}/org-chart.svg", routes.GetOrgChartSvgHandler(db))
+
+	// Realtime WebSocket Routes
+	r.Get("/ws/events", func(w http.ResponseWriter, r *http.Request) {
+		realtime.ServeWs(rtManager, w, r)
+	})
 
 	return r
 }
