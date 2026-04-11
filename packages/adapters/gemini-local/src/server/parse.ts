@@ -144,14 +144,6 @@ export function parseGeminiJsonl(stdout: string) {
       continue;
     }
 
-    if (type === "message" && asString(event.role, "").trim() === "assistant") {
-      const contentStr = asString(event.content, "").trim();
-      const contentArr = Array.isArray(event.content) ? event.content.map(c => asString(parseObject(c).text, "")).join("") : "";
-      if (contentStr) messages.push(contentStr);
-      else if (contentArr) messages.push(contentArr);
-      continue;
-    }
-
     if (type === "system") {
       const subtype = asString(event.subtype, "").trim().toLowerCase();
       if (subtype === "error") {
@@ -242,26 +234,11 @@ const GEMINI_AUTH_REQUIRED_RE = /(?:not\s+authenticated|please\s+authenticate|ap
 const GEMINI_QUOTA_EXHAUSTED_RE =
   /(?:resource_exhausted|quota|rate[-\s]?limit|too many requests|\b429\b|billing details)/i;
 
-
-const URL_RE = /(https?:\/\/[^\s'"`<>()[\]{};,!?]+[^\s'"`<>()[\]{};,!.?:]+)/gi;
-
-export function extractGeminiLoginUrl(text: string): string | null {
-  const match = text.match(URL_RE);
-  if (!match || match.length === 0) return null;
-  for (const rawUrl of match) {
-    const cleaned = rawUrl.replace(/[\])}.!?,;:'\"]+$/g, "");
-    if (cleaned.includes("google") || cleaned.includes("auth") || cleaned.includes("login") || cleaned.includes("gemini")) {
-      return cleaned;
-    }
-  }
-  return match[0]?.replace(/[\])}.!?,;:'\"]+$/g, "") ?? null;
-}
-
 export function detectGeminiAuthRequired(input: {
   parsed: Record<string, unknown> | null;
   stdout: string;
   stderr: string;
-}): { requiresAuth: boolean; loginUrl: string | null } {
+}): { requiresAuth: boolean } {
   const errors = extractGeminiErrorMessages(input.parsed ?? {});
   const messages = [...errors, input.stdout, input.stderr]
     .join("\n")
@@ -270,7 +247,7 @@ export function detectGeminiAuthRequired(input: {
     .filter(Boolean);
 
   const requiresAuth = messages.some((line) => GEMINI_AUTH_REQUIRED_RE.test(line));
-  return { requiresAuth, loginUrl: extractGeminiLoginUrl([input.stdout, input.stderr].join("\n")) };
+  return { requiresAuth };
 }
 
 export function detectGeminiQuotaExhausted(input: {

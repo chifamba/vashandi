@@ -28,7 +28,7 @@ docker compose -f docker/docker-compose.untrusted-review.yml run --rm --service-
 
 That opens an interactive shell in the review container with:
 
-- Node + pnpm
+- Node + Corepack/pnpm
 - `codex`
 - `claude`
 - `gh`

@@ -17,7 +17,7 @@ RUN apt-get update \
 
 RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
-RUN npm install -g pnpm@9.15.4 \
+RUN corepack enable \
   && npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest
 
 RUN useradd --create-home --shell /bin/bash reviewer

@@ -26,11 +26,12 @@ import {
   Check,
   ChevronRight,
   Download,
-  GitBranch,
+  Github,
   Package,
   Upload,
 } from "lucide-react";
 import { Field, adapterLabels } from "../components/agent-config-primitives";
+import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter, listUIAdapters } from "../adapters";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
@@ -514,7 +515,7 @@ function ConflictResolutionList({
 
 const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = listUIAdapters().map((adapter) => ({
   value: adapter.type,
-  label: adapterLabels[adapter.type] ?? adapter.label,
+  label: adapterLabels[adapter.type] ?? getAdapterLabel(adapter.type),
 }));
 
 // ── Adapter picker for imported agents ───────────────────────────────
@@ -1102,7 +1103,7 @@ export function CompanyImport() {
         <div className="grid gap-2 md:grid-cols-2">
           {(
             [
-              { key: "github", icon: GitBranch, label: "GitHub repo" },
+              { key: "github", icon: Github, label: "GitHub repo" },
               { key: "local", icon: Upload, label: "Local zip" },
             ] as const
           ).map(({ key, icon: Icon, label }) => (

@@ -32,16 +32,7 @@ export interface DetectedAdapterModel {
   model: string;
   provider: string;
   source: string;
-}
-
-
-export interface GeminiLoginResult {
-  exitCode: number | null;
-  signal: string | null;
-  timedOut: boolean;
-  loginUrl: string | null;
-  stdout: string;
-  stderr: string;
+  candidates?: string[];
 }
 
 export interface ClaudeLoginResult {
@@ -203,10 +194,6 @@ export const agentsApi = {
   ) => api.post<AgentWakeupResponse>(agentPath(id, companyId, "/wakeup"), data),
   loginWithClaude: (id: string, companyId?: string) =>
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
-
-  loginWithGemini: (id: string, companyId?: string) =>
-    api.post<GeminiLoginResult>(agentPath(id, companyId, "/gemini-login"), {}),
-
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 };

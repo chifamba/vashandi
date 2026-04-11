@@ -22,6 +22,8 @@ import {
   removeMaintainerOnlySkillSymlinks,
   parseObject,
   renderTemplate,
+  renderPaperclipWakePrompt,
+  stringifyPaperclipWakePayload,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "../index.js";
@@ -33,8 +35,6 @@ import {
   parseGeminiJsonl,
 } from "./parse.js";
 import { firstNonEmptyLine } from "./utils.js";
-import type { RunProcessResult } from "@paperclipai/adapter-utils/server-utils";
-
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -135,79 +135,6 @@ async function ensureGeminiSkillsInjected(
   }
 }
 
-
-function buildLoginResult(input: {
-  proc: RunProcessResult;
-  loginUrl: string | null;
-}) {
-  return {
-    exitCode: input.proc.exitCode,
-    signal: input.proc.signal,
-    timedOut: input.proc.timedOut,
-    stdout: input.proc.stdout,
-    stderr: input.proc.stderr,
-    loginUrl: input.loginUrl,
-  };
-}
-
-export async function runGeminiLogin(input: {
-  runId: string;
-  agent: AdapterExecutionContext["agent"];
-  config: Record<string, unknown>;
-  context?: Record<string, unknown>;
-  authToken?: string;
-  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
-}) {
-  const onLog = input.onLog ?? (async () => {});
-
-  const command = asString(input.config.command, "gemini");
-  const context = input.context ?? {};
-
-  const workspaceContext = parseObject(context.paperclipWorkspace);
-  const workspaceCwd = asString(workspaceContext.cwd, "");
-  const workspaceSource = asString(workspaceContext.source, "");
-
-  const configuredCwd = asString(input.config.cwd, "");
-  const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
-  const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
-  const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
-  await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-
-  const env: Record<string, string> = { ...buildPaperclipEnv(input.agent) };
-  env.PAPERCLIP_RUN_ID = input.runId;
-
-  const envConfig = parseObject(input.config.env);
-  for (const [k, v] of Object.entries(envConfig)) {
-    if (typeof v === "string") env[k] = renderTemplate(v, context);
-  }
-
-  ensurePathInEnv(env);
-  const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
-  await ensureCommandResolvable(command, cwd, runtimeEnv);
-
-  const timeoutSec = asNumber(input.config.timeoutSec, 180);
-  const graceSec = asNumber(input.config.graceSec, 10);
-
-  const proc = await runChildProcess(input.runId, command, ["auth", "login"], {
-    cwd,
-    env: runtimeEnv as Record<string, string>,
-    timeoutSec,
-    graceSec,
-    onLog,
-  });
-
-  const loginMeta = detectGeminiAuthRequired({
-    parsed: null,
-    stdout: proc.stdout,
-    stderr: proc.stderr,
-  });
-
-  return buildLoginResult({
-    proc,
-    loginUrl: loginMeta.loginUrl,
-  });
-}
-
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta, onSpawn, authToken } = ctx;
 
@@ -268,12 +195,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
+  const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
   if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
   if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
   if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
   if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (wakePayloadJson) env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
   if (effectiveWorkspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
   if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
   if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
@@ -344,13 +273,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     }
   }
   const commandNotes = (() => {
-    const notes: string[] = ["Prompt is passed to Gemini via stdin."];
+    const notes: string[] = ["Prompt is passed to Gemini via --prompt for non-interactive execution."];
     notes.push("Added --approval-mode yolo for unattended execution.");
     if (!instructionsFilePath) return notes;
     if (instructionsPrefix.length > 0) {
       notes.push(
         `Loaded agent instructions from ${instructionsFilePath}`,
-        `Prepended instructions + path directive to stdin prompt (relative references from ${instructionsDir}).`,
+        `Prepended instructions + path directive to prompt (relative references from ${instructionsDir}).`,
       );
       return notes;
     }
@@ -370,17 +299,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   };
-  const renderedPrompt = renderTemplate(promptTemplate, templateData);
   const renderedBootstrapPrompt =
     !sessionId && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
+  const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: Boolean(sessionId) });
+  const shouldUseResumeDeltaPrompt = Boolean(sessionId) && wakePrompt.length > 0;
+  const renderedPrompt = shouldUseResumeDeltaPrompt ? "" : renderTemplate(promptTemplate, templateData);
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const paperclipEnvNote = renderPaperclipEnvNote(env);
   const apiAccessNote = renderApiAccessNote(env);
   const prompt = joinPromptSections([
     instructionsPrefix,
     renderedBootstrapPrompt,
+    wakePrompt,
     sessionHandoffNote,
     paperclipEnvNote,
     apiAccessNote,
@@ -390,6 +322,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     promptChars: prompt.length,
     instructionsChars: instructionsPrefix.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
+    wakePromptChars: wakePrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,
     runtimeNoteChars: paperclipEnvNote.length + apiAccessNote.length,
     heartbeatPromptChars: renderedPrompt.length,
@@ -406,7 +339,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       args.push("--sandbox=none");
     }
     if (extraArgs.length > 0) args.push(...extraArgs);
-    args.push("--prompt", "");
+    args.push("--prompt", prompt);
     return args;
   };
 
@@ -431,7 +364,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env,
-      stdin: prompt,
       timeoutSec,
       graceSec,
       onSpawn,

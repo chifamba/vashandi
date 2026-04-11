@@ -1,4 +1,4 @@
-export { execute, runGeminiLogin } from "./execute.js";
+export { execute } from "./execute.js";
 export { listGeminiSkills, syncGeminiSkills } from "./skills.js";
 export { testEnvironment } from "./test.js";
 export {
