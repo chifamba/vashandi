@@ -1,201 +1,169 @@
 # AGENTS.md
 
-Guidance for human and AI contributors working in this repository.
+Guidance for human and AI contributors working in the **Vashandi monorepo**.
 
-## 1. Purpose
+---
 
-Paperclip is a control plane for AI-agent companies.
-The current implementation target is V1 and is defined in `doc/SPEC-implementation.md`.
+## 1. Monorepo Overview
 
-## 2. Read This First
+This repository contains two projects:
 
-Before making changes, read in this order:
+| Project | Folder | Tech |
+|---------|--------|------|
+| **vashandi** | `vashandi/` | Node.js, TypeScript, React, Go, PostgreSQL |
+| **openbrain** | `openbrain/` | *(TBD)* |
 
-1. `doc/GOAL.md`
-2. `doc/PRODUCT.md`
-3. `doc/SPEC-implementation.md`
-4. `doc/DEVELOPING.md`
-5. `doc/DATABASE.md`
+Each project is self-contained. Work inside the relevant project folder. Do not mix dependencies or build artefacts across projects.
 
-`doc/SPEC.md` is long-horizon product context.
-`doc/SPEC-implementation.md` is the concrete V1 build contract.
+---
 
-## 3. Repo Map
+## 2. Project: vashandi
 
-- `server/`: Express REST API and orchestration services
-- `ui/`: React + Vite board UI
-- `packages/db/`: Drizzle schema, migrations, DB clients
-- `packages/shared/`: shared types, constants, validators, API path constants
-- `packages/adapters/`: agent adapter implementations (Claude, Codex, Cursor, etc.)
-- `packages/adapter-utils/`: shared adapter utilities
-- `packages/plugins/`: plugin system packages
-- `doc/`: operational and product docs
+### What It Is
 
-## 4. Dev Setup (Auto DB)
+Vashandi is an open-source control plane for AI-agent companies. It provides:
 
-Use embedded PGlite in dev by leaving `DATABASE_URL` unset.
+- An **API server** (Node.js/TypeScript) that orchestrates agent tasks, budgets, goals, and governance.
+- A **React UI** (Vite) for managing companies, agents, tasks, and runs.
+- **Go backend services** (`backend/`) that handle performance-critical operations.
+- A **CLI** (`cli/`) for setup and configuration.
+- A **plugin system** for extending adapters, storage, and integrations.
+
+### Repo Map (`vashandi/`)
+
+```
+server/              Express REST API and orchestration services
+ui/                  React + Vite board UI
+packages/db/         Drizzle schema, migrations, DB clients
+packages/shared/     Shared types, constants, validators, API path constants
+packages/adapters/   Agent adapter implementations (Claude, Codex, Cursor, etc.)
+packages/adapter-utils/ Shared adapter utilities
+packages/plugins/    Plugin system packages
+backend/             Go backend services (shared, db, server, CLI)
+cli/                 CLI tool (paperclipai)
+doc/                 Internal developer and product documentation
+docs/                Public documentation site (Mintlify)
+```
+
+### Prerequisites
+
+- **Node.js** 20+
+- **pnpm** 9.15+
+- **Go** 1.25+
+
+### Dev Setup
 
 ```sh
+cd vashandi
 pnpm install
 pnpm dev
 ```
 
-This starts:
+This starts the full stack in watch mode:
 
-- API: `http://localhost:3100`
-- UI: `http://localhost:3100` (served by API server in dev middleware mode)
+- API server: `http://localhost:3100`
+- UI: served by the API server in dev middleware mode
 
-Quick checks:
+An embedded PostgreSQL database (PGlite) is used by default — no external DB setup required.
+
+Quick health checks:
 
 ```sh
 curl http://localhost:3100/api/health
 curl http://localhost:3100/api/companies
 ```
 
-Reset local dev DB:
+Reset the local dev database:
 
 ```sh
-rm -rf data/pglite
+rm -rf vashandi/data/pglite
 pnpm dev
 ```
 
-## 5. Core Engineering Rules
-
-1. Keep changes company-scoped.
-Every domain entity should be scoped to a company and company boundaries must be enforced in routes/services.
-
-2. Keep contracts synchronized.
-If you change schema/API behavior, update all impacted layers:
-- `packages/db` schema and exports
-- `packages/shared` types/constants/validators
-- `server` routes/services
-- `ui` API clients and pages
-
-3. Preserve control-plane invariants.
-- Single-assignee task model
-- Atomic issue checkout semantics
-- Approval gates for governed actions
-- Budget hard-stop auto-pause behavior
-- Activity logging for mutating actions
-
-4. Do not replace strategic docs wholesale unless asked.
-Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
-
-5. Keep repo plan docs dated and centralized.
-When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
-
-## 6. Database Change Workflow
-
-When changing data model:
-
-1. Edit `packages/db/src/schema/*.ts`
-2. Ensure new tables are exported from `packages/db/src/schema/index.ts`
-3. Generate migration:
+### Common Dev Commands
 
 ```sh
-pnpm db:generate
+pnpm dev              # Full dev (API + UI, watch mode)
+pnpm dev:once         # Full dev without file watching
+pnpm dev:server       # API server only
+pnpm dev:ui           # UI only
+pnpm build            # Build all packages
+pnpm typecheck        # Type-check all packages
+pnpm test:run         # Run all unit tests
+pnpm db:generate      # Generate a new DB migration from schema changes
+pnpm db:migrate       # Apply pending migrations
 ```
 
-4. Validate compile:
+### Building the Go Backend
 
 ```sh
-pnpm -r typecheck
+cd vashandi
+go work sync
+go build ./backend/...
 ```
 
-Notes:
-- `packages/db/drizzle.config.ts` reads compiled schema from `dist/schema/*.js`
-- `pnpm db:generate` compiles `packages/db` first
+### Verification Before Handoff
 
-## 7. Verification Before Hand-off
-
-Run this full check before claiming done:
+Always run the full check before marking work done:
 
 ```sh
+cd vashandi
 pnpm -r typecheck
 pnpm test:run
 pnpm build
 ```
 
-If anything cannot be run, explicitly report what was not run and why.
+Report anything that cannot be run and why.
 
-## 8. API and Auth Expectations
+### Key Engineering Rules
+
+1. **Company-scoped entities.** Every domain entity must be scoped to a company; enforce company boundaries in routes and services.
+2. **Keep contracts synchronized.** Schema, shared types, server routes, and UI clients must all stay in sync.
+3. **Control-plane invariants.** Preserve: single-assignee task model, atomic issue checkout, approval gates, budget hard-stops, and activity logging.
+4. **Additive doc updates.** Do not replace strategic docs (`doc/SPEC.md`, `doc/SPEC-implementation.md`) wholesale — prefer additive edits.
+
+### Database Changes
+
+1. Edit `packages/db/src/schema/*.ts`
+2. Export new tables from `packages/db/src/schema/index.ts`
+3. Generate migration: `pnpm db:generate`
+4. Validate: `pnpm -r typecheck`
+
+### API Conventions
 
 - Base path: `/api`
-- Board access is treated as full-control operator context
-- Agent access uses bearer API keys (`agent_api_keys`), hashed at rest
-- Agent keys must not access other companies
+- Board access: full operator context
+- Agent access: bearer API keys (hashed at rest, company-scoped)
+- All mutating endpoints must write activity log entries and return consistent HTTP errors (`400/401/403/404/409/422/500`)
 
-When adding endpoints:
+### Pull Requests
 
-- apply company access checks
-- enforce actor permissions (board vs agent)
-- write activity log entries for mutations
-- return consistent HTTP errors (`400/401/403/404/409/422/500`)
+Before submitting a PR:
 
-## 9. UI Expectations
+1. Run the full verification suite (typecheck + tests + build).
+2. Fill in every section of `.github/PULL_REQUEST_TEMPLATE.md` — do not use an ad-hoc PR body.
+3. Include the AI model used (provider, model ID) in the **Model Used** section, or write "None — human-authored".
 
-- Keep routes and nav aligned with available API surface
-- Use company selection context for company-scoped pages
-- Surface failures clearly; do not silently ignore API errors
+---
 
-## 10. Pull Request Requirements
+## 3. Project: openbrain
 
-When creating a pull request (via `gh pr create` or any other method), you **must** read and fill in every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Do not craft ad-hoc PR bodies — use the template as the structure for your PR description. Required sections:
+OpenBrain is a new project in this monorepo. Build instructions and engineering conventions will be documented here as the project develops.
 
-- **Thinking Path** — trace reasoning from project context to this change (see `CONTRIBUTING.md` for examples)
-- **What Changed** — bullet list of concrete changes
-- **Verification** — how a reviewer can confirm it works
-- **Risks** — what could go wrong
-- **Model Used** — the AI model that produced or assisted with the change (provider, exact model ID, context window, capabilities). Write "None — human-authored" if no AI was used.
-- **Checklist** — all items checked
+For now, see [`openbrain/README.md`](./openbrain/README.md).
 
-## 11. Definition of Done
+---
 
-A change is done when all are true:
+## 4. Cross-Project Rules
 
-1. Behavior matches `doc/SPEC-implementation.md`
-2. Typecheck, tests, and build pass
-3. Contracts are synced across db/shared/server/ui
-4. Docs updated when behavior or commands change
-5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
+- Keep each project's dependencies isolated — do not share `node_modules` or Go modules across project roots.
+- Do not commit secrets or API keys anywhere in the repository.
+- New plan documents belong in the relevant project's `doc/plans/` directory using `YYYY-MM-DD-slug.md` filenames.
 
-## 11. Fork-Specific: HenkDz/paperclip
+---
 
-This is a fork of `paperclipai/paperclip` with QoL patches and an **external-only** Hermes adapter story on branch `feat/externalize-hermes-adapter` ([tree](https://github.com/HenkDz/paperclip/tree/feat/externalize-hermes-adapter)).
+## 5. Getting Help
 
-### Branch Strategy
-
-- `feat/externalize-hermes-adapter` → core has **no** `hermes-paperclip-adapter` dependency and **no** built-in `hermes_local` registration. Install Hermes via the Adapter Plugin manager (`@henkey/hermes-paperclip-adapter` or a `file:` path).
-- Older fork branches may still document built-in Hermes; treat this file as authoritative for the externalize branch.
-
-### Hermes (plugin only)
-
-- Register through **Board → Adapter manager** (same as Droid). Type remains `hermes_local` once the package is loaded.
-- UI uses generic **config-schema** + **ui-parser.js** from the package — no Hermes imports in `server/` or `ui/` source.
-- Optional: `file:` entry in `~/.paperclip/adapter-plugins.json` for local dev of the adapter repo.
-
-### Local Dev
-
-- Fork runs on port 3101+ (auto-detects if 3100 is taken by upstream instance)
-- `npx vite build` hangs on NTFS — use `node node_modules/vite/bin/vite.js build` instead
-- Server startup from NTFS takes 30-60s — don't assume failure immediately
-- Kill ALL paperclip processes before starting: `pkill -f "paperclip"; pkill -f "tsx.*index.ts"`
-- Vite cache survives `rm -rf dist` — delete both: `rm -rf ui/dist ui/node_modules/.vite`
-
-### Fork QoL Patches (not in upstream)
-
-These are local modifications in the fork's UI. If re-copying source, these must be re-applied:
-
-1. **stderr_group** — amber accordion for MCP init noise in `RunTranscriptView.tsx`
-2. **tool_group** — accordion for consecutive non-terminal tools (write, read, search, browser)
-3. **Dashboard excerpt** — `LatestRunCard` strips markdown, shows first 3 lines/280 chars
-
-### Plugin System
-
-PR #2218 (`feat/external-adapter-phase1`) adds external adapter support. See root `AGENTS.md` for full details.
-
-- Adapters can be loaded as external plugins via `~/.paperclip/adapter-plugins.json`
-- The plugin-loader should have ZERO hardcoded adapter imports — pure dynamic loading
-- `createServerAdapter()` must include ALL optional fields (especially `detectModel`)
-- Built-in UI adapters can shadow external plugin parsers — remove built-in when fully externalizing
-- Reference external adapters: Hermes (`@henkey/hermes-paperclip-adapter` or `file:`) and Droid (npm)
+- Vashandi dev guide: [`vashandi/doc/DEVELOPING.md`](./vashandi/doc/DEVELOPING.md)
+- Vashandi product spec: [`vashandi/doc/SPEC-implementation.md`](./vashandi/doc/SPEC-implementation.md)
+- Contributing guide: [`vashandi/CONTRIBUTING.md`](./vashandi/CONTRIBUTING.md)
