@@ -2,26 +2,6 @@
   <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>
 
-<p align="center">
-  <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
-  <a href="https://paperclip.ing/docs"><strong>Docs</strong></a> &middot;
-  <a href="https://github.com/chifamba/paperclip"><strong>GitHub</strong></a> &middot;
-  <a href="https://discord.gg/m4HZY7xNG3"><strong>Discord</strong></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/chifamba/paperclip/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
-  <a href="https://github.com/chifamba/paperclip/stargazers"><img src="https://img.shields.io/github/stars/chifamba/paperclip?style=flat" alt="Stars" /></a>
-  <a href="https://discord.gg/m4HZY7xNG3"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
-</p>
-
-<br/>
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/773bdfb2-6d1e-4e30-8c5f-3487d5b70c8f" width="600" controls></video>
-</div>
-
-<br/>
 
 ## What is Paperclip?
 
@@ -40,10 +20,6 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 | **01** | Define the goal | _"Build the #1 AI note-taking app to $1M MRR."_                    |
 | **02** | Hire the team   | CEO, CTO, engineers, designers, marketers — any bot, any provider. |
 | **03** | Approve and run | Review strategy. Set budgets. Hit go. Monitor from the dashboard.  |
-
-<br/>
-
-> **COMING SOON: Clipmart** — Download and run entire companies with one click. Browse pre-built company templates — full org structures, agent configs, and skills — and import them into your Paperclip instance in seconds.
 
 <br/>
 
@@ -66,79 +42,13 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 
 <br/>
 
-## Paperclip is right for you if
 
-- ✅ You want to build **autonomous AI companies**
-- ✅ You **coordinate many different agents** (OpenClaw, Codex, Claude, Cursor) toward a common goal
-- ✅ You have **20 simultaneous Claude Code terminals** open and lose track of what everyone is doing
-- ✅ You want agents running **autonomously 24/7**, but still want to audit work and chime in when needed
-- ✅ You want to **monitor costs** and enforce budgets
-- ✅ You want a process for managing agents that **feels like using a task manager**
-- ✅ You want to manage your autonomous businesses **from your phone**
-
-<br/>
 
 ## Features
 
-<table>
-<tr>
-<td align="center" width="33%">
-<h3>🔌 Bring Your Own Agent</h3>
-Any agent, any runtime, one org chart. If it can receive a heartbeat, it's hired.
-</td>
-<td align="center" width="33%">
-<h3>🎯 Goal Alignment</h3>
-Every task traces back to the company mission. Agents know <em>what</em> to do and <em>why</em>.
-</td>
-<td align="center" width="33%">
-<h3>💓 Heartbeats</h3>
-Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>💰 Cost Control</h3>
-Monthly budgets per agent. When they hit the limit, they stop. No runaway costs.
-</td>
-<td align="center">
-<h3>🏢 Multi-Company</h3>
-One deployment, many companies. Complete data isolation. One control plane for your portfolio.
-</td>
-<td align="center">
-<h3>🎫 Ticket System</h3>
-Every conversation traced. Every decision explained. Full tool-call tracing and immutable audit log.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🛡️ Governance</h3>
-You're the board. Approve hires, override strategy, pause or terminate any agent — at any time.
-</td>
-<td align="center">
-<h3>📊 Org Chart</h3>
-Hierarchies, roles, reporting lines. Your agents have a boss, a title, and a job description.
-</td>
-<td align="center">
-<h3>📱 Mobile Ready</h3>
-Monitor and manage your autonomous businesses from anywhere.
-</td>
-</tr>
-</table>
+...
 
-<br/>
 
-## Problems Paperclip solves
-
-| Without Paperclip                                                                                                                     | With Paperclip                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| ❌ You have 20 Claude Code tabs open and can't track which one does what. On reboot you lose everything.                              | ✅ Tasks are ticket-based, conversations are threaded, sessions persist across reboots.                                                |
-| ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Context flows from the task up through the project and company goals — your agent always knows what to do and why.                  |
-| ❌ Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents. | ✅ Paperclip gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
-| ❌ Runaway loops waste hundreds of dollars of tokens and max your quota before you even know what happened.                           | ✅ Cost tracking surfaces token budgets and throttles agents when they're out. Management prioritizes with budgets.                    |
-| ❌ You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.                        | ✅ Heartbeats handle regular work on a schedule. Management supervises.                                                                |
-| ❌ You have an idea, you have to find your repo, fire up Claude Code, keep a tab open, and babysit it.                                | ✅ Add a task in Paperclip. Your coding agent works on it until it's done. Management reviews their work.                              |
-
-<br/>
 
 ## Why Paperclip is special
 
@@ -270,27 +180,11 @@ Telemetry is **enabled by default** and can be disabled with any of the followin
 | CI environments | Automatically disabled when `CI=true` |
 | Config file | Set `telemetry.enabled: false` in your Paperclip config |
 
-## Contributing
-
-We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for details.
-
-<br/>
-
-## Community
-
-- [Discord](https://discord.gg/m4HZY7xNG3) — Join the community
-- [GitHub Issues](https://github.com/chifamba/paperclip/issues) — bugs and feature requests
-- [GitHub Discussions](https://github.com/chifamba/paperclip/discussions) — ideas and RFC
-
-<br/>
 
 ## License
 
-MIT &copy; 2026 Paperclip
+MIT &copy; 2026 Vashandi
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/image?repos=chifamba/paperclip&type=date&legend=top-left)](https://www.star-history.com/?repos=chifamba%2Fpaperclip&type=date&legend=top-left)
 
 <br/>
 
@@ -301,5 +195,5 @@ MIT &copy; 2026 Paperclip
 </p>
 
 <p align="center">
-  <sub>Open source under MIT. Built for people who want to run companies, not babysit agents.</sub>
+  <sub>Open source</sub>
 </p>
