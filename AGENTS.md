@@ -1,0 +1,169 @@
+# AGENTS.md
+
+Guidance for human and AI contributors working in the **Vashandi monorepo**.
+
+---
+
+## 1. Monorepo Overview
+
+This repository contains two projects:
+
+| Project | Folder | Tech |
+|---------|--------|------|
+| **vashandi** | `vashandi/` | Node.js, TypeScript, React, Go, PostgreSQL |
+| **openbrain** | `openbrain/` | *(TBD)* |
+
+Each project is self-contained. Work inside the relevant project folder. Do not mix dependencies or build artefacts across projects.
+
+---
+
+## 2. Project: vashandi
+
+### What It Is
+
+Vashandi is an open-source control plane for AI-agent companies. It provides:
+
+- An **API server** (Node.js/TypeScript) that orchestrates agent tasks, budgets, goals, and governance.
+- A **React UI** (Vite) for managing companies, agents, tasks, and runs.
+- **Go backend services** (`backend/`) that handle performance-critical operations.
+- A **CLI** (`cli/`) for setup and configuration.
+- A **plugin system** for extending adapters, storage, and integrations.
+
+### Repo Map (`vashandi/`)
+
+```
+server/              Express REST API and orchestration services
+ui/                  React + Vite board UI
+packages/db/         Drizzle schema, migrations, DB clients
+packages/shared/     Shared types, constants, validators, API path constants
+packages/adapters/   Agent adapter implementations (Claude, Codex, Cursor, etc.)
+packages/adapter-utils/ Shared adapter utilities
+packages/plugins/    Plugin system packages
+backend/             Go backend services (shared, db, server, CLI)
+cli/                 CLI tool (paperclipai)
+doc/                 Internal developer and product documentation
+docs/                Public documentation site (Mintlify)
+```
+
+### Prerequisites
+
+- **Node.js** 20+
+- **pnpm** 9.15+
+- **Go** 1.25+
+
+### Dev Setup
+
+```sh
+cd vashandi
+pnpm install
+pnpm dev
+```
+
+This starts the full stack in watch mode:
+
+- API server: `http://localhost:3100`
+- UI: served by the API server in dev middleware mode
+
+An embedded PostgreSQL database (PGlite) is used by default — no external DB setup required.
+
+Quick health checks:
+
+```sh
+curl http://localhost:3100/api/health
+curl http://localhost:3100/api/companies
+```
+
+Reset the local dev database:
+
+```sh
+rm -rf vashandi/data/pglite
+pnpm dev
+```
+
+### Common Dev Commands
+
+```sh
+pnpm dev              # Full dev (API + UI, watch mode)
+pnpm dev:once         # Full dev without file watching
+pnpm dev:server       # API server only
+pnpm dev:ui           # UI only
+pnpm build            # Build all packages
+pnpm typecheck        # Type-check all packages
+pnpm test:run         # Run all unit tests
+pnpm db:generate      # Generate a new DB migration from schema changes
+pnpm db:migrate       # Apply pending migrations
+```
+
+### Building the Go Backend
+
+```sh
+cd vashandi
+go work sync
+go build ./backend/...
+```
+
+### Verification Before Handoff
+
+Always run the full check before marking work done:
+
+```sh
+cd vashandi
+pnpm -r typecheck
+pnpm test:run
+pnpm build
+```
+
+Report anything that cannot be run and why.
+
+### Key Engineering Rules
+
+1. **Company-scoped entities.** Every domain entity must be scoped to a company; enforce company boundaries in routes and services.
+2. **Keep contracts synchronized.** Schema, shared types, server routes, and UI clients must all stay in sync.
+3. **Control-plane invariants.** Preserve: single-assignee task model, atomic issue checkout, approval gates, budget hard-stops, and activity logging.
+4. **Additive doc updates.** Do not replace strategic docs (`doc/SPEC.md`, `doc/SPEC-implementation.md`) wholesale — prefer additive edits.
+
+### Database Changes
+
+1. Edit `packages/db/src/schema/*.ts`
+2. Export new tables from `packages/db/src/schema/index.ts`
+3. Generate migration: `pnpm db:generate`
+4. Validate: `pnpm -r typecheck`
+
+### API Conventions
+
+- Base path: `/api`
+- Board access: full operator context
+- Agent access: bearer API keys (hashed at rest, company-scoped)
+- All mutating endpoints must write activity log entries and return consistent HTTP errors (`400/401/403/404/409/422/500`)
+
+### Pull Requests
+
+Before submitting a PR:
+
+1. Run the full verification suite (typecheck + tests + build).
+2. Fill in every section of `.github/PULL_REQUEST_TEMPLATE.md` — do not use an ad-hoc PR body.
+3. Include the AI model used (provider, model ID) in the **Model Used** section, or write "None — human-authored".
+
+---
+
+## 3. Project: openbrain
+
+OpenBrain is a new project in this monorepo. Build instructions and engineering conventions will be documented here as the project develops.
+
+For now, see [`openbrain/README.md`](./openbrain/README.md).
+
+---
+
+## 4. Cross-Project Rules
+
+- Keep each project's dependencies isolated — do not share `node_modules` or Go modules across project roots.
+- Do not commit secrets or API keys anywhere in the repository.
+- New plan documents belong in the relevant project's `doc/plans/` directory using `YYYY-MM-DD-slug.md` filenames.
+
+---
+
+## 5. Getting Help
+
+- Vashandi dev guide: [`vashandi/doc/DEVELOPING.md`](./vashandi/doc/DEVELOPING.md)
+- Vashandi product spec: [`vashandi/doc/SPEC-implementation.md`](./vashandi/doc/SPEC-implementation.md)
+- Contributing guide: [`vashandi/CONTRIBUTING.md`](./vashandi/CONTRIBUTING.md)
