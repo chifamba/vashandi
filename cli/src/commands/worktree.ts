@@ -565,11 +565,14 @@ function detectGitWorkspaceInfo(cwd: string): GitWorkspaceInfo | null {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-    const hooksPathRaw = execFileSync("git", ["rev-parse", "--git-path", "hooks"], {
+    let hooksPathRaw = execFileSync("git", ["rev-parse", "--git-path", "hooks"], {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
+    if (hooksPathRaw === "/dev/null") {
+      hooksPathRaw = path.join(commonDirRaw, "hooks");
+    }
     return {
       root: path.resolve(root),
       commonDir: path.resolve(root, commonDirRaw),
@@ -583,6 +586,10 @@ function detectGitWorkspaceInfo(cwd: string): GitWorkspaceInfo | null {
 
 function copyDirectoryContents(sourceDir: string, targetDir: string): boolean {
   if (!existsSync(sourceDir)) return false;
+
+  let stat = null;
+  try { stat = statSync(sourceDir); } catch(e) {}
+  if (!stat || !stat.isDirectory()) return false;
 
   const entries = readdirSync(sourceDir, { withFileTypes: true });
   if (entries.length === 0) return false;
@@ -626,6 +633,8 @@ export function copyGitHooksToWorktreeGitDir(cwd: string): CopiedGitHooksResult 
 
   const sourceHooksPath = workspace.hooksPath;
   const targetHooksPath = path.resolve(workspace.gitDir, "hooks");
+
+  if (!existsSync(targetHooksPath)) mkdirSync(targetHooksPath, { recursive: true });
 
   if (sourceHooksPath === targetHooksPath) {
     return {
