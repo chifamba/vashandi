@@ -1,0 +1,6 @@
+go 1.25.0
+
+use ./backend/shared
+use ./backend/db
+use ./backend/server
+use ./backend/cmd/paperclipai
