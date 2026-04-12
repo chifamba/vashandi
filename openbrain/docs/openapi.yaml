@@ -1,0 +1,89 @@
+openapi: 3.0.3
+info:
+  title: OpenBrain Service API
+  version: 1.0.0
+  description: HTTP/REST interface for the OpenBrain memory service.
+paths:
+  /api/v1/namespaces/{namespaceId}/memories/ingest:
+    post:
+      summary: Bulk ingest memories
+      parameters:
+        - name: namespaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                records:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MemoryRecord'
+      responses:
+        '200':
+          description: OK
+  /api/v1/namespaces/{namespaceId}/memories/query:
+    post:
+      summary: Query memories
+      parameters:
+        - name: namespaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                limit:
+                  type: integer
+      responses:
+        '200':
+          description: OK
+  /api/v1/namespaces/{namespaceId}/memories/forget:
+    post:
+      summary: Forget memories
+      parameters:
+        - name: namespaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                record_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: OK
+
+components:
+  schemas:
+    MemoryRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
