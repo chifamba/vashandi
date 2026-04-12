@@ -1,8 +1,301 @@
+# Vashandi + OpenBrain Consolidated Master Plan
+
+Date: 2026-04-12
+Status: Active Implementation Plan
+
+*This document is the single source of truth for the Vashandi and OpenBrain implementation, consolidating the Complete Platform Plan, Roadmap Gaps, and Trackable Checklists.*
+
+---
+
+## 1. Trackable Implementation Checklist (with Gaps and Architecture Updates)
+
+# Vashandi + OpenBrain Trackable Implementation Plan
+
+Date: 2026-04-12
+Status: Active Implementation Plan
+
+This document synthesizes the phases outlined in the Complete Platform Plan (2026-04-11) and the Gap Analysis (2026-04-11) into a single, trackable checklist. It also updates architectural decisions to incorporate Redis and multi-protocol support for OpenBrain.
+
+---
+
+## Architectural Updates
+
+### 1. OpenBrain Multi-Protocol Support
+To ensure maximum compatibility and integration flexibility, OpenBrain will support three protocols simultaneously:
+- **HTTP/REST (JSON):** Primary protocol for internal monorepo communication (e.g., Vashandi internal API calls) and external web clients.
+- **gRPC:** High-performance, low-latency binary protocol for bulk ingest, large context compilations, and future Rust bindings.
+- **MCP (Model Context Protocol):** Native support for standardized LLM interactions, allowing immediate use of OpenBrain tools by standard MCP clients.
+
+*Note: The previous decision (DECISION-05) prioritizing REST only is hereby overridden.*
+
+### 2. Redis Caching & Message Broker Integration
+**Recommendation:** Integrating a Redis cache is highly advised to meet NFRs (e.g., UI read latency, embedding cache).
+**Image/Version:** `redis:8-alpine`
+
+**Usage in Vashandi:**
+- **WebSockets Pub/Sub:** Scalable event routing for real-time board updates.
+- **Rate Limiting & Throttling:** Managing agent API call quotas and budget hard stops.
+- **Query Caching:** Caching hot paths (e.g., company dashboards, active agent lists).
+
+**Usage in OpenBrain:**
+- **Embedding Cache:** Fast retrieval of previously computed LLM embeddings to save costs and latency.
+- **Async Queues:** Processing offline memory compilation, background deduplication jobs, and graph maintenance without blocking the main event loop.
+
+---
+
+## Phase 0 — Foundation (Blockers)
+
+These items must be completed before starting OpenBrain epic work.
+
+- [ ] **Task 0.1: Bootstrap OpenBrain Project Structure (GAP-02)**
+  - Create standard Go module in `openbrain/` (`go mod init github.com/chifamba/vashandi/openbrain`).
+  - Add `openbrain` to the monorepo root `vashandi/go.work`. Note: `go.work` is currently located in `vashandi/`, so we must reference `../openbrain`.
+  - Configure `pnpm-workspace.yaml` and CI pipelines if needed.
+- [ ] **Task 0.2: Define OpenBrain Service Topology & Redis Setup (GAP-08)**
+  - Update `docker-compose.yml` to include `redis:8-alpine`.
+  - Update `docker-compose.yml` to run OpenBrain as a separate service alongside PostgreSQL/pgvector and Vashandi.
+- [ ] **Task 0.3: Define Vashandi ↔ OpenBrain Integration Interface (GAP-01)**
+  - Document the exact gRPC protobufs and REST OpenAPI specs for the integration.
+  - Detail HTTP/REST, gRPC, and MCP interfaces.
+- [ ] **Task 0.4: OpenBrain Company-Scoped Memory Namespacing (GAP-03)**
+  - Define schema enforcing row-level `namespace_id` (mapping to Vashandi `company_id`) in Postgres and Redis keys.
+
+## Phase 1 — V1 Completion & Wiring
+
+- [ ] **Task 1.1: Complete Vashandi Go Backend Port (V0.1)**
+  - Complete DB model ports (approval comments, logos, etc.).
+  - Implement Go HTTP server with all V1 REST routes.
+  - Integrate Redis for WebSocket routing and caching.
+- [ ] **Task 1.2: Vashandi Memory Plugin: OpenBrain Adapter (GAP-04)**
+  - Implement the `MemoryAdapter` interface to bridge Vashandi and OpenBrain via REST/gRPC.
+- [ ] **Task 1.3: Agent Identity Federation (GAP-05)**
+  - Define auth mechanism for external API access to OpenBrain (e.g., Agent-scoped JWT).
+- [ ] **Task 1.4: Budget Policies & Enforcement (V0.2) + OpenBrain Costs (GAP-07)**
+  - Implement project-level budgets.
+  - Surface OpenBrain context compilation costs in Vashandi's budget engine.
+
+## Phase 2 — Safety, Storage & Core Governance
+
+- [ ] **Task 2.1: Implement OpenBrain Vector Storage & Graph Schema (GAP-14)**
+  - Create Postgres tables with pgvector IVFFlat indexes and adjacency logic.
+- [ ] **Task 2.2: Async Job Infrastructure (Redis)**
+  - Setup `redis:8-alpine` message queues in OpenBrain for tier promotion and ingest batches.
+- [ ] **Task 2.3: Sync Agent Lifecycle Events (GAP-06)**
+  - Trigger Vashandi webhooks/gRPC calls to OpenBrain on agent creation/archival.
+- [ ] **Task 2.4: Fallback Strategy (GAP-10)**
+  - Implement circuit breakers in Vashandi's adapter so system degrades gracefully if OpenBrain is down.
+- [ ] **Task 2.5: Integration Tests (GAP-15)**
+  - Build cross-system contract verification test suite.
+
+## Phase 3 — Intelligence Layer & Polish
+
+- [ ] **Task 3.1: Proactive Context Delivery**
+  - Implement pre-run hydration and post-run capture endpoints.
+- [ ] **Task 3.2: LLM Curator Agent & Approvals (GAP-16)**
+  - Implement Curator Agent logic in OpenBrain.
+  - Route Curator promotion/deduplication proposals to Vashandi UI for human approval.
+- [ ] **Task 3.3: CEO Chat Ingestion (GAP-12)**
+  - Build pipeline to classify and ingest high-value strategy context from Vashandi to OpenBrain.
+- [ ] **Task 3.4: Local Dev Setup (GAP-09) & Initial Onboarding (GAP-13)**
+  - Seed new company namespaces from `brain.md` and default READMEs.
+  - Finalize combined dev commands (`pnpm dev` handling Go OpenBrain + Go Vashandi + Node UI).
+- [ ] **Task 3.5: External API Stability (GAP-11)**
+  - Publish stable v1 REST, gRPC, and MCP endpoints.
+
+
+---
+
+## 2. Gap Analysis (Historical Context)
+
+# Vashandi + OpenBrain Roadmap Gap Analysis
+
+Date: 2026-04-11
+Status: Proposed issues for review
+Source: Gap analysis against open issues #31–44
+
+---
+
+## Summary
+
+The 14 existing open issues cover two distinct bodies of work:
+
+- **Vashandi (issues #31–35)**: Multi-agent orchestration, teams/auth, agent memory, MCP management, observability.
+- **OpenBrain (issues #36–44)**: 5 epics covering storage, governance, context engine, self-evolution, and interfaces.
+
+The gap analysis identified **16 missing issues** needed before either system goes deep into implementation. These are captured below and can be created in bulk using:
+
+```bash
+bash scripts/create-roadmap-gap-issues.sh
+```
+
+---
+
+## Critical Gaps (Blockers)
+
+These three must be resolved before any OpenBrain epic work begins, as everything else depends on them.
+
+### GAP-01 — Define Vashandi ↔ OpenBrain Integration Interface
+**Label**: `roadmap-gap, integration`
+
+No issue defines the actual API/protocol boundary between Vashandi and OpenBrain. Issue #33 references "Open Brain Synchronization" from the Vashandi side only.
+
+Needs to define:
+- Protocol/transport (HTTP, gRPC, MCP, event stream)
+- Minimal API contract (ingest, query, forget, context-packet)
+- Which Vashandi lifecycle events trigger memory writes
+- Caller identity and error contract
+- How Vashandi entities (issue, comment, run, agent) map to OpenBrain memory entity types
+
+---
+
+### GAP-02 — Bootstrap OpenBrain Project Structure in Monorepo
+**Label**: `roadmap-gap, openbrain`
+
+OpenBrain has 9 epic issues but no physical location in the repo. No issue establishes where it lives, what its build tooling is, or how it relates to existing packages.
+
+Needs to define:
+- Directory placement (`packages/openbrain/`, `backend/openbrain/`, or top-level `openbrain/`)
+- Language/runtime and fit with `go.work` and `pnpm-workspace.yaml`
+- Shared type strategy with `packages/shared/`
+- Build, typecheck, and test pipeline integration
+
+---
+
+### GAP-03 — OpenBrain Company-Scoped Memory Namespacing
+**Label**: `roadmap-gap, openbrain, integration`
+
+Vashandi is explicitly multi-company with strict data isolation. OpenBrain epics are written for a single-tenant system with no mention of company partitioning or isolation. This is a security-critical gap.
+
+Needs to define:
+- Namespace model (separate schemas, row-level `company_id`, separate vector namespaces)
+- Where isolation is enforced (storage layer vs. API layer)
+- Whether team-scoped boundaries from Vashandi issue #32 also apply in OpenBrain
+
+---
+
+## High Priority Gaps
+
+### GAP-04 — Vashandi Memory Plugin: OpenBrain Provider Adapter
+**Label**: `roadmap-gap, vashandi, integration`
+
+`doc/memory-landscape.md` defines a two-layer memory model (control-plane binding + provider adapter). No issue exists for building the Vashandi-side plugin that wraps OpenBrain as a memory provider.
+
+---
+
+### GAP-05 — Agent Identity Federation: Vashandi ↔ OpenBrain Trust
+**Label**: `roadmap-gap, integration`
+
+Vashandi has agent API keys. OpenBrain has its own Agent Registry and Trust Tiers (issue #38). No issue defines how these two identity systems relate or how a credential flows across the boundary.
+
+---
+
+### GAP-06 — Sync Agent Lifecycle Events with OpenBrain Registry
+**Label**: `roadmap-gap, integration`
+
+When Vashandi creates or archives an agent, its OpenBrain namespace and registry entry are unaffected. This causes memory leakage and orphaned data.
+
+Key lifecycle events: agent created → register; agent archived → close namespace; company archived → export/archive all memories.
+
+---
+
+### GAP-07 — Cost Model: Include OpenBrain Memory Operation Spend
+**Label**: `roadmap-gap, vashandi`
+
+Vashandi enforces hard budget stops on token spend. OpenBrain's Context Compilation (issue #40) consumes tokens for embedding, retrieval, and LLM curation. Without surfacing these costs into Vashandi's budget engine, memory spend is invisible and agents can bypass budget limits.
+
+---
+
+### GAP-08 — OpenBrain Deployment: Service Topology and Docker Configuration
+**Label**: `roadmap-gap, openbrain, infrastructure`
+
+OpenBrain requires pgvector. Vashandi uses embedded PGlite in dev. No issue defines whether OpenBrain is a sidecar, a separate service, a plugin process, or an embedded library. This affects every other integration and local dev issue.
+
+---
+
+## Medium Priority Gaps
+
+### GAP-09 — Local Dev Setup: Run Vashandi + OpenBrain Together
+**Label**: `roadmap-gap, developer-experience`
+
+No issue covers the combined local developer experience — updated docs, `pnpm dev` integration, environment variables, Docker Compose dev profile, and health checks for both services.
+
+---
+
+### GAP-10 — OpenBrain Unavailability: Agent Fallback Strategy
+**Label**: `roadmap-gap, vashandi, resilience`
+
+No defined behavior when OpenBrain is unavailable. Options: silent skip, queue writes/skip reads, fail fast, circuit breaker. This is especially important given OpenBrain's proactive context delivery model (issue #41).
+
+---
+
+### GAP-11 — OpenBrain External Service API: Versioning and Stability Contract
+**Label**: `roadmap-gap, openbrain`
+
+The vision is for OpenBrain to serve "other services in the future" beyond Vashandi. Without API versioning and a stability contract, OpenBrain will be Vashandi-specific and hard to generalize.
+
+---
+
+### GAP-12 — CEO Chat Context: OpenBrain Knowledge Ingestion
+**Label**: `roadmap-gap, integration`
+
+CEO Chat (on the Vashandi roadmap) produces the highest-value knowledge for a memory system. No issue defines how CEO Chat outputs flow into OpenBrain — entity classification, provenance, human approval gate, and agent visibility scoping.
+
+---
+
+### GAP-13 — Company Onboarding: Seed OpenBrain Memory Namespace
+**Label**: `roadmap-gap, vashandi`
+
+New company namespaces start empty in OpenBrain. No issue covers initial knowledge bootstrap from `brain.md`, goal statement, project README, or company template memory entries. OpenBrain issue #44 covers repo-level sync but not the company-creation path.
+
+---
+
+### GAP-14 — OpenBrain Graph Schema: Entity Types, Edges, and Query API Design
+**Label**: `roadmap-gap, openbrain`
+
+Issue #36 mentions "hybrid vector-graph" but does not specify the graph schema, entity types, relationship types, or query API. This is foundational enough to warrant its own design issue before implementation begins.
+
+---
+
+### GAP-15 — Integration Tests: Vashandi ↔ OpenBrain Contract Verification
+**Label**: `roadmap-gap, testing, integration`
+
+No integration test strategy exists for cross-system behavior. Without it, the interface contract will drift. Key scenarios: task completion → memory ingest, company isolation, budget enforcement including memory costs, graceful fallback, agent archive → namespace closed.
+
+---
+
+### GAP-16 — Route OpenBrain Curator Proposals Through Vashandi Approval Gates
+**Label**: `roadmap-gap, integration`
+
+OpenBrain issue #42 requires human approval for Curator Agent proposals. Vashandi already has an approval gate system. Building a separate approval UI in OpenBrain fragments the operator's attention. Curator proposals should route through Vashandi's existing approval workflow.
+
+---
+
+## Recommended Sequencing
+
+```
+Phase 0 — Foundation (GAP-01, GAP-02, GAP-03)
+  └─ Nothing else can start without these
+
+Phase 1 — Wiring (GAP-04, GAP-05, GAP-08)
+  └─ Depends on Phase 0; enables local dev
+
+Phase 2 — Safety (GAP-06, GAP-07, GAP-10, GAP-15)
+  └─ Lifecycle integrity, cost visibility, resilience, test coverage
+
+Phase 3 — Polish (GAP-09, GAP-11, GAP-12, GAP-13, GAP-14, GAP-16)
+  └─ DX, external API, CEO Chat, onboarding, graph spec, approval routing
+```
+
+
+---
+
+## 3. Complete Platform Plan Details & NFRs
+
 # Complete Platform Plan — Vashandi & OpenBrain
 
-**Date:** 2026-04-11  
-**Status:** Proposed — awaiting human confirmation of highlighted decisions  
-**Scope:** Both projects in the monorepo: `vashandi/` (Paperclip control plane) and `openbrain/` (memory OS)  
+**Date:** 2026-04-11
+**Status:** Proposed — awaiting human confirmation of highlighted decisions
+**Scope:** Both projects in the monorepo: `vashandi/` (Paperclip control plane) and `openbrain/` (memory OS)
 **Source inputs:** Open issues #31–44, gap analysis `2026-04-11-vashandi-openbrain-roadmap-gaps.md`, `vashandi/doc/SPEC.md`, `vashandi/doc/SPEC-implementation.md`, `vashandi/doc/PRODUCT.md`, `vashandi/doc/memory-landscape.md`, `vashandi/doc/plans/2026-03-17-memory-service-surface-api.md`, `vashandi/doc/plans/2026-03-13-features.md`, `vashandi/doc/plans/2026-03-14-budget-policies-and-enforcement.md`, `vashandi/doc/plans/2026-03-14-billing-ledger-and-reporting.md`, `vashandi/PORT_TO_GOLANG_PLAN.md`
 
 ---
@@ -142,7 +435,7 @@ go.work                     ← already exists, covers vashandi/backend
 pnpm-workspace.yaml         ← unchanged (UI only)
 ```
 
-OpenBrain module: `github.com/chifamba/vashandi/openbrain`  
+OpenBrain module: `github.com/chifamba/vashandi/openbrain`
 OpenBrain lives at: `openbrain/` (monorepo root, directory already exists)
 
 ---
@@ -708,7 +1001,7 @@ The Curator Agent is a background process within OpenBrain, not a Vashandi agent
 - Knowledge gap detection: identify questions frequently asked by agents with empty recall, report as gaps
 - Demotion: propose L2→L1 demotion for entities unused for 60 days
 
-**Approval routing:**  
+**Approval routing:**
 > **⚠ DECISION-07 — Curator proposal routing:** Curator proposals route through Vashandi's existing approval gate system (creating `approval` records in Vashandi of type `memory_curator_proposal`) rather than a separate OpenBrain approval UI. This preserves the board as the single human oversight surface. Requires Vashandi to implement a new approval type and a UI panel for memory proposals. **Requires human confirmation.** (See also GAP-16.)
 
 **Weekly Memory Health Report:**
