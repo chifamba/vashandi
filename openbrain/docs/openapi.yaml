@@ -2,88 +2,90 @@ openapi: 3.0.3
 info:
   title: OpenBrain Service API
   version: 1.0.0
-  description: HTTP/REST interface for the OpenBrain memory service.
+  description: REST API for OpenBrain memory management, context compilation, governance, and operator workflows.
 paths:
-  /api/v1/namespaces/{namespaceId}/memories/ingest:
+  /api/v1/memories:
     post:
-      summary: Bulk ingest memories
-      parameters:
-        - name: namespaceId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                records:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/MemoryRecord'
-      responses:
-        '200':
-          description: OK
-  /api/v1/namespaces/{namespaceId}/memories/query:
+      summary: Create a memory entity
+    get:
+      summary: Browse memories in a namespace
+  /api/v1/memories/search:
     post:
-      summary: Query memories
-      parameters:
-        - name: namespaceId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                query:
-                  type: string
-                limit:
-                  type: integer
-      responses:
-        '200':
-          description: OK
-  /api/v1/namespaces/{namespaceId}/memories/forget:
+      summary: Semantic + lexical search across memories
+  /api/v1/memories/{memoryId}:
+    get:
+      summary: Get a memory entity by id
+    patch:
+      summary: Update a memory entity and append a version
+    delete:
+      summary: Soft delete a memory entity
+  /api/v1/memories/{memoryId}/versions:
+    get:
+      summary: List immutable versions for a memory entity
+  /api/v1/memories/{memoryId}/rollback:
     post:
-      summary: Forget memories
-      parameters:
-        - name: namespaceId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                record_ids:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        '200':
-          description: OK
-
+      summary: Restore a prior memory version
+  /api/v1/memories/edges:
+    post:
+      summary: Create a relationship edge between memory entities
+  /api/v1/memories/{memoryId}/edges:
+    get:
+      summary: List edges connected to a memory entity
+  /api/v1/context/compile:
+    post:
+      summary: Compile a context bundle for an agent or task
+  /api/v1/context/pending:
+    get:
+      summary: Retrieve the next pending proactive context packet
+  /api/v1/audit/log:
+    get:
+      summary: Browse namespace audit log entries
+  /api/v1/audit/export:
+    get:
+      summary: Export namespace audit history as JSON-LD or SQLite
+  /api/v1/admin/dashboard:
+    get:
+      summary: Fetch OpenBrain dashboard metrics for a namespace
+  /api/v1/admin/daydream:
+    post:
+      summary: Run curator proposal generation on demand
+  /internal/v1/namespaces/{namespaceId}/agents:
+    post:
+      summary: Register or update a Vashandi agent in OpenBrain
+  /internal/v1/namespaces/{namespaceId}/agents/{agentId}:
+    delete:
+      summary: Deactivate a registered agent
+  /internal/v1/namespaces/{namespaceId}/triggers/{triggerType}:
+    post:
+      summary: Process proactive context triggers like run_start, run_complete, checkout, branch_creation, and test_failure
+  /internal/v1/namespaces/{namespaceId}/sync:
+    post:
+      summary: Sync `.openbrain/brain.md` and `.openbrain/session.md` content from a local repository path
+  /mcp:
+    post:
+      summary: MCP JSON-RPC HTTP transport endpoint
+  /mcp/sse:
+    get:
+      summary: MCP SSE capability stream
 components:
   schemas:
-    MemoryRecord:
+    MemoryPayload:
       type: object
       properties:
         id:
           type: string
+        namespaceId:
+          type: string
+        entityType:
+          type: string
+        title:
+          type: string
         text:
           type: string
+        tier:
+          type: integer
+        version:
+          type: integer
         metadata:
           type: object
-          additionalProperties:
-            type: string
+          additionalProperties: true

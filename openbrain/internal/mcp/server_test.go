@@ -1,34 +1,36 @@
 package mcp
+
 import (
-	"bytes"
 	"encoding/json"
 	"testing"
+
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	"github.com/chifamba/vashandi/openbrain/internal/brain"
 )
-type Namespace struct { ID string `gorm:"primaryKey"`; CompanyID string `gorm:"index;not null"` }
+
 func TestMCPServer(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
-	db.AutoMigrate(&Memory{}, &Namespace{})
-	var in, out bytes.Buffer
-	server := &Server{db: db, in: &in, out: &out}
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	service := brain.NewService(db)
+	require.NoError(t, service.AutoMigrate())
+	server := NewServer(service)
 
-	b, _ := json.Marshal(Request{Method: "memory_note", ID: "1", Params: json.RawMessage(`{"content": "test memory", "type": "fact", "agentId": "agent1", "namespaceId": "ns1"}`)})
-	server.handleLine(string(b))
-	var res Response
-	json.Unmarshal(out.Bytes(), &res)
+	noteReq, _ := json.Marshal(Request{Method: "memory_note", ID: "1", Params: json.RawMessage(`{"content":"test memory","type":"fact","agentId":"agent1","namespaceId":"ns1"}`)})
+	res := server.HandleLine(string(noteReq))
 	assert.Equal(t, "1", res.ID)
+	assert.Nil(t, res.Error)
 
-	out.Reset()
-	b, _ = json.Marshal(Request{Method: "memory_search", ID: "2", Params: json.RawMessage(`{"query": "test", "topK": 5, "agentId": "agent1", "namespaceId": "ns1"}`)})
-	server.handleLine(string(b))
-	json.Unmarshal(out.Bytes(), &res)
+	searchReq, _ := json.Marshal(Request{Method: "memory_search", ID: "2", Params: json.RawMessage(`{"query":"test","topK":5,"agentId":"agent1","namespaceId":"ns1"}`)})
+	res = server.HandleLine(string(searchReq))
 	assert.Equal(t, "2", res.ID)
+	assert.Nil(t, res.Error)
 
-	out.Reset()
-	b, _ = json.Marshal(Request{Method: "memory_correct", ID: "3", Params: json.RawMessage(`{"entityId": "mcp-note-11", "correction": "updated memory", "agentId": "agent1", "namespaceId": "ns1"}`)})
-	server.handleLine(string(b))
-	json.Unmarshal(out.Bytes(), &res)
+	browseReq, _ := json.Marshal(Request{Method: "memory_browse", ID: "3", Params: json.RawMessage(`{"namespaceId":"ns1","agentId":"agent1","limit":10}`)})
+	res = server.HandleLine(string(browseReq))
 	assert.Equal(t, "3", res.ID)
+	assert.Nil(t, res.Error)
 }
