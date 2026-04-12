@@ -32,8 +32,24 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db))
 	r.Delete("/agents/{id}", routes.DeleteAgentHandler(db))
 
+	// MCP Governance Routes
+	r.Get("/companies/{companyId}/mcp/tools", routes.MCPToolsHandler(db))
+	r.Get("/companies/{companyId}/mcp/profiles", routes.MCPProfilesHandler(db))
+	r.Get("/agents/{agentId}/mcp-tools", routes.AgentMCPToolsHandler(db))
+
+	// Memory Service Routes
+	r.Get("/companies/{companyId}/memory/bindings", routes.MemoryBindingsHandler(db))
+	r.Get("/companies/{companyId}/memory/operations", routes.MemoryOperationsHandler(db))
+
+	// Teams Routes
+	r.Get("/companies/{companyId}/teams", routes.TeamsHandler(db))
+	r.Get("/teams/{teamId}", routes.TeamHandler(db))
+
 	// Dashboard Routes
 	r.Get("/companies/{companyId}/dashboard", routes.DashboardHandler(db))
+
+	// Platform Metrics
+	r.Get("/platform/metrics", routes.PlatformMetricsHandler(db))
 
 	// Activity Routes
 	r.Get("/companies/{companyId}/activity", routes.ListActivityHandler(db))
@@ -55,7 +71,7 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Post("/companies/{companyId}/curator/proposals/{proposalId}/approve", routes.ApproveProposalHandler(db))
 
 	// Chat Routes
-	r.Post("/companies/{companyId}/chat", routes.IngestChatHandler(db))
+	r.Post("/companies/{companyId}/chat", routes.CeoChatIngestionHandler(db))
 
 	return r
 }
