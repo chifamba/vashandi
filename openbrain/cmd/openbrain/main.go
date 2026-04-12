@@ -213,7 +213,7 @@ func (app *application) routes() http.Handler {
 	fileServer := http.FileServer(http.FS(distFS))
 	// Redirect /admin → /admin/ so relative asset paths resolve correctly.
 	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin/", http.StatusMovedPermanently)
+		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
 	})
 	r.Handle("/admin/*", http.StripPrefix("/admin", fileServer))
 
