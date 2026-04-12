@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, DashboardMetrics } from './api';
 
 interface Props {
@@ -13,7 +13,7 @@ export default function Dashboard({ namespaceId, onNamespaceChange }: Props) {
   const [daydreaming, setDaydreaming] = useState(false);
   const [daydreamMsg, setDaydreamMsg] = useState('');
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -24,9 +24,9 @@ export default function Dashboard({ namespaceId, onNamespaceChange }: Props) {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   async function triggerDaydream() {
     setDaydreaming(true);

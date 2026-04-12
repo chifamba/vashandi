@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, Proposal } from './api';
 
 interface Props {
@@ -15,7 +15,7 @@ export default function Proposals({ namespaceId }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [resolving, setResolving] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -26,9 +26,9 @@ export default function Proposals({ namespaceId }: Props) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [namespaceId, status]);
 
-  useEffect(() => { load(); }, [namespaceId, status]);
+  useEffect(() => { load(); }, [load]);
 
   async function resolve(p: Proposal, action: 'approved' | 'rejected') {
     setResolving(p.id);

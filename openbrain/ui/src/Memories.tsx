@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, Memory } from './api';
 
 interface Props {
@@ -17,7 +17,7 @@ export default function Memories({ namespaceId }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -28,7 +28,7 @@ export default function Memories({ namespaceId }: Props) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [namespaceId, entityType, tier]);
 
   async function doSearch() {
     if (!searchQuery.trim()) { load(); return; }
@@ -44,7 +44,7 @@ export default function Memories({ namespaceId }: Props) {
     }
   }
 
-  useEffect(() => { load(); }, [namespaceId, entityType, tier]);
+  useEffect(() => { load(); }, [load]);
 
   function toggleExpand(id: string) {
     setExpanded(prev => prev === id ? null : id);

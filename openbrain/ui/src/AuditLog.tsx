@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, AuditEntry } from './api';
 
 interface Props {
@@ -10,7 +10,7 @@ export default function AuditLog({ namespaceId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -21,9 +21,9 @@ export default function AuditLog({ namespaceId }: Props) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [namespaceId]);
 
-  useEffect(() => { load(); }, [namespaceId]);
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div>
