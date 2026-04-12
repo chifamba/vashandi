@@ -23,6 +23,7 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 
 	// Company Routes
 	r.Get("/companies", routes.ListCompaniesHandler(db))
+	r.Post("/companies", routes.CreateCompanyHandler(db))
 	r.Get("/companies/{id}", routes.GetCompanyHandler(db))
 
 	// Agent Routes
@@ -44,6 +45,17 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	r.Get("/goals/{id}", routes.GetGoalHandler(db))
 	r.Patch("/goals/{id}", routes.UpdateGoalHandler(db))
 	r.Delete("/goals/{id}", routes.DeleteGoalHandler(db))
+
+	// Context Routes
+	r.Post("/companies/{companyId}/context/hydrate", routes.PreRunHydrationHandler(db))
+	r.Post("/companies/{companyId}/context/capture", routes.PostRunCaptureHandler(db))
+
+	// Curator Routes
+	r.Get("/companies/{companyId}/curator/proposals", routes.ListProposalsHandler(db))
+	r.Post("/companies/{companyId}/curator/proposals/{proposalId}/approve", routes.ApproveProposalHandler(db))
+
+	// Chat Routes
+	r.Post("/companies/{companyId}/chat", routes.IngestChatHandler(db))
 
 	return r
 }
