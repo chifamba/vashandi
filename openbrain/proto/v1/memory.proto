@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package openbrain.v1;
+
+option go_package = "github.com/chifamba/vashandi/openbrain/proto/v1;openbrain_v1";
+
+service MemoryService {
+  rpc Ingest (IngestRequest) returns (IngestResponse);
+  rpc Query (QueryRequest) returns (QueryResponse);
+  rpc Forget (ForgetRequest) returns (ForgetResponse);
+}
+
+message IngestRequest {
+  string namespace_id = 1;
+  repeated MemoryRecord records = 2;
+}
+
+message IngestResponse {
+  int32 records_ingested = 1;
+}
+
+message QueryRequest {
+  string namespace_id = 1;
+  string query = 2;
+  int32 limit = 3;
+}
+
+message QueryResponse {
+  repeated MemoryRecord records = 1;
+}
+
+message ForgetRequest {
+  string namespace_id = 1;
+  repeated string record_ids = 2;
+}
+
+message ForgetResponse {
+  int32 records_forgotten = 1;
+}
+
+message MemoryRecord {
+  string id = 1;
+  string text = 2;
+  map<string, string> metadata = 3;
+}
