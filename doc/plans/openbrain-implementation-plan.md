@@ -1,9 +1,9 @@
 # OpenBrain Implementation Plan
 
 Date: 2026-04-12
-Status: Active — Pending Implementation
+Status: Active — Partial Implementation
 
-*This document is the single source of truth for all pending OpenBrain implementation work. It is derived from the consolidated master plan and covers everything required to take OpenBrain from its current greenfield state to a fully operational memory OS.*
+*This document is the single source of truth for all pending OpenBrain implementation work. It is derived from the consolidated master plan and covers everything required to take OpenBrain from its current prototype state to a fully operational memory OS.*
 
 See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 
@@ -13,18 +13,18 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 
 | Area | Status |
 |---|---|
-| Repo location (`openbrain/`) | ✅ Directory exists, README only |
-| Go module initialization | ❌ Not started |
-| PostgreSQL + pgvector storage | ❌ Not started |
-| Typed memory entity schema | ❌ Not started |
+| Repo location (`openbrain/`) | ✅ Go service skeleton exists with REST, gRPC, MCP, jobs, models, and docs |
+| Go module initialization | ✅ Implemented |
+| PostgreSQL + pgvector storage | 🟡 Partially implemented |
+| Typed memory entity schema | 🟡 Partially implemented |
 | Multi-tier memory model (L0–L3) | ❌ Not started |
 | Agent Registry + trust tiers | ❌ Not started |
 | Immutable audit log | ❌ Not started |
-| Context compilation engine | ❌ Not started |
-| Proactive context delivery | ❌ Not started |
-| LLM Curator Agent | ❌ Not started |
-| CLI | ❌ Not started |
-| MCP server | ❌ Not started |
+| Context compilation engine | 🟡 Partially implemented |
+| Proactive context delivery | 🟡 Partially implemented |
+| LLM Curator Agent | 🟡 Partially implemented |
+| CLI | 🟡 Partially implemented |
+| MCP server | 🟡 Partially implemented |
 | Repository convention sync (brain.md) | ❌ Not started |
 | Admin Web UI | ❌ Not started |
 
@@ -69,14 +69,17 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 | CLI | cobra + charmbracelet/huh |
 | Redis | redis:8-alpine — embedding cache, async queues |
 | Testing | Go standard testing + testify |
-| Build integration | `go.work` at monorepo root |
+| Build integration | `vashandi/go.work` workspace |
 
 ### Monorepo Workspace Integration
 
 ```
-go.work                     ← already exists, covers vashandi/backend
-  uses ./vashandi/backend
-  uses ./openbrain           ← add this
+vashandi/go.work            ← already exists
+  uses ./backend/shared
+  uses ./backend/db
+  uses ./backend/server
+  uses ./backend/cmd/paperclipai
+  uses ../openbrain
 
 pnpm-workspace.yaml         ← unchanged (UI only)
 ```
@@ -98,36 +101,38 @@ OpenBrain lives at: `openbrain/` (monorepo root — directory already exists).
 
 These items must be completed before starting any other OpenBrain epic work.
 
+No top-level phase item is fully complete yet; the checkmarks below reflect the implemented subtasks already present in the current codebase.
+
 - [ ] **OB-0.1: Bootstrap Go Module & Project Structure**
-  - Create standard Go module in `openbrain/` (`go mod init github.com/chifamba/vashandi/openbrain`)
-  - Scaffold directory layout: `cmd/openbrain/`, `internal/{server,storage,memory,context,curator,registry,audit,mcp}/`, `pkg/api/`, `migrations/`, `docker/`
-  - Add `openbrain` to the monorepo root `go.work`
-  - Add OpenBrain service to root-level `docker-compose.yml` dev profile
-  - CI: add `go build ./openbrain/...` and `go test ./openbrain/...` steps
-  - Update `DEVELOPING.md` with combined dev commands
+  - [x] Create standard Go module in `openbrain/` (`go mod init github.com/chifamba/vashandi/openbrain`)
+  - [ ] Scaffold directory layout: `cmd/openbrain/`, `internal/{server,storage,memory,context,curator,registry,audit,mcp}/`, `pkg/api/`, `migrations/`, `docker/`
+  - [x] Add `openbrain` to the Vashandi workspace `go.work`
+  - [x] Add OpenBrain service to the Vashandi Docker Compose dev stack
+  - [ ] CI: add `go build ./openbrain/...` and `go test ./openbrain/...` steps
+  - [ ] Update `DEVELOPING.md` with combined dev commands
 - [ ] **OB-0.2: Define Vashandi↔OpenBrain Integration Interface**
-  - Document exact HTTP/REST, gRPC, and MCP interfaces (see §6 API Contracts)
-  - Define service token strategy: Vashandi generates a service token per company at creation, stored as `company_secrets`
-  - Map Vashandi lifecycle events to OpenBrain calls: agent created, agent archived, company archived, run completed, run starting
-  - Map entity types: Vashandi `agent` → OpenBrain `registered_agent`; Vashandi `company` → OpenBrain `namespace`
+  - [ ] Document exact HTTP/REST, gRPC, and MCP interfaces (see §6 API Contracts)
+  - [ ] Define service token strategy: Vashandi generates a service token per company at creation, stored as `company_secrets`
+  - [ ] Map Vashandi lifecycle events to OpenBrain calls: agent created, agent archived, company archived, run completed, run starting
+  - [ ] Map entity types: Vashandi `agent` → OpenBrain `registered_agent`; Vashandi `company` → OpenBrain `namespace`
 - [ ] **OB-0.3: Company-Scoped Memory Namespacing**
-  - Define schema enforcing row-level `namespace_id` (mapping to Vashandi `company_id`) in all Postgres tables and Redis keys
-  - Storage layer functions accept `namespace_id` as a non-optional parameter
-  - API layer extracts `namespace_id` from the service token (token is scoped to one company)
-  - Every table has `(namespace_id, ...)` composite index as primary access path
+  - [ ] Define schema enforcing row-level `namespace_id` (mapping to Vashandi `company_id`) in all Postgres tables and Redis keys
+  - [x] Storage layer functions accept `namespace_id` as a non-optional parameter
+  - [ ] API layer extracts `namespace_id` from the service token (token is scoped to one company)
+  - [ ] Every table has `(namespace_id, ...)` composite index as primary access path
 
 ### Phase OB-1 — Core Storage Infrastructure
 
 - [ ] **OB-1.1: PostgreSQL + pgvector Setup**
-  - Require pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
-  - Docker Compose dev profile: Postgres 16 with pgvector pre-installed
-  - Migration 0001: extension, namespace table, base entity tables
-  - Connection pool via pgxpool; configurable pool size
+  - [x] Require pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
+  - [ ] Docker Compose dev profile: Postgres 16 with pgvector pre-installed
+  - [ ] Migration 0001: extension, namespace table, base entity tables
+  - [ ] Connection pool via pgxpool; configurable pool size
 - [ ] **OB-1.2: Typed Memory Entity Schema**
-  - Create `memory_entities` table with all fields (see §4.2 for schema)
-  - Create `memory_edges` adjacency table for relationship graph
-  - Create `memory_entity_versions` append-only version history table
-  - Add all required IVFFlat and composite indexes
+  - [ ] Create `memory_entities` table with all fields (see §4.2 for schema)
+  - [x] Create `memory_edges` adjacency table for relationship graph
+  - [ ] Create `memory_entity_versions` append-only version history table
+  - [ ] Add all required IVFFlat and composite indexes
 - [ ] **OB-1.3: CRUD Operations**
   - `POST /api/v1/memories` — create entity (with or without embedding)
   - `GET /api/v1/memories/:id` — get entity by id
@@ -173,16 +178,20 @@ These items must be completed before starting any other OpenBrain epic work.
 ### Phase OB-4 — Context Engine
 
 - [ ] **OB-4.1: Context Compilation & Token Budgeting**
-  - Implement retrieval algorithm: vector similarity search (top-K=50), re-rank by tier weight + recency, token budget enforcement, format per agent's recall profile
-  - `POST /api/v1/context/compile` — body: `{ agentId, taskQuery, intent, tokenBudget?, includeTypes? }`, response: `{ snippets[], profileSummary?, tokenCount, latencyMs, usage }`
-  - Target: < 500ms at p95 for up to 10,000 entities per namespace
-  - Embedding cache: skip re-embedding for repeated queries within 5 minutes (LRU)
-  - IVFFlat index with `lists=100` (tunable)
+  - [ ] Implement retrieval algorithm: vector similarity search (top-K=50), re-rank by tier weight + recency, token budget enforcement, format per agent's recall profile
+  - [x] `POST /api/v1/context/compile` — body: `{ agentId, taskQuery, intent, tokenBudget?, includeTypes? }`, response: `{ snippets[], profileSummary?, tokenCount, latencyMs, usage }`
+  - [ ] Target: < 500ms at p95 for up to 10,000 entities per namespace
+  - [ ] Embedding cache: skip re-embedding for repeated queries within 5 minutes (LRU)
+  - [ ] IVFFlat index with `lists=100` (tunable)
 - [ ] **OB-4.2: Proactive Context Delivery**
-  - Implement trigger ingestion endpoint: `POST /internal/v1/namespaces/:id/triggers/:triggerType`
-  - Trigger types: `run_start` (pre-run hydrate), `run_complete` (post-run capture), `checkout` (task-specific surfacing), `branch_creation` (ADR surfacing), `test_failure` (related failures)
-  - Context packet preparation and storage for next agent poll
-  - Integration with Vashandi heartbeat `fat context` mode
+  - [ ] Implement trigger ingestion endpoint: `POST /internal/v1/namespaces/:id/triggers/:triggerType`
+  - [x] Trigger type: `run_start` (pre-run hydrate)
+  - [x] Trigger type: `run_complete` (post-run capture)
+  - [x] Trigger type: `checkout` (task-specific surfacing)
+  - [ ] Trigger type: `branch_creation` (ADR surfacing)
+  - [ ] Trigger type: `test_failure` (related failures)
+  - [ ] Context packet preparation and storage for next agent poll
+  - [ ] Integration with Vashandi heartbeat `fat context` mode
 
 ### Phase OB-5 — Self-Evolution & Curation
 
@@ -200,12 +209,25 @@ These items must be completed before starting any other OpenBrain epic work.
 ### Phase OB-6 — Integration Interfaces
 
 - [ ] **OB-6.1: CLI for Human Memory Management**
-  - Commands: `memory list`, `memory get`, `memory add`, `memory forget`, `memory search`, `memory approve`, `audit export`, `health`
-  - Human approval workflow: CLI-prompted review of pending curator proposals
+  - [x] Command: `memory list`
+  - [ ] Command: `memory get`
+  - [ ] Command: `memory add`
+  - [ ] Command: `memory forget`
+  - [ ] Command: `memory search`
+  - [ ] Command: `memory approve`
+  - [x] Command: `audit export`
+  - [ ] Command: `health`
+  - [ ] Human approval workflow: CLI-prompted review of pending curator proposals
 - [ ] **OB-6.2: MCP Server**
-  - Transport: stdio (default) + HTTP/SSE
-  - Tools: `memory_search`, `memory_note`, `memory_forget`, `memory_correct`, `memory_browse`, `context_compile`
-  - All tool calls log to `memory_audit_log`; trust tier enforcement applies
+  - [x] Transport: stdio (default)
+  - [ ] Transport: HTTP/SSE
+  - [x] Tool: `memory_search`
+  - [x] Tool: `memory_note`
+  - [x] Tool: `memory_forget`
+  - [x] Tool: `memory_correct`
+  - [ ] Tool: `memory_browse`
+  - [ ] Tool: `context_compile`
+  - [ ] All tool calls log to `memory_audit_log`; trust tier enforcement applies
 - [ ] **OB-6.3: Repository Convention Synchronization**
   - Watch `brain.md` (curated knowledge) and `session.md` (working task) within `.openbrain/` directories
   - Changes to `brain.md` → ingest as L2 entities with `provenance.kind = file_sync`
