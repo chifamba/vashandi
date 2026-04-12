@@ -99,11 +99,13 @@ export const api = {
     return request<Memory[]>(`/api/v1/memories?${q}`);
   },
 
-  searchMemories: (namespaceId: string, query: string, topK = 20) =>
-    request<Memory[]>('/api/v1/memories/search', {
+  searchMemories: async (namespaceId: string, query: string, topK = 20): Promise<Memory[]> => {
+    const data = await request<{ records: Memory[] }>('/api/v1/memories/search', {
       method: 'POST',
       body: JSON.stringify({ namespaceId, query, topK }),
-    }),
+    });
+    return data?.records ?? [];
+  },
 
   proposals: (params: { namespaceId?: string; status?: string }) => {
     const q = new URLSearchParams();

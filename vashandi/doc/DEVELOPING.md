@@ -14,7 +14,7 @@ Current implementation status:
 
 - Node.js 20+
 - pnpm 9+
-- Go 1.25+ (for `openbrain/`)
+- Go 1.25+ (for Go backend services in `vashandi/backend/` and `openbrain/`)
 
 ## Dependency Lockfile Policy
 
@@ -38,6 +38,8 @@ This starts:
 - API server: `http://localhost:3100`
 - UI: served by the API server in dev middleware mode (same origin as API)
 - OpenBrain can be started separately from the monorepo `openbrain/` directory with `go test ./...`, `go build ./cmd/openbrain`, and `./openbrain serve`
+
+See the **OpenBrain** section below for full OpenBrain dev commands.
 
 `pnpm dev` runs the server in watch mode and restarts on changes from workspace packages (including adapter packages). Use `pnpm dev:once` to run without file watching.
 
@@ -498,3 +500,358 @@ Networking behavior for this smoke script:
 - auto-detects and prints a Paperclip host URL reachable from inside OpenClaw Docker
 - default container-side host alias is `host.docker.internal` (override with `PAPERCLIP_HOST_FROM_CONTAINER` / `PAPERCLIP_HOST_PORT`)
 - if Paperclip rejects container hostnames in authenticated/private mode, allow `host.docker.internal` via `pnpm paperclipai allowed-hostname host.docker.internal` and restart Paperclip
+
+---
+
+## OpenBrain
+
+OpenBrain is the memory OS for AI agents — a standalone Go service that runs alongside Vashandi. It lives at `openbrain/` in the monorepo root (one level above `vashandi/`).
+
+### OpenBrain Architecture
+
+| Layer | Technology |
+|---|---|
+| Language | Go (module `github.com/chifamba/vashandi/openbrain`) |
+| HTTP framework | chi router |
+| Database | PostgreSQL + pgvector (for semantic search) |
+| Message queue | Redis (embedding cache + async ingest queue) |
+| Protocols | REST/JSON, gRPC, MCP (stdio + HTTP/SSE) |
+| Migrations | golang-migrate (versioned SQL in `openbrain/db/migrations/`) |
+| CLI | cobra |
+| Admin UI | React+Vite SPA (built to `openbrain/ui/dist/`, embedded in Go binary) |
+
+### Prerequisites for OpenBrain
+
+- Go 1.25+
+- Node.js 20+ and npm (for rebuilding the Admin UI)
+- Docker (for Postgres + pgvector)
+
+### Quick Start (Docker Compose)
+
+The easiest way to run the full stack including OpenBrain:
+
+```sh
+cd vashandi/docker
+docker compose up --build
+```
+
+Services:
+- Vashandi API: `http://localhost:3100`
+- OpenBrain REST API: `http://localhost:3101`
+- OpenBrain gRPC: `localhost:50051`
+- Postgres (pgvector): `localhost:5432`
+- Redis: `localhost:6379`
+
+### Running OpenBrain Locally (without Docker)
+
+1. **Start Postgres with pgvector:**
+
+   ```sh
+   docker run -d --name openbrain-pg \
+     -e POSTGRES_USER=openbrain \
+     -e POSTGRES_PASSWORD=openbrain \
+     -e POSTGRES_DB=openbrain \
+     -p 5433:5432 \
+     pgvector/pgvector:pg17
+   ```
+
+2. **Start Redis:**
+
+   ```sh
+   docker run -d --name openbrain-redis -p 6379:6379 redis:8-alpine
+   ```
+
+3. **Build the Admin UI** (required before `go build` if the `ui/dist/` is missing or you have changed `ui/src/`):
+
+   ```sh
+   cd openbrain/ui
+   npm ci
+   npm run build
+   ```
+
+4. **Build and run OpenBrain:**
+
+   ```sh
+   cd openbrain
+   go build ./cmd/openbrain
+   DATABASE_URL=postgres://openbrain:openbrain@localhost:5433/openbrain?sslmode=disable \
+   REDIS_URL=redis://localhost:6379 \
+   OPENBRAIN_API_KEY=dev_secret_token \
+   ./openbrain serve
+   ```
+
+5. **Health check:**
+
+   ```sh
+   curl http://localhost:3101/healthz
+   # {"status":"ok"}
+   ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | — | PostgreSQL connection string (required for production) |
+| `PORT` | `3101` | HTTP port |
+| `GRPC_PORT` | `50051` | gRPC port |
+| `OPENBRAIN_API_KEY` | `dev_secret_token` | Static API key for auth middleware |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
+| `OPENAI_API_KEY` | — | OpenAI key for async embedding generation |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
+| `DB_MAX_CONNS` | `10` | PostgreSQL max connections |
+| `DB_MIN_CONNS` | `2` | PostgreSQL min connections |
+| `DB_MAX_CONN_IDLE_SECS` | `300` | Max idle time for a connection (seconds) |
+| `DB_MAX_CONN_LIFETIME_SECS` | `3600` | Max lifetime for a connection (seconds) |
+
+### Common Dev Commands
+
+```sh
+# From openbrain/ directory:
+
+# Run all tests (uses in-memory SQLite — no DB required)
+go test ./...
+
+# Run tests with verbose output
+go test -v ./...
+
+# Build the binary (requires ui/dist/ to exist)
+go build ./cmd/openbrain
+
+# Build and run the server
+go run ./cmd/openbrain serve
+
+# Format code
+gofmt -w ./cmd ./db ./internal ./jobs ./redis
+
+# Run the CLI help
+go run ./cmd/openbrain --help
+```
+
+### CLI Commands
+
+The `openbrain` binary serves both as the server and the CLI tool. Use `--base-url` and `--token` flags to point at a running instance:
+
+```sh
+# General flags (apply to all CLI commands)
+--base-url    Base URL of the OpenBrain server (default: http://localhost:3101)
+--token       Bearer token for authentication
+
+# Memory management
+openbrain memory list --namespace <company-id> [--type fact|decision|adr] [--tier 0-3]
+openbrain memory get <entity-id>
+openbrain memory add --type <type> --content "..." [--tier 1]
+openbrain memory forget <entity-id>
+openbrain memory search "<query>" [--top-k 10]
+openbrain memory approve <proposal-id>
+
+# Audit log
+openbrain audit export --format jsonld|sqlite --out ./audit.export
+
+# Health
+openbrain health
+
+# Repository convention sync daemon
+openbrain watch --dir ./
+
+# Generate a scoped JWT-like token
+openbrain token --namespace <company-id> [--agent-id <id>] [--trust-tier 2]
+```
+
+### Admin Web UI
+
+OpenBrain ships a React-based admin UI embedded directly in the binary. After starting the server, navigate to:
+
+```
+http://localhost:3101/admin/
+```
+
+On first visit, enter your **Base URL** and **API Token** (e.g., `dev_secret_token` for local dev). The UI provides:
+
+- **Dashboard** — memory counts, tier distribution, stale memory ratio, knowledge gap count, top accessed entities, daydream trigger
+- **Memories** — browse/filter/search all memory entities with expandable details
+- **Proposals** — review curator proposals; approve or reject with one click
+- **Audit Log** — view the tamper-evident audit log in chronological order
+- **Agents** — view registered agents and their trust tiers
+
+The admin UI source lives at `openbrain/ui/src/`. After editing the source, rebuild the dist:
+
+```sh
+cd openbrain/ui
+npm run build
+```
+
+Then rebuild the Go binary to pick up the updated assets:
+
+```sh
+cd openbrain
+go build ./cmd/openbrain
+```
+
+### MCP Server
+
+OpenBrain exposes an MCP (Model Context Protocol) server for LLM agent integrations:
+
+**stdio transport** (default, for local tool use):
+```sh
+./openbrain                        # starts MCP on stdin/stdout when invoked by an MCP host
+```
+
+**HTTP/SSE transport** (for remote or Docker-based deployment):
+```
+GET  /mcp        → info
+GET  /mcp/sse    → SSE stream
+POST /mcp/message → tool call endpoint
+```
+
+**Available MCP tools:**
+| Tool | Description |
+|---|---|
+| `memory_search` | Semantic + keyword search across memories |
+| `memory_note` | Ingest a new memory note |
+| `memory_forget` | Soft-delete a memory by ID |
+| `memory_correct` | Append a correction to an existing memory |
+| `memory_browse` | Browse memories with optional filters |
+| `context_compile` | Compile a context packet for an agent given a task query |
+
+### gRPC API
+
+```
+service MemoryService {
+  rpc Ingest(IngestRequest) returns (IngestResponse)
+  rpc Query(QueryRequest) returns (QueryResponse)
+  rpc Forget(ForgetRequest) returns (ForgetResponse)
+}
+```
+
+Proto definition: `openbrain/proto/v1/memory.proto`
+
+### REST API Summary
+
+All endpoints except `/healthz` and `/admin/*` require `Authorization: Bearer <token>`.
+
+**Memory CRUD** (`/api/v1/memories`):
+```
+POST   /api/v1/memories                         # create
+GET    /api/v1/memories                         # browse (?namespaceId=&tier=&entityType=)
+POST   /api/v1/memories/search                  # semantic search
+GET    /api/v1/memories/:id                     # get by ID
+PATCH  /api/v1/memories/:id                     # update
+DELETE /api/v1/memories/:id                     # soft delete
+GET    /api/v1/memories/:id/versions            # list version history
+POST   /api/v1/memories/:id/rollback            # rollback to prior version
+```
+
+**Graph edges** (`/api/v1/memories/edges`):
+```
+POST   /api/v1/memories/edges                   # create edge
+GET    /api/v1/memories/:id/edges               # get edges for entity
+DELETE /api/v1/memories/edges/:edgeId           # delete edge
+```
+
+**Context** (`/api/v1/context`):
+```
+POST   /api/v1/context/compile                  # compile context packet
+GET    /api/v1/context/pending                  # get pending proactive context
+```
+
+**Admin** (`/api/v1/admin`):
+```
+GET    /api/v1/admin/dashboard                  # dashboard metrics
+POST   /api/v1/admin/daydream                   # trigger curator
+GET    /api/v1/admin/proposals                  # list curator proposals
+```
+
+**Agents** (`/api/v1/agents`):
+```
+GET    /api/v1/agents                           # list agents in namespace
+GET    /api/v1/agents/:id                       # get agent
+PATCH  /api/v1/agents/:id                       # update trust tier / recall profile
+```
+
+**Audit** (`/api/v1/audit`):
+```
+GET    /api/v1/audit/log                        # browse audit log
+GET    /api/v1/audit/export                     # export as jsonld or sqlite
+```
+
+**Internal** (`/internal/v1/`): Vashandi→OpenBrain calls; require a service token:
+```
+POST   /internal/v1/namespaces                  # create namespace (on company creation)
+DELETE /internal/v1/namespaces/:id              # archive namespace (on company deletion)
+POST   /internal/v1/namespaces/:id/agents       # register agent
+DELETE /internal/v1/namespaces/:id/agents/:agentId
+POST   /internal/v1/namespaces/:id/triggers/:triggerType
+POST   /internal/v1/namespaces/:id/sync         # trigger brain.md sync
+```
+
+### Database Migrations
+
+OpenBrain uses golang-migrate for versioned SQL migrations. Migrations run automatically on server startup before GORM AutoMigrate.
+
+Migration files: `openbrain/db/migrations/`
+
+To add a migration:
+1. Create `openbrain/db/migrations/NNNNNN_description.up.sql` and `.down.sql`
+2. Restart the server — migrations run automatically
+
+### Running Tests
+
+All tests use SQLite in-memory — no Postgres or Redis required:
+
+```sh
+cd openbrain
+go test ./...
+```
+
+Individual packages:
+```sh
+go test ./cmd/openbrain/...    # server + CLI tests
+go test ./internal/brain/...   # (no test files yet)
+go test ./internal/mcp/...     # MCP server tests
+go test ./jobs/...             # curator job tests
+go test ./db/models/...        # model tests
+go test ./redis/...            # Redis key tests
+```
+
+### OpenBrain in CI
+
+The PR workflow (`.github/workflows/pr.yml`) runs:
+
+1. **Build OpenBrain UI**: `cd openbrain/ui && npm ci && npm run build`
+2. **Verify OpenBrain**: `go test ./...` and `go build ./cmd/openbrain`
+
+If you add new UI dependencies, commit the updated `package-lock.json`. The `dist/` directory is committed so the Go binary always compiles without needing to run `npm run build` first.
+
+### Vashandi ↔ OpenBrain Integration
+
+See `openbrain/docs/vashandi-integration-contract.yaml` for the formal OpenAPI specification of the Vashandi→OpenBrain internal API.
+
+Key integration points:
+- **Company creation** → Vashandi calls `POST /internal/v1/namespaces` with `companyId` as the namespace ID
+- **Agent registration** → Vashandi calls `POST /internal/v1/namespaces/:id/agents`
+- **Run start / complete** → Vashandi calls `POST /internal/v1/namespaces/:id/triggers/run_start|run_complete`
+- **Task checkout** → Vashandi calls `POST /internal/v1/namespaces/:id/triggers/checkout`
+
+### Repository Convention Files
+
+Agents and developers can drop knowledge into an `.openbrain/` directory within any project:
+
+```
+.openbrain/
+  brain.md       → curated knowledge; ingested as L2 memory entities on sync
+  session.md     → current session notes; ingested as L1 memory entities
+```
+
+Start the sync daemon to watch for changes:
+
+```sh
+openbrain watch --dir /path/to/project
+```
+
+Or trigger a one-off sync via the API:
+
+```sh
+curl -X POST http://localhost:3101/internal/v1/namespaces/<id>/sync \
+  -H "Authorization: Bearer <token>" \
+  -d '{"dir":"/path/to/project"}'
+```

@@ -125,6 +125,12 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Build OpenBrain UI
+        run: |
+          cd ../openbrain/ui
+          npm ci
+          npm run build
+
       - name: Verify OpenBrain
         run: |
           cd ../openbrain
