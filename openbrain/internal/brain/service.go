@@ -336,6 +336,75 @@ func (s *Service) GetRegisteredAgent(ctx context.Context, namespaceID, agentID s
 	return &agent, nil
 }
 
+func (s *Service) ListAgents(ctx context.Context, actor Actor, namespaceID string) ([]models.RegisteredAgent, error) {
+	var agents []models.RegisteredAgent
+	if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND is_active = ?", namespaceID, true).Order("registered_at desc").Find(&agents).Error; err != nil {
+		return nil, err
+	}
+	_ = s.appendAudit(ctx, actor, namespaceID, "list_agents", "", "registered_agent", "", "", map[string]any{"count": len(agents)})
+	return agents, nil
+}
+
+func (s *Service) UpdateAgent(ctx context.Context, actor Actor, namespaceID, agentID string, patch map[string]any) (models.RegisteredAgent, error) {
+	var agent models.RegisteredAgent
+	if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND vashandi_agent_id = ? AND is_active = ?", namespaceID, agentID, true).First(&agent).Error; err != nil {
+		return models.RegisteredAgent{}, err
+	}
+	beforeHash := hashJSON(agent)
+	if v, ok := patch["trustTier"].(float64); ok {
+		tier := int(v)
+		if tier < 1 || tier > 4 {
+			return models.RegisteredAgent{}, fmt.Errorf("trustTier must be between 1 and 4, got %d", tier)
+		}
+		agent.TrustTier = tier
+	}
+	if v, ok := patch["recallProfile"]; ok {
+		agent.RecallProfile = mustJSON(v, "{}")
+	}
+	if v, ok := patch["name"].(string); ok && v != "" {
+		agent.Name = v
+	}
+	agent.UpdatedAt = s.Now().UTC()
+	if err := s.DB.WithContext(ctx).Save(&agent).Error; err != nil {
+		return models.RegisteredAgent{}, err
+	}
+	_ = s.appendAudit(ctx, actor, namespaceID, "update_agent", agentID, "registered_agent", beforeHash, hashJSON(agent), patch)
+	return agent, nil
+}
+
+func (s *Service) CreateNamespace(ctx context.Context, actor Actor, namespaceID, companyID string, settings map[string]any) (models.Namespace, error) {
+	if namespaceID == "" {
+		namespaceID = uuid.NewString()
+	}
+	if companyID == "" {
+		companyID = namespaceID
+	}
+	ns := models.Namespace{ID: namespaceID, CompanyID: companyID, Settings: mustJSON(settings, "{}"), CreatedAt: s.Now().UTC(), UpdatedAt: s.Now().UTC()}
+	if err := s.DB.WithContext(ctx).FirstOrCreate(&ns, models.Namespace{ID: namespaceID}).Error; err != nil {
+		return models.Namespace{}, err
+	}
+	_ = s.appendAudit(ctx, actor, namespaceID, "create_namespace", namespaceID, "namespace", "", hashJSON(ns), map[string]any{"companyId": companyID})
+	return ns, nil
+}
+
+func (s *Service) ArchiveNamespace(ctx context.Context, actor Actor, namespaceID string) ([]byte, error) {
+	var memories []models.Memory
+	if err := s.DB.WithContext(ctx).Where("namespace_id = ?", namespaceID).Find(&memories).Error; err != nil {
+		return nil, err
+	}
+	export := map[string]any{"namespaceId": namespaceID, "archivedAt": s.Now().UTC(), "memories": memories}
+	body, err := json.MarshalIndent(export, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	now := s.Now().UTC()
+	if err := s.DB.WithContext(ctx).Model(&models.Namespace{}).Where("id = ?", namespaceID).Updates(map[string]any{"archived_at": &now, "updated_at": now}).Error; err != nil {
+		return nil, err
+	}
+	_ = s.appendAudit(ctx, actor, namespaceID, "archive_namespace", namespaceID, "namespace", "", "", map[string]any{"memoryCount": len(memories)})
+	return body, nil
+}
+
 func (s *Service) LoadRecallProfile(ctx context.Context, namespaceID, agentID string) RecallProfile {
 	if agentID == "" {
 		return RecallProfile{Format: "markdown", TokenLimit: 800, Verbosity: "balanced"}
@@ -591,6 +660,18 @@ func (s *Service) GetEdges(ctx context.Context, actor Actor, namespaceID, memory
 	}
 	_ = s.appendAudit(ctx, actor, namespaceID, "read_edges", memoryID, "edge", "", "", map[string]any{"count": len(edges)})
 	return edges, nil
+}
+
+func (s *Service) DeleteEdge(ctx context.Context, actor Actor, namespaceID, edgeID string) error {
+	var edge models.Edge
+	if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND id = ?", namespaceID, edgeID).First(&edge).Error; err != nil {
+		return err
+	}
+	if err := s.DB.WithContext(ctx).Delete(&edge).Error; err != nil {
+		return err
+	}
+	_ = s.appendAudit(ctx, actor, namespaceID, "delete_edge", edgeID, edge.EdgeType, hashJSON(edge), "", nil)
+	return nil
 }
 
 func (s *Service) SearchMemories(ctx context.Context, actor Actor, req SearchRequest) ([]SearchResult, error) {
