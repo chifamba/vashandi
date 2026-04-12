@@ -1002,7 +1002,7 @@ The Curator Agent is a background process within OpenBrain, not a Vashandi agent
 - Demotion: propose L2→L1 demotion for entities unused for 60 days
 
 **Approval routing:**
-> **⚠ DECISION-07 — Curator proposal routing:** Curator proposals route through Vashandi's existing approval gate system (creating `approval` records in Vashandi of type `memory_curator_proposal`) rather than a separate OpenBrain approval UI. This preserves the board as the single human oversight surface. Requires Vashandi to implement a new approval type and a UI panel for memory proposals. **Requires human confirmation.** (See also GAP-16.)
+> **⚠ DECISION-07 — Curator proposal routing:** Curator proposals will be reviewed and approved via the OpenBrain Modern Admin Web UI, which includes a dedicated UI panel for memory proposals and dashboard views. **Requires human confirmation.**
 
 **Weekly Memory Health Report:**
 - Generated each Monday (UTC)
@@ -1058,6 +1058,20 @@ All tool calls log to `memory_audit_log`. Trust tier enforcement applies per age
 
 ---
 
+
+### Phase OB-7 — Modern Admin Web UI
+
+**Goal:** Provide a modern UI with full admin capabilities to manage all aspects of OpenBrain.
+
+#### OB-7.1 — Dashboard and Metrics
+- Modern UI (React-based, aligning with Vashandi's stack).
+- Dashboard to display various useful metrics about the brain, including "thoughts" and "memories".
+- Capability to manually trigger "day dreaming" (synthesis, deduplication, and conflict resolution by the LLM curator).
+
+#### OB-7.2 — Administration and Maintenance
+- Full admin ability to manage all aspects of OpenBrain, including direct CRUD operations on memories, namespaces, and agent registries.
+- Ability to manage and monitor various maintenance jobs for the brain.
+
 ### OpenBrain Phase Summary
 
 | Phase | Focus | Issues/Gaps | Depends On |
@@ -1077,6 +1091,7 @@ All tool calls log to `memory_audit_log`. Trust tier enforcement applies per age
 | OB-6.1 | CLI | #43 | OB-1, OB-3 |
 | OB-6.2 | MCP server | #43 | OB-1, OB-3, OB-4 |
 | OB-6.3 | Repo convention sync | #44 | OB-6.1 |
+| OB-7 | Modern Admin Web UI | New | OB-1, OB-3, OB-5 |
 
 ---
 
@@ -1326,7 +1341,7 @@ The following decisions were made by this analysis. Each needs confirmation befo
 | DECISION-04 | OpenBrain service topology | **Separate service (Docker sidecar)** | Embedded library, Vashandi plugin process | OB-0.1, GAP-08 |
 | DECISION-05 | OpenBrain API protocol | **REST/JSON** (gRPC later if needed) | gRPC from day one, MCP-native | OB-0.2, all API surfaces |
 | DECISION-06 | Namespace isolation model | **Row-level `namespace_id`** enforced at storage layer | Separate Postgres schemas, separate DBs | OB-0.3 and all OpenBrain tables |
-| DECISION-07 | Curator proposal routing | **Through Vashandi approval gates** (new `memory_curator_proposal` type) | Separate OpenBrain approval UI | OB-5, GAP-16 |
+| DECISION-07 | Curator proposal routing | **OpenBrain Modern Admin UI** | Through Vashandi approval gates | OB-5, OB-7 |
 | DECISION-08 | Embedding model/dimension | **OpenAI text-embedding-3-small (1536d)** as default | Cohere embed-v3, local Ollama embeddings, 768d alternatives | OB-1.2 and schema |
 | DECISION-09 | OpenBrain auth for external API | **Agent-scoped JWT tokens** issued by OpenBrain, validated against registered_agents | Vashandi API key passthrough, per-namespace static keys | OB-3.1 and all API surfaces |
 | DECISION-10 | L2→L3 promotion approval flow | **Routes through Vashandi board approval** | OpenBrain-internal approval, human CLI only | OB-2.2 and V2 integration |
@@ -1348,7 +1363,7 @@ These assumptions are made in this plan. If any are incorrect, the affected sect
 
 5. **Team isolation is optional and company-configurable.** Not all companies need team-level access control. The V1.4 design makes it a company-level flag so simple deployments are not burdened.
 
-6. **Human approval is always surfaced through Vashandi's board UI.** This means Vashandi must remain the primary human-facing system. OpenBrain has no standalone board UI for governance.
+6. **OpenBrain has its own standalone UI for governance.** A modern React-based UI will be built to manage memories, namespaces, agent registries, and trigger maintenance tasks like "day dreaming", along with handling approval workflows.
 
 7. **Embedding calls are to an external provider (OpenAI by default).** Local embedding (Ollama) is a future option. The initial deployment requires an embedding API key.
 
