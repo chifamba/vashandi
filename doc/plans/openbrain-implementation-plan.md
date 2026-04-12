@@ -11,19 +11,19 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 
 ## 1. Current State Assessment
 
-*Last updated: 2026-04-12. The codebase is substantially further along than previous assessments indicated. The table below reflects the actual state as verified against the code in `openbrain/`.*
+*Last updated: 2026-04-12 (updated by agent on 2026-04-12 after implementing pgvector/golang-migrate/pgxpool/integration-contract). The codebase is substantially further along than previous assessments indicated. The table below reflects the actual state as verified against the code in `openbrain/`.*
 
 | Area | Status |
 |---|---|
 | Repo location (`openbrain/`) | ✅ Fully structured: REST, gRPC, MCP, jobs, models, proto, redis, docs, Dockerfile |
 | Go module initialization | ✅ Implemented (`github.com/chifamba/vashandi/openbrain`) |
 | PostgreSQL storage (GORM AutoMigrate) | ✅ Implemented (all tables: memory_entities, edges, versions, agents, audit_log, proposals, context_packets, namespaces) |
-| pgvector / IVFFlat indexes | ❌ Not implemented — embeddings stored as JSONB; cosine similarity computed in-process |
+| pgvector / IVFFlat indexes | ✅ Implemented — `vector(1536)` column on memory_entities + memory_entity_versions; IVFFlat index in migration 000002; pgvector SQL search with in-process fallback |
 | Typed memory entity schema | ✅ Implemented (all models in `db/models/`) |
 | Multi-tier memory model (L0–L3) | ✅ Implemented — tier enforcement, promotion logic, decay logic, versioning, rollback |
 | Agent Registry + trust tiers | ✅ Implemented — RegisterAgent, DeregisterAgent, trust tier permissions, redaction |
 | Immutable audit log | ✅ Implemented — chain-hash tamper evidence, append-only application layer; export as JSON-LD + SQLite |
-| Context compilation engine | ✅ Implemented — vector+lexical+recency+tier scoring, token budget enforcement, format rendering |
+| Context compilation engine | ✅ Implemented — pgvector `<=>` cosine search + lexical+recency+tier re-ranking, token budget enforcement, format rendering |
 | Proactive context delivery | ✅ Implemented — all 5 trigger types: run_start, run_complete, checkout, branch_creation, test_failure |
 | LLM Curator Agent (Gachlaw) | ✅ Implemented — dedup, synthesis, demotion, gap detection proposals; weekly health report; requires human approval |
 | Redis queue | ✅ Implemented (`jobs/queue.go`) — embedding/ingest queue workers; embedding cache stub present |
@@ -37,11 +37,11 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 | Agent registry GET/PATCH endpoints | ✅ Implemented |
 | Namespace lifecycle endpoints (`POST/DELETE /internal/v1/namespaces`) | ✅ Implemented |
 | MCP trust tier enforcement | ✅ Implemented — HTTP path propagates token actor; stdio callers provide trustTier in params |
-| golang-migrate SQL migrations | ❌ Not implemented — uses GORM AutoMigrate; no versioned SQL migration files |
-| pgxpool connection pool | ❌ Not implemented — uses GORM default connection pool |
+| golang-migrate SQL migrations | ✅ Implemented — versioned SQL files in `openbrain/db/migrations/`; embedded via `embed.FS`; runs on startup before GORM AutoMigrate |
+| pgxpool connection pool | ✅ Implemented — pgxpool with configurable DB_MAX_CONNS/DB_MIN_CONNS/DB_MAX_CONN_IDLE_SECS/DB_MAX_CONN_LIFETIME_SECS; pool reused by both golang-migrate and GORM |
 | CI build/test step for OpenBrain | ❌ Not added to CI |
 | DEVELOPING.md update for OpenBrain | 🟡 Partial — brief mention exists; full combined dev commands not documented |
-| Vashandi↔OpenBrain integration contract doc | ❌ Not formally documented; internal API endpoints implemented but no contract document |
+| Vashandi↔OpenBrain integration contract doc | ✅ Implemented — formal OpenAPI spec at `openbrain/docs/vashandi-integration-contract.yaml`; covers internal API, auth model, entity mappings, lifecycle sequences |
 
 ---
 
@@ -123,11 +123,11 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] Add OpenBrain service to the Vashandi Docker Compose dev stack (`vashandi/docker/docker-compose.yml`)
   - [ ] CI: add `go build ./openbrain/...` and `go test ./openbrain/...` steps
   - [x] Update `DEVELOPING.md` with combined dev commands (partial — brief mention present)
-- [ ] **OB-0.2: Define Vashandi↔OpenBrain Integration Interface**
-  - [ ] Document exact HTTP/REST, gRPC, and MCP interfaces (internal API endpoints are implemented but no formal contract document)
-  - [ ] Define service token strategy: Vashandi generates a service token per company at creation, stored as `company_secrets`
-  - [ ] Map Vashandi lifecycle events to OpenBrain calls: agent created, agent archived, company archived, run completed, run starting
-  - [ ] Map entity types: Vashandi `agent` → OpenBrain `registered_agent`; Vashandi `company` → OpenBrain `namespace`
+- [x] **OB-0.2: Define Vashandi↔OpenBrain Integration Interface**
+  - [x] Document exact HTTP/REST, gRPC, and MCP interfaces — formal OpenAPI spec at `openbrain/docs/vashandi-integration-contract.yaml` covering all `/internal/v1/` endpoints
+  - [ ] Define service token strategy: Vashandi generates a service token per company at creation, stored as `company_secrets` (token format specified in contract; Vashandi side not yet wired)
+  - [ ] Map Vashandi lifecycle events to OpenBrain calls: agent created, agent archived, company archived, run completed, run starting (OpenBrain side implemented; Vashandi call sites not yet wired)
+  - [x] Map entity types: Vashandi `agent` → OpenBrain `registered_agent`; Vashandi `company` → OpenBrain `namespace` (documented in contract)
 - [x] **OB-0.3: Company-Scoped Memory Namespacing**
   - [x] Define schema enforcing row-level `namespace_id` in all Postgres tables and Redis keys
   - [x] Storage layer functions accept `namespace_id` as a non-optional parameter
@@ -140,15 +140,15 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] GORM AutoMigrate creates all tables on startup
   - [x] Dockerfile and Docker Compose entry for Postgres+OpenBrain
   - [ ] Docker Compose dev profile: Postgres 16 with pgvector pre-installed (currently uses standard Postgres)
-  - [ ] golang-migrate versioned SQL migration files (using GORM AutoMigrate instead)
-  - [ ] pgxpool connection pool with configurable pool size (using GORM default pool)
-  - [ ] pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
+  - [x] golang-migrate versioned SQL migration files (`openbrain/db/migrations/000001_initial_schema.up.sql`, `000002_pgvector_indexes.up.sql`; embedded via `embed.FS` in `openbrain/db/migrations.go`; run on startup before GORM)
+  - [x] pgxpool connection pool with configurable pool size (`DB_MAX_CONNS`, `DB_MIN_CONNS`, `DB_MAX_CONN_IDLE_SECS`, `DB_MAX_CONN_LIFETIME_SECS`)
+  - [x] pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;` (in migration 000001 and AutoMigrate Postgres path)
 - [x] **OB-1.2: Typed Memory Entity Schema**
   - [x] `memory_entities` table with all fields (GORM model in `db/models/memory.go`)
   - [x] `memory_edges` adjacency table for relationship graph
   - [x] `memory_entity_versions` append-only version history table
-  - [x] Composite indexes on namespace_id paths (GORM index tags)
-  - [ ] IVFFlat index with `lists=100` for pgvector (embeddings stored as JSONB; in-process cosine used instead)
+  - [x] Composite indexes on namespace_id paths (GORM index tags + golang-migrate SQL)
+  - [x] IVFFlat index with `lists=100` for pgvector — `embedding vector(1536)` column on memory_entities and memory_entity_versions; IVFFlat index in migration 000002; `SearchMemories` uses pgvector `<=>` operator with in-process fallback for SQLite/tests; embedding dimension changed from 64→1536
 - [x] **OB-1.3: CRUD Operations**
   - [x] `POST /api/v1/memories` — create entity
   - [x] `GET /api/v1/memories/:id` — get entity by id
@@ -806,3 +806,47 @@ type ApprovalType =
 ---
 
 *All decisions marked ⚠ DECISION-N require human confirmation before the affected phase begins. Send confirmations or corrections and this plan will be updated accordingly.*
+
+---
+
+## 10. Drift and Misalignment Tracker
+
+*Updated 2026-04-12 after agent implementation of pgvector/golang-migrate/pgxpool/integration-contract.*
+
+### 10.1 Resolved This Session
+
+| Item | Resolution |
+|---|---|
+| OB-1.1: pgvector extension not enabled | ✅ `CREATE EXTENSION IF NOT EXISTS vector` in migration 000001 and AutoMigrate Postgres path |
+| OB-1.2: IVFFlat index not created | ✅ Migration 000002 creates IVFFlat index (`lists=100`) on both embedding columns |
+| OB-1.2: Embedding column was JSONB 64-dim | ✅ Changed to `vector(1536)` (matches OpenAI ada-002/text-embedding-3-small). The FNV stub was upgraded to 1536 dims; real provider wiring is a pending item |
+| OB-1.1: No golang-migrate versioned migrations | ✅ SQL migration files in `openbrain/db/migrations/`; embedded with `embed.FS`; run on startup before GORM |
+| OB-1.1: No pgxpool | ✅ pgxpool with configurable env vars; pool reused by both golang-migrate driver and GORM |
+| OB-0.2: No formal integration contract doc | ✅ OpenAPI spec at `openbrain/docs/vashandi-integration-contract.yaml` |
+
+### 10.2 Open Drift Items — Require Resolution
+
+| # | Drift Item | Severity | Blocking |
+|---|---|---|---|
+| D-01 | **Vashandi call sites not wired.** The OpenBrain internal API is fully implemented, but Vashandi does not yet call it on company/agent lifecycle events. The integration contract exists on paper; GAP-04 (Vashandi memory plugin wrapping OpenBrain) is not started. | High | Yes — full integration |
+| D-02 | **Service token generation not in Vashandi.** The plan states Vashandi generates a scoped token at company creation. There is no `company_secrets.openbrain_service_token` field or token-generation call in the Vashandi codebase. | High | Yes — auth for internal API |
+| D-03 | **Embedding stub is FNV hash, not real provider.** `generateEmbedding` uses a 1536-dim FNV hash (no semantic content). Context compilation latency NFR (< 500ms, issue #40) depends on the IVFFlat index, but search quality is extremely poor until a real embedding provider (OpenAI/Ollama) is wired. The FNV stub means the IVFFlat index gives random results. | High | No (dev/prod only) |
+| D-04 | **Docker Compose Postgres image lacks pgvector.** The current `docker-compose.yml` uses `postgres:16-alpine`. The pgvector extension requires `pgvector/pgvector:pg16` or a custom image with the extension pre-installed. Without it, migration 000001 will fail at `CREATE EXTENSION IF NOT EXISTS vector`. | High | Yes — local dev |
+| D-05 | **IVFFlat index created on empty table at startup.** Migration 000002 creates an IVFFlat index with `lists=100` on every fresh deployment. With 0 rows, the index has no trained clusters and provides no benefit. For production bulk loads, `REINDEX` should be run post-load. An advisory note is in the migration SQL. | Medium | No |
+| D-06 | **GAP-07: Memory costs not tracked in Vashandi.** The plan requires that every `MemoryUsage` event from the OpenBrain adapter flows into Vashandi `cost_events`. This is not implemented in either system. | Medium | No — phase I-2 |
+| D-07 | **GAP-10: Circuit breaker not in Vashandi.** The plan requires Vashandi to degrade gracefully (not fail) when OpenBrain is unavailable. No circuit breaker exists in Vashandi's memory plugin. | Medium | No — phase I-2 |
+| D-08 | **OB-0.2 / GAP-01: Internal API uses plain HTTP with bearer token.** The contract spec says `Authorization: Bearer <service-token>`. In dev Docker Compose both services share a network but there is no mutual TLS or network policy. For production deployments outside Docker Compose, additional hardening (mTLS or service mesh) is required (noted in Assumption #2). | Low | No — phase I-2 security |
+| D-09 | **OB-7: Admin React UI deferred.** The plan specifies a full React-based admin UI. Current implementation is server-rendered HTML at `/admin`. OB-7 items are not planned for the current sprint. | Low | No — OB-7 phase |
+| D-10 | **CI not updated for OpenBrain.** There is no CI step to run `go test ./...` or `go build ./...` for the `openbrain/` module. Any breaking change will be caught only by local runs. | Low | No — operational |
+| D-11 | **L2→L3 approval routing to Vashandi board (DECISION-10).** Curator proposals for L2→L3 promotion must be routed through Vashandi's approval gate as `memory_curator_proposal` approval type. Neither the approval type registration in Vashandi nor the routing logic (in either service) is implemented. | Medium | No — OB-5 / Vashandi V2.3 |
+
+### 10.3 Implementation Notes — Technical Decisions Made This Session
+
+1. **Embedding stored as pgvector-native text format.** The `Embedding` model field remains `string` (Go type) with GORM tag `type:vector(1536)`. pgvector reads and writes `[v1,v2,...,vn]` as text, which is identical to the JSON float array format already used by `encodeEmbedding`/`decodeEmbedding`. No Go type conversion is needed; `::vector` casts in raw SQL are sufficient.
+
+2. **In-process cosine fallback preserved.** `SearchMemories` uses pgvector SQL search on Postgres and falls back to the in-process cosine function on SQLite (used in tests). This preserves backward compatibility with all existing tests.
+
+3. **golang-migrate + GORM AutoMigrate coexist.** golang-migrate runs first on startup (creates/updates schema). GORM AutoMigrate runs second as a safety net — on Postgres it is mostly a no-op since the tables already exist; on SQLite (tests) it bootstraps the full schema. The `CREATE INDEX IF NOT EXISTS` statements in both tools are idempotent.
+
+4. **pgxpool pool reused by golang-migrate and GORM.** `stdlib.OpenDBFromPool` converts pgxpool to `*sql.DB`, which is passed to both the golang-migrate Postgres driver and GORM's `postgres.Config{Conn: sqlDB}`. A single pool serves both, respecting the configured `DB_MAX_CONNS` limit.
+

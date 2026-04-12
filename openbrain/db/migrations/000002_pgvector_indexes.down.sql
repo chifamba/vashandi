@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_memory_entities_embedding_ivfflat;
+DROP INDEX IF EXISTS idx_memory_versions_embedding_ivfflat;

@@ -1,0 +1,798 @@
+openapi: 3.1.0
+info:
+  title: Vashandi ↔ OpenBrain Integration Contract
+  version: 1.0.0
+  description: |
+    Formal integration contract between the Vashandi control plane and the
+    OpenBrain memory OS service.
+
+    This document covers:
+    - **Internal API** (`/internal/v1/`) — called by Vashandi on lifecycle events
+    - **Auth model** — Vashandi-issued service tokens, scoped per company
+    - **Entity mappings** — Vashandi → OpenBrain model translations
+    - **Error conventions** — shared HTTP error shapes
+
+    Related specs:
+    - [OpenBrain Service API](./openapi.yaml) — agent-facing external REST API
+    - [MCP tools](./mcp.md) — Model Context Protocol interface
+
+    **Decision references:**
+    - DECISION-04 — Separate service topology
+    - DECISION-06 — Row-level namespace isolation (`namespace_id = company_id`)
+    - DECISION-09 — Agent-scoped JWT tokens
+    - DECISION-10 — L2→L3 promotion requires Vashandi board approval
+
+servers:
+  - url: http://openbrain:3101
+    description: Local Docker Compose (internal network)
+  - url: https://openbrain.internal.{env}.vashandi.io
+    description: Production (internal service mesh)
+    variables:
+      env:
+        enum: [staging, production]
+        default: production
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      description: |
+        Vashandi-issued service token, one per company namespace. Generated at
+        company creation time, stored as `company_secrets` in Vashandi, and
+        passed as `Authorization: Bearer <service-token>` on all internal API
+        calls.
+
+        Token format: `openbrain.<base64url(payload)>.<hmac-sha256-sig>`
+
+        Payload fields:
+        ```json
+        {
+          "namespaceId": "<company_id>",
+          "actorKind": "service",
+          "trustTier": 4
+        }
+        ```
+
+        The shared HMAC secret is configured via `OPENBRAIN_SIGNING_SECRET`
+        (env var on both Vashandi and OpenBrain). In Docker Compose the secret
+        is shared via the `openbrain` service environment.
+
+  schemas:
+    # ---- Entity ID mappings ------------------------------------------------
+    EntityMapping:
+      description: |
+        Canonical mapping between Vashandi and OpenBrain entities.
+
+        | Vashandi entity       | OpenBrain entity        | Notes                    |
+        |-----------------------|-------------------------|--------------------------|
+        | `company.id`          | `namespace.id`          | 1:1                      |
+        | `agent.id`            | `registered_agent.vashandi_agent_id` | Agent ID is federated |
+        | `issue.id`            | `memory.provenance.source_ref.kind=issue` | Source reference |
+        | `heartbeat_run.id`    | `memory.provenance.source_ref.kind=run`  | Source reference |
+        | `company_secrets.<openbrain_token>` | service token | Stored hashed in Vashandi |
+      type: object
+
+    # ---- Request / response shapes ----------------------------------------
+    NamespaceCreateRequest:
+      type: object
+      required: [namespaceId, companyId]
+      properties:
+        namespaceId:
+          type: string
+          format: uuid
+          description: Must equal the Vashandi `company.id`.
+        companyId:
+          type: string
+          format: uuid
+          description: Vashandi company ID (same as namespaceId in V1).
+        settings:
+          type: object
+          additionalProperties: true
+          description: |
+            Optional namespace settings: embedding model, tier TTL overrides,
+            token budget defaults. Passed through from company onboarding data.
+
+    NamespaceResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        settings:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    AgentRegisterRequest:
+      type: object
+      required: [vashandiAgentId, name]
+      properties:
+        vashandiAgentId:
+          type: string
+          format: uuid
+          description: Vashandi `agent.id` — federated identity.
+        name:
+          type: string
+          description: Display name (copied from Vashandi agent name).
+        trustTier:
+          type: integer
+          minimum: 1
+          maximum: 4
+          default: 2
+          description: |
+            Trust tier governing write access:
+            1=Read, 2=Contributor, 3=Curator, 4=Admin.
+            Default 2 (Contributor) for new Vashandi agents.
+        recallProfile:
+          $ref: '#/components/schemas/RecallProfile'
+
+    RecallProfile:
+      type: object
+      properties:
+        verbosity:
+          type: string
+          enum: [short, normal, detailed]
+          default: normal
+        format:
+          type: string
+          enum: [markdown, json, xml]
+          default: markdown
+        tokenLimit:
+          type: integer
+          minimum: 256
+          maximum: 32768
+          default: 4096
+          description: Maximum tokens the agent can consume per context compile.
+        preferredTypes:
+          type: array
+          items:
+            type: string
+            enum: [fact, decision, task, constraint, adr, note]
+          description: |
+            Entity types surfaced first in context compilation. Empty = all types.
+
+    AgentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespaceId:
+          type: string
+          format: uuid
+        vashandiAgentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        trustTier:
+          type: integer
+        recallProfile:
+          $ref: '#/components/schemas/RecallProfile'
+        isActive:
+          type: boolean
+        registeredAt:
+          type: string
+          format: date-time
+
+    TriggerRequest:
+      type: object
+      properties:
+        agentId:
+          type: string
+          format: uuid
+          description: Vashandi agent ID triggering the event.
+        taskQuery:
+          type: string
+          description: Query string for context compilation (run_start, checkout).
+        intent:
+          type: string
+          description: Human-readable intent label for logging.
+        tokenBudget:
+          type: integer
+          description: Max tokens for pre-run context packet; 0 = agent default.
+        content:
+          type: string
+          description: Run output or commit diff (run_complete).
+        summary:
+          type: string
+          description: Short summary of a completed run or event.
+        errorText:
+          type: string
+          description: Test failure text (test_failure trigger).
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Arbitrary event metadata (runId, issueId, branchName, etc.).
+
+    TriggerResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: e.g. "run_start_triggered", "run_complete_triggered"
+        packetId:
+          type: string
+          format: uuid
+          description: Context packet ID stored for agent poll (GET /api/v1/context/pending).
+        context:
+          $ref: '#/components/schemas/ContextBundle'
+        createdIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Memory entity IDs created during trigger processing.
+        proposalIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Curator proposal IDs generated during trigger processing.
+
+    ContextBundle:
+      type: object
+      properties:
+        snippets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContextSnippet'
+        profileSummary:
+          type: string
+        tokenCount:
+          type: integer
+        latencyMs:
+          type: integer
+          format: int64
+
+    ContextSnippet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+        tier:
+          type: integer
+        score:
+          type: number
+          format: double
+        text:
+          type: string
+        summary:
+          type: string
+
+    IngestBatchRequest:
+      type: object
+      required: [memories]
+      properties:
+        memories:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryIngestItem'
+          minItems: 1
+          maxItems: 500
+
+    MemoryIngestItem:
+      type: object
+      required: [text]
+      properties:
+        entityType:
+          type: string
+          enum: [fact, decision, task, constraint, adr, note]
+          default: note
+        title:
+          type: string
+        text:
+          type: string
+        tier:
+          type: integer
+          minimum: 0
+          maximum: 3
+          default: 0
+        provenance:
+          type: object
+          properties:
+            kind:
+              type: string
+              enum: [api, run, issue, file_sync, session, grpc]
+            sourceId:
+              type: string
+            sourceKind:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+
+    IngestBatchResponse:
+      type: object
+      properties:
+        created:
+          type: integer
+          description: Number of memory entities successfully created.
+        errors:
+          type: array
+          items:
+            type: string
+          description: Per-item error messages for failed items (empty = all succeeded).
+
+    ArchiveExportResponse:
+      type: object
+      properties:
+        namespaceId:
+          type: string
+          format: uuid
+        archivedAt:
+          type: string
+          format: date-time
+        memories:
+          type: array
+          items:
+            type: object
+            description: Full memory entity JSON.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code.
+        message:
+          type: string
+          description: Human-readable description.
+        details:
+          type: object
+          additionalProperties: true
+
+  parameters:
+    NamespaceId:
+      name: namespaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: OpenBrain namespace ID (equals Vashandi `company.id`).
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Vashandi agent ID (equals OpenBrain `registered_agent.vashandi_agent_id`).
+
+security:
+  - serviceToken: []
+
+# ---------------------------------------------------------------------------
+# Paths — Internal API (/internal/v1/)
+# ---------------------------------------------------------------------------
+paths:
+  # --- Namespace lifecycle (Vashandi company lifecycle) -------------------
+  /internal/v1/namespaces:
+    post:
+      operationId: createNamespace
+      summary: Create a namespace for a new Vashandi company
+      description: |
+        Called by Vashandi immediately after a company is created.
+
+        **Vashandi trigger:** `POST /api/companies` success handler.
+
+        Creates the OpenBrain namespace that maps 1:1 to the Vashandi company.
+        Also generates and returns the service token that Vashandi stores as
+        `company_secrets.openbrain_service_token`.
+      tags: [Namespace Lifecycle]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NamespaceCreateRequest'
+            example:
+              namespaceId: "550e8400-e29b-41d4-a716-446655440000"
+              companyId:   "550e8400-e29b-41d4-a716-446655440000"
+              settings:
+                embeddingModel: "text-embedding-3-small"
+                tier0TtlHours: 24
+      responses:
+        '201':
+          description: Namespace created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceResponse'
+        '409':
+          description: Namespace already exists (idempotent — return 200 on retry).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /internal/v1/namespaces/{namespaceId}:
+    delete:
+      operationId: archiveNamespace
+      summary: Archive a namespace when a Vashandi company is archived
+      description: |
+        Called by Vashandi when a company is archived or deleted.
+
+        **Vashandi trigger:** `DELETE /api/companies/:id` or company archive handler.
+
+        Exports all memories as JSON, marks the namespace archived, and stops
+        accepting new writes. Returns the full memory export as the response body.
+        Export is also saved to object storage if `OPENBRAIN_EXPORT_BUCKET` is set.
+      tags: [Namespace Lifecycle]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      responses:
+        '200':
+          description: Namespace archived; memories exported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchiveExportResponse'
+        '404':
+          description: Namespace not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- Agent lifecycle (Vashandi agent lifecycle) -------------------------
+  /internal/v1/namespaces/{namespaceId}/agents:
+    post:
+      operationId: registerAgent
+      summary: Register a Vashandi agent in OpenBrain
+      description: |
+        Called by Vashandi when an agent is created or re-activated.
+
+        **Vashandi trigger:** `POST /api/agents` success handler.
+
+        Registers the agent in OpenBrain's `registered_agents` table so it can
+        access memory operations within the namespace. If the agent is already
+        registered (same `vashandiAgentId`, `is_active=true`), the registration
+        is updated in place (idempotent).
+
+        **Trust tier default:** Tier 2 (Contributor). Operators can upgrade to
+        Tier 3 (Curator) or Tier 4 (Admin) via `PATCH /api/v1/agents/:agentId`.
+      tags: [Agent Lifecycle]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRegisterRequest'
+            example:
+              vashandiAgentId: "agent-uuid-here"
+              name: "Cursor Agent"
+              trustTier: 2
+              recallProfile:
+                format: markdown
+                tokenLimit: 8192
+      responses:
+        '201':
+          description: Agent registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResponse'
+        '200':
+          description: Existing registration updated (idempotent re-register).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResponse'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /internal/v1/namespaces/{namespaceId}/agents/{agentId}:
+    delete:
+      operationId: deregisterAgent
+      summary: Deregister a Vashandi agent from OpenBrain
+      description: |
+        Called by Vashandi when an agent is archived or deactivated.
+
+        **Vashandi trigger:** `DELETE /api/agents/:id` or agent archive handler.
+
+        Sets `is_active=false` and records `deregistered_at`. The agent's
+        memory contributions remain in the namespace; only write access is revoked.
+      tags: [Agent Lifecycle]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '204':
+          description: Agent deregistered.
+        '404':
+          description: Agent not found or already inactive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- Proactive context triggers -----------------------------------------
+  /internal/v1/namespaces/{namespaceId}/triggers/{triggerType}:
+    post:
+      operationId: processTrigger
+      summary: Process a proactive context trigger
+      description: |
+        Called by Vashandi at key lifecycle events to push context into OpenBrain
+        or pull pre-compiled context for an agent.
+
+        **Supported trigger types:**
+
+        | triggerType      | Vashandi event                             | OpenBrain action                          |
+        |------------------|--------------------------------------------|-------------------------------------------|
+        | `run_start`      | Heartbeat run invoked                      | Compile context → store packet for agent  |
+        | `run_complete`   | Heartbeat run finished                     | Ingest run summary as L0 memory           |
+        | `checkout`       | `POST /issues/:id/checkout`                | Compile task-specific context → packet    |
+        | `branch_creation`| Branch created (from run context or webhook)| Surface ADRs + constraints → packet      |
+        | `test_failure`   | Run output contains test failures          | Surface related failures + fixes → packet |
+
+        The compiled context packet is stored and retrievable by the agent via
+        `GET /api/v1/context/pending?agentId=<id>&namespaceId=<ns>`.
+
+        **Budget:** `tokenBudget` defaults to the agent's `recallProfile.tokenLimit`.
+      tags: [Proactive Context]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+        - name: triggerType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [run_start, run_complete, checkout, branch_creation, test_failure]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerRequest'
+            examples:
+              run_start:
+                summary: Pre-run context hydration
+                value:
+                  agentId: "agent-uuid"
+                  taskQuery: "Implement the OAuth refresh token rotation feature"
+                  intent: "run_start"
+                  tokenBudget: 8192
+                  metadata:
+                    runId: "run-uuid"
+                    issueId: "issue-uuid"
+              run_complete:
+                summary: Post-run memory capture
+                value:
+                  agentId: "agent-uuid"
+                  content: "Added OAuth refresh rotation. Modified auth/token.go, added tests."
+                  summary: "Implemented OAuth refresh token rotation per RFC 6749"
+                  metadata:
+                    runId: "run-uuid"
+                    commitSha: "abc123"
+              test_failure:
+                summary: Surface related failures
+                value:
+                  agentId: "agent-uuid"
+                  errorText: "FAIL TestOAuthRefresh: token not invalidated after rotation"
+                  intent: "test_failure"
+                  tokenBudget: 4096
+      responses:
+        '200':
+          description: Trigger processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerResponse'
+        '400':
+          description: Unknown trigger type or invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Namespace or agent not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- Bulk ingest ---------------------------------------------------------
+  /internal/v1/namespaces/{namespaceId}/memories/ingest-batch:
+    post:
+      operationId: ingestBatch
+      summary: Bulk-ingest memories from Vashandi (MemoryAdapter write path)
+      description: |
+        Called by the Vashandi OpenBrain MemoryAdapter when the `write()` method
+        receives multiple records. Used for:
+        - Onboarding memory bootstrap (seeds from `brain.md` at company creation)
+        - Batch post-run memory capture for high-volume agents
+        - CEO Chat thread ingestion
+
+        All records are ingested into the namespace with the provided tier and
+        provenance. Embedding happens asynchronously via the Redis queue.
+
+        **Rate limit:** 500 records per request; split larger batches client-side.
+      tags: [Memory Ingest]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestBatchRequest'
+      responses:
+        '200':
+          description: Batch ingested (partial success possible; check `errors` field).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestBatchResponse'
+        '400':
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Batch exceeds 500-record limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- Repository sync ----------------------------------------------------
+  /internal/v1/namespaces/{namespaceId}/sync:
+    post:
+      operationId: syncRepository
+      summary: Sync .openbrain/brain.md from a repository path
+      description: |
+        Called by Vashandi's agent runner when it detects a `.openbrain/brain.md`
+        or `.openbrain/session.md` file in the checked-out repository.
+
+        OpenBrain parses the Markdown file, diffs against the last known hash,
+        and ingests changed sections as memory entities:
+        - `brain.md` → L2 entities with `provenance.kind = file_sync`
+        - `session.md` → L1 entities with `provenance.kind = session`
+
+        Optionally, changes to L2/L3 entities in OpenBrain are written back to
+        `brain.md` (requires `writeback: true` and write access on the repo).
+      tags: [Repository Sync]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dirPath]
+              properties:
+                dirPath:
+                  type: string
+                  description: |
+                    Absolute path to the repository root containing `.openbrain/`.
+                agentId:
+                  type: string
+                  format: uuid
+                writeback:
+                  type: boolean
+                  default: false
+                  description: Write promoted L2/L3 entities back to brain.md.
+      responses:
+        '200':
+          description: Sync completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ingested:
+                    type: integer
+                    description: Number of memory entities created or updated.
+                  skipped:
+                    type: integer
+                    description: Number of sections unchanged since last sync.
+
+# ---------------------------------------------------------------------------
+# Tag descriptions
+# ---------------------------------------------------------------------------
+tags:
+  - name: Namespace Lifecycle
+    description: |
+      Vashandi calls these endpoints to manage OpenBrain namespaces in
+      lockstep with Vashandi company lifecycle events.
+  - name: Agent Lifecycle
+    description: |
+      Vashandi calls these endpoints to keep OpenBrain's agent registry in
+      sync with Vashandi agent lifecycle events.
+  - name: Proactive Context
+    description: |
+      Vashandi calls these endpoints to deliver context to agents at key
+      lifecycle events (run start, checkout, test failure, etc.).
+  - name: Memory Ingest
+    description: |
+      High-throughput ingest endpoints used by the Vashandi MemoryAdapter
+      to batch-write memories on behalf of agents and automation.
+  - name: Repository Sync
+    description: |
+      Endpoints for syncing local repository `.openbrain/brain.md` and
+      `.openbrain/session.md` files into OpenBrain memory.
+
+# ---------------------------------------------------------------------------
+# Lifecycle sequence diagrams (informational)
+# ---------------------------------------------------------------------------
+x-lifecycle-sequences:
+  company-creation: |
+    Vashandi POST /api/companies
+      → Vashandi creates company record
+      → Vashandi calls POST /internal/v1/namespaces
+      → OpenBrain creates namespace + returns service token
+      → Vashandi stores token as company_secrets.openbrain_service_token
+      → Vashandi seeds brain.md onboarding content
+      → Vashandi calls POST /internal/v1/namespaces/{id}/memories/ingest-batch
+        with onboarding memories (tier=2, type=constraint/adr)
+
+  company-archive: |
+    Vashandi DELETE /api/companies/:id
+      → Vashandi calls DELETE /internal/v1/namespaces/{id}
+      → OpenBrain exports all memories as JSON, archives namespace
+      → OpenBrain returns export; Vashandi stores in long-term storage
+      → Vashandi revokes service token
+
+  agent-created: |
+    Vashandi POST /api/agents
+      → Vashandi creates agent record
+      → Vashandi calls POST /internal/v1/namespaces/{nsId}/agents
+        with vashandiAgentId, name, trustTier=2, recallProfile
+      → OpenBrain creates registered_agent entry
+      → Vashandi stores OpenBrain agentId (if different from Vashandi ID)
+
+  agent-archived: |
+    Vashandi DELETE /api/agents/:id
+      → Vashandi calls DELETE /internal/v1/namespaces/{nsId}/agents/{agentId}
+      → OpenBrain sets is_active=false, deregistered_at=now()
+
+  run-start: |
+    Vashandi invokes heartbeat run
+      → Vashandi calls POST /internal/v1/namespaces/{nsId}/triggers/run_start
+        with agentId, taskQuery (issue title + description), tokenBudget
+      → OpenBrain compiles context (pgvector similarity search + re-rank)
+      → OpenBrain stores context packet (agent polls GET /api/v1/context/pending)
+      → Agent reads pending packet at run start and includes context in prompt
+
+  run-complete: |
+    Vashandi heartbeat run finishes
+      → Vashandi calls POST /internal/v1/namespaces/{nsId}/triggers/run_complete
+        with agentId, content (run summary / diff), metadata (runId, commitSha)
+      → OpenBrain ingests summary as L0 memory entity
+      → Background curator may generate promotion proposals based on new entity
