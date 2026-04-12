@@ -1,0 +1,220 @@
+package routes
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"github.com/chifamba/paperclip/backend/db/models"
+)
+
+func setupTestDB(t *testing.T) *gorm.DB {
+	// Use unique in-memory db per test
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Failed to open test database: %v", err)
+	}
+
+    // AutoMigrate is better, we'll try to use sqlite compatible struct or just provide fake types
+    db.Exec("DROP TABLE IF EXISTS agents;")
+	err = db.Exec(`CREATE TABLE agents (
+        id text PRIMARY KEY,
+        company_id text,
+        name text,
+        role text,
+        title text,
+        icon text,
+        status text,
+        reports_to text,
+        capabilities text,
+        adapter_type text,
+        adapter_config text,
+        runtime_config text,
+        budget_monthly_cents integer,
+        spent_monthly_cents integer,
+        pause_reason text,
+        paused_at datetime,
+        permissions text,
+        last_heartbeat_at datetime,
+        metadata text,
+        created_at datetime,
+        updated_at datetime,
+        deleted_at datetime
+    )`).Error
+	if err != nil {
+		t.Fatalf("Failed to migrate test database: %v", err)
+	}
+
+	return db
+}
+
+func TestCreateAgentHandlerWebhook(t *testing.T) {
+	db := setupTestDB(t)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var receivedMethod string
+	var receivedPath string
+	var receivedBody map[string]string
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMethod = r.Method
+		receivedPath = r.URL.Path
+
+		if err := json.NewDecoder(r.Body).Decode(&receivedBody); err == nil {
+			// Body decoded
+		}
+
+		w.WriteHeader(http.StatusOK)
+		wg.Done()
+	}))
+	defer mockServer.Close()
+
+	originalTransport := http.DefaultClient.Transport
+	http.DefaultClient.Transport = &roundTripperFunc{
+		fn: func(req *http.Request) (*http.Response, error) {
+			if strings.HasPrefix(req.URL.Host, "openbrain:") {
+				req.URL.Scheme = "http"
+				req.URL.Host = mockServer.Listener.Addr().String()
+			}
+			return http.DefaultTransport.RoundTrip(req)
+		},
+	}
+	defer func() { http.DefaultClient.Transport = originalTransport }()
+
+	router := chi.NewRouter()
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db))
+
+	agentData := map[string]string{
+        "id": "agent-123",
+		"name": "Test Agent",
+		"role": "Assistant",
+	}
+	bodyBytes, _ := json.Marshal(agentData)
+	req := httptest.NewRequest("POST", "/companies/comp-123/agents", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected status 201, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	c := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(c)
+	}()
+
+	select {
+	case <-c:
+		// success
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Timeout waiting for webhook request")
+	}
+
+	if receivedMethod != "POST" {
+		t.Errorf("Expected method POST, got %s", receivedMethod)
+	}
+	if !strings.Contains(receivedPath, "/internal/v1/namespaces/comp-123/agents") {
+		t.Errorf("Expected path to contain namespace comp-123, got %s", receivedPath)
+	}
+	if receivedBody["agent_id"] == "" {
+		t.Errorf("Expected agent_id in body, got empty")
+	}
+}
+
+func TestDeleteAgentHandlerWebhook(t *testing.T) {
+	db := setupTestDB(t)
+
+	agent := models.Agent{
+		ID:        "agent-123",
+		CompanyID: "comp-123",
+		Name:      "Test Agent",
+		Role:      "Assistant",
+	}
+	db.Create(&agent)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var receivedMethod string
+	var receivedPath string
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMethod = r.Method
+		receivedPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		wg.Done()
+	}))
+	defer mockServer.Close()
+
+	originalTransport := http.DefaultClient.Transport
+	http.DefaultClient.Transport = &roundTripperFunc{
+		fn: func(req *http.Request) (*http.Response, error) {
+			if strings.HasPrefix(req.URL.Host, "openbrain:") {
+				req.URL.Scheme = "http"
+				req.URL.Host = mockServer.Listener.Addr().String()
+			}
+			return http.DefaultTransport.RoundTrip(req)
+		},
+	}
+	defer func() { http.DefaultClient.Transport = originalTransport }()
+
+	router := chi.NewRouter()
+	router.Delete("/agents/{id}", DeleteAgentHandler(db))
+
+	req := httptest.NewRequest("DELETE", "/agents/agent-123", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Expected status 204, got %d", w.Code)
+	}
+
+	c := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(c)
+	}()
+
+	select {
+	case <-c:
+		// success
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Timeout waiting for webhook request")
+	}
+
+	if receivedMethod != "DELETE" {
+		t.Errorf("Expected method DELETE, got %s", receivedMethod)
+	}
+	if !strings.Contains(receivedPath, "/internal/v1/namespaces/comp-123/agents/agent-123") {
+		t.Errorf("Expected path to contain namespace and agent ID, got %s", receivedPath)
+	}
+
+	var count int64
+	db.Model(&models.Agent{}).Where("id = ?", "agent-123").Count(&count)
+	if count != 0 {
+		t.Errorf("Expected agent to be deleted from DB, but found %d", count)
+	}
+}
+
+type roundTripperFunc struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (r *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return r.fn(req)
+}

@@ -15,6 +15,11 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+
   server:
     build:
       context: ..
@@ -34,6 +39,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  openbrain:
+    build:
+      context: ../../openbrain
+      dockerfile: Dockerfile
+    ports:
+      - "3101:3101"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   pgdata:

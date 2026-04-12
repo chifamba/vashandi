@@ -47,22 +47,22 @@ To ensure maximum compatibility and integration flexibility, OpenBrain will supp
 
 These items must be completed before starting OpenBrain epic work.
 
-- [ ] **Task 0.1: Bootstrap OpenBrain Project Structure (GAP-02)**
+- [x] **Task 0.1: Bootstrap OpenBrain Project Structure (GAP-02)**
   - Create standard Go module in `openbrain/` (`go mod init github.com/chifamba/vashandi/openbrain`).
   - Add `openbrain` to the monorepo root `vashandi/go.work`. Note: `go.work` is currently located in `vashandi/`, so we must reference `../openbrain`.
   - Configure `pnpm-workspace.yaml` and CI pipelines if needed.
-- [ ] **Task 0.2: Define OpenBrain Service Topology & Redis Setup (GAP-08)**
+- [x] **Task 0.2: Define OpenBrain Service Topology & Redis Setup (GAP-08)**
   - Update `docker-compose.yml` to include `redis:8-alpine`.
   - Update `docker-compose.yml` to run OpenBrain as a separate service alongside PostgreSQL/pgvector and Vashandi.
-- [ ] **Task 0.3: Define Vashandi ↔ OpenBrain Integration Interface (GAP-01)**
+- [x] **Task 0.3: Define Vashandi ↔ OpenBrain Integration Interface (GAP-01)**
   - Document the exact gRPC protobufs and REST OpenAPI specs for the integration.
   - Detail HTTP/REST, gRPC, and MCP interfaces.
-- [ ] **Task 0.4: OpenBrain Company-Scoped Memory Namespacing (GAP-03)**
+- [x] **Task 0.4: OpenBrain Company-Scoped Memory Namespacing (GAP-03)**
   - Define schema enforcing row-level `namespace_id` (mapping to Vashandi `company_id`) in Postgres and Redis keys.
 
 ## Phase 1 — V1 Completion & Wiring
 
-- [ ] **Task 1.1: Complete Vashandi Go Backend Port (V0.1)**
+- [x] **Task 1.1: Complete Vashandi Go Backend Port (V0.1)**
   - [x] Complete DB model ports (approval comments, logos, etc.).
   - Implement Go HTTP server with all V1 REST routes.
   - Integrate Redis for WebSocket routing and caching.
@@ -76,11 +76,11 @@ These items must be completed before starting OpenBrain epic work.
 
 ## Phase 2 — Safety, Storage & Core Governance
 
-- [ ] **Task 2.1: Implement OpenBrain Vector Storage & Graph Schema (GAP-14)**
+- [x] **Task 2.1: Implement OpenBrain Vector Storage & Graph Schema (GAP-14)**
   - Create Postgres tables with pgvector IVFFlat indexes and adjacency logic.
-- [ ] **Task 2.2: Async Job Infrastructure (Redis)**
+- [x] **Task 2.2: Async Job Infrastructure (Redis)**
   - Setup `redis:8-alpine` message queues in OpenBrain for tier promotion and ingest batches.
-- [ ] **Task 2.3: Sync Agent Lifecycle Events (GAP-06)**
+- [x] **Task 2.3: Sync Agent Lifecycle Events (GAP-06)**
   - Trigger Vashandi webhooks/gRPC calls to OpenBrain on agent creation/archival.
 - [x] **Task 2.4: Fallback Strategy (GAP-10)**
   - [x] Implement circuit breakers in Vashandi's adapter so system degrades gracefully if OpenBrain is down.
