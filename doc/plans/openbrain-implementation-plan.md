@@ -33,6 +33,10 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 | Repository convention sync (brain.md) | ✅ Implemented — `SyncRepositoryDir`, `WatchRepositoryDir`, `.openbrain/brain.md` → L2 ingest, session.md → L1 |
 | Admin Web UI | 🟡 Minimal — server-rendered HTML admin page at `/admin`; full React admin UI not yet built |
 | OpenBrain in Vashandi Docker Compose | ✅ `openbrain` service added to `vashandi/docker/docker-compose.yml` |
+| Delete edge endpoint (`DELETE /api/v1/memories/edges/:edgeId`) | ✅ Implemented |
+| Agent registry GET/PATCH endpoints | ✅ Implemented |
+| Namespace lifecycle endpoints (`POST/DELETE /internal/v1/namespaces`) | ✅ Implemented |
+| MCP trust tier enforcement | ✅ Implemented — HTTP path propagates token actor; stdio callers provide trustTier in params |
 | golang-migrate SQL migrations | ❌ Not implemented — uses GORM AutoMigrate; no versioned SQL migration files |
 | pgxpool connection pool | ❌ Not implemented — uses GORM default connection pool |
 | CI build/test step for OpenBrain | ❌ Not added to CI |
@@ -154,6 +158,7 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] `POST /api/v1/memories/search` — vector similarity search + keyword filter (in-process scoring)
   - [x] `POST /api/v1/memories/edges` — create relationship
   - [x] `GET /api/v1/memories/:id/edges` — get related entities
+  - [x] `DELETE /api/v1/memories/edges/:edgeId` — delete a relationship edge
   - [ ] Async embedding generation via OpenAI (currently uses local FNV hash-based embeddings)
 
 ### Phase OB-2 — Multi-Tier Memory Lifecycle
@@ -180,8 +185,13 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] `registered_agents` table (GORM model)
   - [x] Trust tier permissions: Tier 1 (Read), Tier 2 (Contributor), Tier 3 (Curator), Tier 4 (Admin)
   - [x] Namespace authorization middleware enforces token→namespace scoping (unregistered agents get 403 on namespace mismatch)
+  - [x] `POST /internal/v1/namespaces` — create namespace (called by Vashandi on company creation)
+  - [x] `DELETE /internal/v1/namespaces/:namespaceId` — archive namespace, export all memories (called by Vashandi on company archive)
   - [x] `POST /internal/v1/namespaces/:namespaceId/agents` — register agent
   - [x] `DELETE /internal/v1/namespaces/:namespaceId/agents/:agentId` — deregister agent
+  - [x] `GET /api/v1/agents` — list active agents in namespace
+  - [x] `GET /api/v1/agents/:agentId` — get agent by ID
+  - [x] `PATCH /api/v1/agents/:agentId` — update trust tier or recall profile
   - [x] Lower-trust agents: content redacted for L2/L3 entities above their tier
 - [x] **OB-3.2: Immutable Audit Log**
   - [x] `memory_audit_log` table (append-only at application level)
@@ -246,7 +256,7 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] Tool: `memory_browse`
   - [x] Tool: `context_compile`
   - [x] All tool calls log to `memory_audit_log` via service layer
-  - [ ] Trust tier enforcement in MCP layer (MCP handlers use TrustTier 4 unconditionally)
+  - [x] Trust tier enforcement — HTTP path uses authenticated token actor; stdio callers include `trustTier` in params (defaults to read-only Tier 1)
 - [x] **OB-6.3: Repository Convention Synchronization**
   - [x] Watch `.openbrain/brain.md` and `.openbrain/session.md` within directories
   - [x] Changes to `brain.md` → ingest as L2 entities with `provenance.kind = file_sync`

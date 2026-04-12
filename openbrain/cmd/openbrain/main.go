@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"google.golang.org/grpc"
+	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/openbrain/db/models"
 	"github.com/chifamba/vashandi/openbrain/internal/brain"
@@ -89,7 +90,10 @@ func runServer() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	service.StartBackgroundJobs(ctx)
-	app := &application{service: service, mcpServer: mcppkg.NewServer(service)}
+	app := &application{service: service, mcpServer: mcppkg.NewServerWithActorExtractor(service, func(r *http.Request) (brain.Actor, bool) {
+		actor := actorFromRequest(r)
+		return actor, true
+	})}
 
 	router := app.routes()
 	httpPort := envDefault("PORT", "3101")
@@ -147,17 +151,21 @@ func (app *application) routes() http.Handler {
 			api.Post("/memories", app.handleCreateMemory)
 			api.Get("/memories", app.handleBrowseMemories)
 			api.Post("/memories/search", app.handleSearchMemories)
+			api.Post("/memories/edges", app.handleCreateEdge)
+			api.Delete("/memories/edges/{edgeId}", app.handleDeleteEdge)
 			api.Get("/memories/{memoryId}", app.handleGetMemory)
 			api.Patch("/memories/{memoryId}", app.handleUpdateMemory)
 			api.Delete("/memories/{memoryId}", app.handleDeleteMemory)
 			api.Get("/memories/{memoryId}/versions", app.handleListVersions)
 			api.Post("/memories/{memoryId}/rollback", app.handleRollbackMemory)
-			api.Post("/memories/edges", app.handleCreateEdge)
 			api.Get("/memories/{memoryId}/edges", app.handleGetEdges)
 			api.Post("/context/compile", app.handleCompileContext)
 			api.Get("/context/pending", app.handlePendingContext)
 			api.Get("/audit/log", app.handleAuditLog)
 			api.Get("/audit/export", app.handleAuditExport)
+			api.Get("/agents", app.handleListAgents)
+			api.Get("/agents/{agentId}", app.handleGetAgent)
+			api.Patch("/agents/{agentId}", app.handleUpdateAgent)
 			api.Get("/admin/dashboard", app.handleDashboard)
 			api.Post("/admin/daydream", app.handleDaydream)
 			api.Get("/admin/proposals", app.handleProposalList)
@@ -172,11 +180,15 @@ func (app *application) routes() http.Handler {
 				ns.Post("/proposals/{proposalId}/resolve", app.handleResolveProposal)
 			})
 		})
-		protected.Route("/internal/v1/namespaces/{namespaceId}", func(internal chi.Router) {
-			internal.Post("/agents", app.handleRegisterAgent)
-			internal.Delete("/agents/{agentId}", app.handleDeregisterAgent)
-			internal.Post("/triggers/{triggerType}", app.handleTrigger)
-			internal.Post("/sync", app.handleSync)
+		protected.Route("/internal/v1", func(internal chi.Router) {
+			internal.Post("/namespaces", app.handleCreateNamespace)
+			internal.Delete("/namespaces/{namespaceId}", app.handleArchiveNamespace)
+			internal.Route("/namespaces/{namespaceId}", func(ns chi.Router) {
+				ns.Post("/agents", app.handleRegisterAgent)
+				ns.Delete("/agents/{agentId}", app.handleDeregisterAgent)
+				ns.Post("/triggers/{triggerType}", app.handleTrigger)
+				ns.Post("/sync", app.handleSync)
+			})
 		})
 		protected.Route("/v1/namespaces/{namespaceId}", func(legacy chi.Router) {
 			legacy.Post("/memories", app.handleLegacyIngest)
@@ -389,6 +401,110 @@ func (app *application) handleGetEdges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, edges)
+}
+
+func (app *application) handleDeleteEdge(w http.ResponseWriter, r *http.Request) {
+	actor := actorFromRequest(r)
+	namespaceID := namespaceFromPayload(r.URL.Query().Get("namespaceId"), actor.NamespaceID)
+	if !maybeNamespaceAuthorized(w, r, namespaceID) {
+		return
+	}
+	if err := app.service.DeleteEdge(r.Context(), actor, namespaceID, chi.URLParam(r, "edgeId")); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+}
+
+func (app *application) handleListAgents(w http.ResponseWriter, r *http.Request) {
+	actor := actorFromRequest(r)
+	namespaceID := namespaceFromPayload(r.URL.Query().Get("namespaceId"), actor.NamespaceID)
+	if !maybeNamespaceAuthorized(w, r, namespaceID) {
+		return
+	}
+	agents, err := app.service.ListAgents(r.Context(), actor, namespaceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, agents)
+}
+
+func (app *application) handleGetAgent(w http.ResponseWriter, r *http.Request) {
+	actor := actorFromRequest(r)
+	namespaceID := namespaceFromPayload(r.URL.Query().Get("namespaceId"), actor.NamespaceID)
+	if !maybeNamespaceAuthorized(w, r, namespaceID) {
+		return
+	}
+	agent, err := app.service.GetRegisteredAgent(r.Context(), namespaceID, chi.URLParam(r, "agentId"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, agent)
+}
+
+func (app *application) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+	actor := actorFromRequest(r)
+	namespaceID := namespaceFromPayload(r.URL.Query().Get("namespaceId"), actor.NamespaceID)
+	if !maybeNamespaceAuthorized(w, r, namespaceID) {
+		return
+	}
+	var patch map[string]any
+	if err := decodeJSON(r, &patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	agent, err := app.service.UpdateAgent(r.Context(), actor, namespaceID, chi.URLParam(r, "agentId"), patch)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	writeJSON(w, http.StatusOK, agent)
+}
+
+func (app *application) handleCreateNamespace(w http.ResponseWriter, r *http.Request) {
+	actor := actorFromRequest(r)
+	var body struct {
+		NamespaceID string         `json:"namespaceId"`
+		CompanyID   string         `json:"companyId"`
+		Settings    map[string]any `json:"settings"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ns, err := app.service.CreateNamespace(r.Context(), actor, body.NamespaceID, body.CompanyID, body.Settings)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	writeJSON(w, http.StatusCreated, ns)
+}
+
+func (app *application) handleArchiveNamespace(w http.ResponseWriter, r *http.Request) {
+	actor := actorFromRequest(r)
+	namespaceID := chi.URLParam(r, "namespaceId")
+	if !maybeNamespaceAuthorized(w, r, namespaceID) {
+		return
+	}
+	export, err := app.service.ArchiveNamespace(r.Context(), actor, namespaceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="namespace-`+namespaceID+`-export.json"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(export)
 }
 
 func (app *application) handleCompileContext(w http.ResponseWriter, r *http.Request) {
