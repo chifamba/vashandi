@@ -1,43 +1,43 @@
 package main
+
 import (
 	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"github.com/go-chi/chi/v5"
+
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/chifamba/vashandi/openbrain/internal/brain"
+	mcppkg "github.com/chifamba/vashandi/openbrain/internal/mcp"
 )
+
 func TestContextCompileAndTriggers(t *testing.T) {
-	r := chi.NewRouter()
-	r.Post("/v1/namespaces/{namespaceId}/context/compile", func(w http.ResponseWriter, r *http.Request) {
-		namespaceID := chi.URLParam(r, "namespaceId")
-		var req struct {
-			AgentID      string `json:"agentId"`
-			TaskQuery    string `json:"taskQuery"`
-		}
-		json.NewDecoder(r.Body).Decode(&req)
-		type Snippet struct { ID string `json:"id"`; Text string `json:"text"` }
-		snippets := []Snippet{{ID: "1", Text: "memory 1 matching " + req.TaskQuery + " for " + namespaceID}}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{"snippets": snippets, "tokenCount": 10})
-	})
-	r.Post("/v1/namespaces/{namespaceId}/triggers/run_start", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "run_start_triggered"})
-	})
-	reqBody := map[string]interface{}{"agentId": "test", "taskQuery": "test-query", "tokenBudget": 100}
-	bodyBytes, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest("POST", "/v1/namespaces/test-namespace/context/compile", bytes.NewReader(bodyBytes))
-	rr := httptest.NewRecorder()
-	r.ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusOK, rr.Code)
-	var resp map[string]interface{}
-	json.Unmarshal(rr.Body.Bytes(), &resp)
-	assert.Contains(t, resp, "snippets")
-	req2 := httptest.NewRequest("POST", "/v1/namespaces/test-namespace/triggers/run_start", nil)
-	rr2 := httptest.NewRecorder()
-	r.ServeHTTP(rr2, req2)
-	assert.Equal(t, http.StatusOK, rr2.Code)
+	service := setupService(t)
+	_, err := service.CreateMemory(t.Context(), brain.Actor{Kind: "service", NamespaceID: "ns1", TrustTier: 4}, brain.MemoryPayload{NamespaceID: "ns1", EntityType: "fact", Text: "build failures are often fixed by rerunning migrations", Tier: 1})
+	require.NoError(t, err)
+	app := &application{service: service, mcpServer: mcppkg.NewServer(service)}
+	server := httptest.NewServer(app.routes())
+	defer server.Close()
+
+	body, _ := json.Marshal(brain.ContextRequest{NamespaceID: "ns1", AgentID: "agent-1", TaskQuery: "build failures", TokenBudget: 200})
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/context/compile", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer dev_secret_token")
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	assert.Contains(t, payload, "snippets")
+
+	triggerBody, _ := json.Marshal(brain.TriggerRequest{AgentID: "agent-1", TaskQuery: "build failures", TokenBudget: 200})
+	req2, _ := http.NewRequest(http.MethodPost, server.URL+"/internal/v1/namespaces/ns1/triggers/run_start", bytes.NewReader(triggerBody))
+	req2.Header.Set("Authorization", "Bearer dev_secret_token")
+	res2, err := http.DefaultClient.Do(req2)
+	require.NoError(t, err)
+	defer res2.Body.Close()
+	assert.Equal(t, http.StatusOK, res2.StatusCode)
 }

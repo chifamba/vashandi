@@ -1,24 +1,16 @@
 package models
 
-import (
-	"time"
+import "time"
 
-	"gorm.io/gorm"
-)
-
-// Edge represents an adjacency/relationship between two memories
 type Edge struct {
-	ID             string         `gorm:"primaryKey"`
-	NamespaceID    string         `gorm:"index;not null"`
-	SourceMemoryID string         `gorm:"index;not null"`
-	TargetMemoryID string         `gorm:"index;not null"`
-	Weight         float32        `gorm:"not null;default:1.0"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	DeletedAt      gorm.DeletedAt `gorm:"index"`
-
-	// Optional relations
-	SourceMemory Memory `gorm:"foreignKey:SourceMemoryID;constraint:OnDelete:CASCADE"`
-	TargetMemory Memory `gorm:"foreignKey:TargetMemoryID;constraint:OnDelete:CASCADE"`
-	Namespace    Namespace `gorm:"foreignKey:NamespaceID;constraint:OnDelete:CASCADE"`
+	ID           string    `gorm:"primaryKey" json:"id"`
+	NamespaceID  string    `gorm:"index:idx_memory_edges_namespace_from_type,priority:1;index:idx_memory_edges_namespace_to_type,priority:1;not null" json:"namespaceId"`
+	FromEntityID string    `gorm:"index:idx_memory_edges_namespace_from_type,priority:2;not null" json:"fromEntityId"`
+	ToEntityID   string    `gorm:"index:idx_memory_edges_namespace_to_type,priority:2;not null" json:"toEntityId"`
+	EdgeType     string    `gorm:"index:idx_memory_edges_namespace_from_type,priority:3;index:idx_memory_edges_namespace_to_type,priority:3;not null" json:"edgeType"`
+	Weight       float64   `gorm:"not null;default:1" json:"weight"`
+	Metadata     string    `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
+
+func (Edge) TableName() string { return "memory_edges" }

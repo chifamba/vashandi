@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: paperclip
       POSTGRES_PASSWORD: paperclip
@@ -46,6 +46,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3101:3101"
+      - "50051:50051"
+    environment:
+      DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip?sslmode=disable
+      PORT: "3101"
+      GRPC_PORT: "50051"
+      OPENBRAIN_API_KEY: "${OPENBRAIN_API_KEY:-dev_secret_token}"
     depends_on:
       db:
         condition: service_healthy
