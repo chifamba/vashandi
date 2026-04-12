@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companies, companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import type { DeploymentMode } from "@paperclipai/shared";
@@ -107,36 +107,54 @@ export async function claimBoardOwnership(
       .where(and(eq(instanceUserRoles.userId, LOCAL_BOARD_USER_ID), eq(instanceUserRoles.role, "instance_admin")));
 
     const allCompanies = await tx.select({ id: companies.id }).from(companies);
+    if (allCompanies.length === 0) return;
+
+    const companyIds = allCompanies.map((c) => c.id);
+    const existingMemberships = await tx
+      .select({
+        id: companyMemberships.id,
+        companyId: companyMemberships.companyId,
+        status: companyMemberships.status,
+      })
+      .from(companyMemberships)
+      .where(
+        and(
+          inArray(companyMemberships.companyId, companyIds),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, opts.userId),
+        ),
+      );
+
+    const existingByCompanyId = new Map(existingMemberships.map((m) => [m.companyId, m]));
+
+    const toInsert: (typeof companyMemberships.$inferInsert)[] = [];
+    const toUpdateIds: string[] = [];
+
     for (const company of allCompanies) {
-      const existing = await tx
-        .select({ id: companyMemberships.id, status: companyMemberships.status })
-        .from(companyMemberships)
-        .where(
-          and(
-            eq(companyMemberships.companyId, company.id),
-            eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.principalId, opts.userId),
-          ),
-        )
-        .then((rows) => rows[0] ?? null);
+      const existing = existingByCompanyId.get(company.id);
 
       if (!existing) {
-        await tx.insert(companyMemberships).values({
+        toInsert.push({
           companyId: company.id,
           principalType: "user",
           principalId: opts.userId,
           status: "active",
           membershipRole: "owner",
         });
-        continue;
+      } else if (existing.status !== "active") {
+        toUpdateIds.push(existing.id);
       }
+    }
 
-      if (existing.status !== "active") {
-        await tx
-          .update(companyMemberships)
-          .set({ status: "active", membershipRole: "owner", updatedAt: new Date() })
-          .where(eq(companyMemberships.id, existing.id));
-      }
+    if (toInsert.length > 0) {
+      await tx.insert(companyMemberships).values(toInsert);
+    }
+
+    if (toUpdateIds.length > 0) {
+      await tx
+        .update(companyMemberships)
+        .set({ status: "active", membershipRole: "owner", updatedAt: new Date() })
+        .where(inArray(companyMemberships.id, toUpdateIds));
     }
   });
 
