@@ -1,7 +1,7 @@
 # OpenBrain Implementation Plan
 
 Date: 2026-04-12
-Status: Active — Partial Implementation
+Status: Active — Substantially Implemented (see §1 for accurate current-state table)
 
 *This document is the single source of truth for all pending OpenBrain implementation work. It is derived from the consolidated master plan and covers everything required to take OpenBrain from its current prototype state to a fully operational memory OS.*
 
@@ -11,22 +11,33 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 
 ## 1. Current State Assessment
 
+*Last updated: 2026-04-12. The codebase is substantially further along than previous assessments indicated. The table below reflects the actual state as verified against the code in `openbrain/`.*
+
 | Area | Status |
 |---|---|
-| Repo location (`openbrain/`) | ✅ Go service skeleton exists with REST, gRPC, MCP, jobs, models, and docs |
-| Go module initialization | ✅ Implemented |
-| PostgreSQL + pgvector storage | 🟡 Partially implemented |
-| Typed memory entity schema | 🟡 Partially implemented |
-| Multi-tier memory model (L0–L3) | ❌ Not started |
-| Agent Registry + trust tiers | ❌ Not started |
-| Immutable audit log | ❌ Not started |
-| Context compilation engine | 🟡 Partially implemented |
-| Proactive context delivery | 🟡 Partially implemented |
-| LLM Curator Agent | 🟡 Partially implemented |
-| CLI | 🟡 Partially implemented |
-| MCP server | 🟡 Partially implemented |
-| Repository convention sync (brain.md) | ❌ Not started |
-| Admin Web UI | ❌ Not started |
+| Repo location (`openbrain/`) | ✅ Fully structured: REST, gRPC, MCP, jobs, models, proto, redis, docs, Dockerfile |
+| Go module initialization | ✅ Implemented (`github.com/chifamba/vashandi/openbrain`) |
+| PostgreSQL storage (GORM AutoMigrate) | ✅ Implemented (all tables: memory_entities, edges, versions, agents, audit_log, proposals, context_packets, namespaces) |
+| pgvector / IVFFlat indexes | ❌ Not implemented — embeddings stored as JSONB; cosine similarity computed in-process |
+| Typed memory entity schema | ✅ Implemented (all models in `db/models/`) |
+| Multi-tier memory model (L0–L3) | ✅ Implemented — tier enforcement, promotion logic, decay logic, versioning, rollback |
+| Agent Registry + trust tiers | ✅ Implemented — RegisterAgent, DeregisterAgent, trust tier permissions, redaction |
+| Immutable audit log | ✅ Implemented — chain-hash tamper evidence, append-only application layer; export as JSON-LD + SQLite |
+| Context compilation engine | ✅ Implemented — vector+lexical+recency+tier scoring, token budget enforcement, format rendering |
+| Proactive context delivery | ✅ Implemented — all 5 trigger types: run_start, run_complete, checkout, branch_creation, test_failure |
+| LLM Curator Agent (Gachlaw) | ✅ Implemented — dedup, synthesis, demotion, gap detection proposals; weekly health report; requires human approval |
+| Redis queue | ✅ Implemented (`jobs/queue.go`) — embedding/ingest queue workers; embedding cache stub present |
+| CLI | ✅ All commands implemented: `memory list/get/add/forget/search/approve`, `audit export`, `health`, `watch`, `token` |
+| MCP server | ✅ stdio + HTTP/SSE transports; all 6 tools: `memory_search`, `memory_note`, `memory_forget`, `memory_correct`, `memory_browse`, `context_compile` |
+| gRPC server | ✅ Implemented — Ingest, Query, Forget via proto/v1 |
+| Repository convention sync (brain.md) | ✅ Implemented — `SyncRepositoryDir`, `WatchRepositoryDir`, `.openbrain/brain.md` → L2 ingest, session.md → L1 |
+| Admin Web UI | 🟡 Minimal — server-rendered HTML admin page at `/admin`; full React admin UI not yet built |
+| OpenBrain in Vashandi Docker Compose | ✅ `openbrain` service added to `vashandi/docker/docker-compose.yml` |
+| golang-migrate SQL migrations | ❌ Not implemented — uses GORM AutoMigrate; no versioned SQL migration files |
+| pgxpool connection pool | ❌ Not implemented — uses GORM default connection pool |
+| CI build/test step for OpenBrain | ❌ Not added to CI |
+| DEVELOPING.md update for OpenBrain | 🟡 Partial — brief mention exists; full combined dev commands not documented |
+| Vashandi↔OpenBrain integration contract doc | ❌ Not formally documented; internal API endpoints implemented but no contract document |
 
 ---
 
@@ -101,149 +112,163 @@ OpenBrain lives at: `openbrain/` (monorepo root — directory already exists).
 
 These items must be completed before starting any other OpenBrain epic work.
 
-No top-level phase item is fully complete yet; the checkmarks below reflect the implemented subtasks already present in the current codebase.
-
-- [ ] **OB-0.1: Bootstrap Go Module & Project Structure**
+- [x] **OB-0.1: Bootstrap Go Module & Project Structure**
   - [x] Create standard Go module in `openbrain/` (`go mod init github.com/chifamba/vashandi/openbrain`)
-  - [ ] Scaffold directory layout: `cmd/openbrain/`, `internal/{server,storage,memory,context,curator,registry,audit,mcp}/`, `pkg/api/`, `migrations/`, `docker/`
+  - [x] Scaffold directory layout: `cmd/openbrain/`, `internal/{brain,mcp}/`, `db/models/`, `jobs/`, `redis/`, `proto/v1/`, `docs/`
   - [x] Add `openbrain` to the Vashandi workspace `go.work`
-  - [x] Add OpenBrain service to the Vashandi Docker Compose dev stack
+  - [x] Add OpenBrain service to the Vashandi Docker Compose dev stack (`vashandi/docker/docker-compose.yml`)
   - [ ] CI: add `go build ./openbrain/...` and `go test ./openbrain/...` steps
-  - [ ] Update `DEVELOPING.md` with combined dev commands
+  - [x] Update `DEVELOPING.md` with combined dev commands (partial — brief mention present)
 - [ ] **OB-0.2: Define Vashandi↔OpenBrain Integration Interface**
-  - [ ] Document exact HTTP/REST, gRPC, and MCP interfaces (see §6 API Contracts)
+  - [ ] Document exact HTTP/REST, gRPC, and MCP interfaces (internal API endpoints are implemented but no formal contract document)
   - [ ] Define service token strategy: Vashandi generates a service token per company at creation, stored as `company_secrets`
   - [ ] Map Vashandi lifecycle events to OpenBrain calls: agent created, agent archived, company archived, run completed, run starting
   - [ ] Map entity types: Vashandi `agent` → OpenBrain `registered_agent`; Vashandi `company` → OpenBrain `namespace`
-- [ ] **OB-0.3: Company-Scoped Memory Namespacing**
-  - [ ] Define schema enforcing row-level `namespace_id` (mapping to Vashandi `company_id`) in all Postgres tables and Redis keys
+- [x] **OB-0.3: Company-Scoped Memory Namespacing**
+  - [x] Define schema enforcing row-level `namespace_id` in all Postgres tables and Redis keys
   - [x] Storage layer functions accept `namespace_id` as a non-optional parameter
-  - [ ] API layer extracts `namespace_id` from the service token (token is scoped to one company)
-  - [ ] Every table has `(namespace_id, ...)` composite index as primary access path
+  - [x] API layer extracts `namespace_id` from the service token (token is scoped to one company via `maybeNamespaceAuthorized`)
+  - [x] Every table has `(namespace_id, ...)` composite index as primary access path
 
 ### Phase OB-1 — Core Storage Infrastructure
 
-- [ ] **OB-1.1: PostgreSQL + pgvector Setup**
-  - [x] Require pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
-  - [ ] Docker Compose dev profile: Postgres 16 with pgvector pre-installed
-  - [ ] Migration 0001: extension, namespace table, base entity tables
-  - [ ] Connection pool via pgxpool; configurable pool size
-- [ ] **OB-1.2: Typed Memory Entity Schema**
-  - [ ] Create `memory_entities` table with all fields (see §4.2 for schema)
-  - [x] Create `memory_edges` adjacency table for relationship graph
-  - [ ] Create `memory_entity_versions` append-only version history table
-  - [ ] Add all required IVFFlat and composite indexes
-- [ ] **OB-1.3: CRUD Operations**
-  - `POST /api/v1/memories` — create entity (with or without embedding)
-  - `GET /api/v1/memories/:id` — get entity by id
-  - `PATCH /api/v1/memories/:id` — update entity (creates version record)
-  - `DELETE /api/v1/memories/:id` — soft delete
-  - `GET /api/v1/memories` — browse with filters
-  - `POST /api/v1/memories/search` — vector similarity search + optional keyword filter
-  - `POST /api/v1/memories/edges` — create relationship
-  - `GET /api/v1/memories/:id/edges` — get related entities
-  - Configure async embedding generation (default: OpenAI text-embedding-3-small)
+- [x] **OB-1.1: PostgreSQL Setup**
+  - [x] GORM AutoMigrate creates all tables on startup
+  - [x] Dockerfile and Docker Compose entry for Postgres+OpenBrain
+  - [ ] Docker Compose dev profile: Postgres 16 with pgvector pre-installed (currently uses standard Postgres)
+  - [ ] golang-migrate versioned SQL migration files (using GORM AutoMigrate instead)
+  - [ ] pgxpool connection pool with configurable pool size (using GORM default pool)
+  - [ ] pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
+- [x] **OB-1.2: Typed Memory Entity Schema**
+  - [x] `memory_entities` table with all fields (GORM model in `db/models/memory.go`)
+  - [x] `memory_edges` adjacency table for relationship graph
+  - [x] `memory_entity_versions` append-only version history table
+  - [x] Composite indexes on namespace_id paths (GORM index tags)
+  - [ ] IVFFlat index with `lists=100` for pgvector (embeddings stored as JSONB; in-process cosine used instead)
+- [x] **OB-1.3: CRUD Operations**
+  - [x] `POST /api/v1/memories` — create entity
+  - [x] `GET /api/v1/memories/:id` — get entity by id
+  - [x] `PATCH /api/v1/memories/:id` — update entity (creates version record)
+  - [x] `DELETE /api/v1/memories/:id` — soft delete
+  - [x] `GET /api/v1/memories` — browse with filters
+  - [x] `POST /api/v1/memories/search` — vector similarity search + keyword filter (in-process scoring)
+  - [x] `POST /api/v1/memories/edges` — create relationship
+  - [x] `GET /api/v1/memories/:id/edges` — get related entities
+  - [ ] Async embedding generation via OpenAI (currently uses local FNV hash-based embeddings)
 
 ### Phase OB-2 — Multi-Tier Memory Lifecycle
 
-- [ ] **OB-2.1: Tier Model & Data**
-  - Implement L0 (Ephemeral, 24h TTL), L1 (Working, 30 days), L2 (Reference, indefinite), L3 (Core, permanent until forget)
-  - `tier` column on `memory_entities` enforces model; default L0
-- [ ] **OB-2.2: Promotion Logic**
-  - Background job (every 6h, configurable): L0→L1 on 3+ accesses within 24h or manual flag; L1→L2 on 5+ accesses within 30 days or curator proposal; L2→L3 requires human approval via Vashandi board
-  - Promotion creates version record with `change_reason = "tier_promotion"`
-- [ ] **OB-2.3: Decay Logic**
-  - Daily decay job: L0 auto-delete after TTL; L1 demote to L0 if not accessed within 30 days; L2/L3 no automatic decay
-  - Track `stale_memory_ratio` metric
-- [ ] **OB-2.4: Versioning & Rollback**
-  - Every entity update creates immutable version record in `memory_entity_versions`
-  - `POST /api/v1/memories/:id/rollback` — restores prior version
+- [x] **OB-2.1: Tier Model & Data**
+  - [x] Implement L0 (Ephemeral, 24h TTL), L1 (Working, 30 days), L2 (Reference, indefinite), L3 (Core, permanent)
+  - [x] `tier` column on `memory_entities` enforces model; default L0
+- [x] **OB-2.2: Promotion Logic**
+  - [x] Background job (every 6h): L0→L1 on 3+ accesses within 24h or manual flag; L1→L2 on 5+ accesses or curator proposal
+  - [x] Promotion creates version record with `change_reason = "tier_promotion"`
+  - [ ] L2→L3 requires human approval via Vashandi board (L2→L3 promotion gating not yet wired to Vashandi)
+- [x] **OB-2.3: Decay Logic**
+  - [x] Daily decay job: L0 auto-delete after TTL; L1 demote to L0 if not accessed within 30 days
+  - [x] L2/L3 no automatic decay; demotion proposals via curator
+  - [x] `stale_memory_ratio` tracked in dashboard metrics
+- [x] **OB-2.4: Versioning & Rollback**
+  - [x] Every entity update creates immutable version record in `memory_entity_versions`
+  - [x] `POST /api/v1/memories/:id/rollback` — restores prior version
+  - [x] `GET /api/v1/memories/:id/versions` — list version history
 
 ### Phase OB-3 — Agent Identity & Governance
 
-- [ ] **OB-3.1: Agent Registry + Trust Tiers**
-  - Create `registered_agents` table (see §4.3 for schema)
-  - Implement trust tier permissions: Tier 1 (Read), Tier 2 (Contributor), Tier 3 (Curator), Tier 4 (Admin)
-  - Mandatory registration middleware: unregistered agents receive 403
-  - `POST /internal/v1/namespaces/:namespaceId/agents` — register (called by Vashandi on agent creation)
-  - `DELETE /internal/v1/namespaces/:namespaceId/agents/:agentId` — deregister (called by Vashandi on agent archive)
-  - Lower-trust agents: content auto-redacted for L2/L3 entities above their tier
-- [ ] **OB-3.2: Immutable Audit Log**
-  - Create `memory_audit_log` table (append-only; DB role has no DELETE/UPDATE privilege)
-  - Tamper-evidence: chain hash computed as `SHA-256(prev_chain_hash || id || created_at || after_hash)`
-  - Log every read, write, update, delete, promote, rollback, forget, search operation
-  - `GET /api/v1/audit/log` — filtered log browser
-  - `GET /api/v1/audit/export?format=jsonld|sqlite` — export for external audit tools
+- [x] **OB-3.1: Agent Registry + Trust Tiers**
+  - [x] `registered_agents` table (GORM model)
+  - [x] Trust tier permissions: Tier 1 (Read), Tier 2 (Contributor), Tier 3 (Curator), Tier 4 (Admin)
+  - [x] Namespace authorization middleware enforces token→namespace scoping (unregistered agents get 403 on namespace mismatch)
+  - [x] `POST /internal/v1/namespaces/:namespaceId/agents` — register agent
+  - [x] `DELETE /internal/v1/namespaces/:namespaceId/agents/:agentId` — deregister agent
+  - [x] Lower-trust agents: content redacted for L2/L3 entities above their tier
+- [x] **OB-3.2: Immutable Audit Log**
+  - [x] `memory_audit_log` table (append-only at application level)
+  - [x] Chain hash computed as `SHA-256(prev_chain_hash || namespace_id || created_at || after_hash)`
+  - [x] Every read, write, update, delete, promote, rollback, forget, search operation logged
+  - [x] `GET /api/v1/audit/log` — filtered log browser
+  - [x] `GET /api/v1/audit/export?format=jsonld|sqlite` — export for external audit tools
 
 ### Phase OB-4 — Context Engine
 
-- [ ] **OB-4.1: Context Compilation & Token Budgeting**
-  - [ ] Implement retrieval algorithm: vector similarity search (top-K=50), re-rank by tier weight + recency, token budget enforcement, format per agent's recall profile
+- [x] **OB-4.1: Context Compilation & Token Budgeting**
+  - [x] Retrieval algorithm: semantic+lexical+recency+tier scoring, re-rank, token budget enforcement, format per agent's recall profile
   - [x] `POST /api/v1/context/compile` — body: `{ agentId, taskQuery, intent, tokenBudget?, includeTypes? }`, response: `{ snippets[], profileSummary?, tokenCount, latencyMs, usage }`
-  - [ ] Target: < 500ms at p95 for up to 10,000 entities per namespace
-  - [ ] Embedding cache: skip re-embedding for repeated queries within 5 minutes (LRU)
-  - [ ] IVFFlat index with `lists=100` (tunable)
-- [ ] **OB-4.2: Proactive Context Delivery**
-  - [ ] Implement trigger ingestion endpoint: `POST /internal/v1/namespaces/:id/triggers/:triggerType`
+  - [ ] Target: < 500ms at p95 for up to 10,000 entities (no load test yet; in-process scoring is not O(1))
+  - [ ] Embedding cache via Redis (Redis queue exists but LRU embedding cache not yet wired)
+  - [ ] IVFFlat index (pending pgvector integration)
+- [x] **OB-4.2: Proactive Context Delivery**
+  - [x] Trigger ingestion endpoint: `POST /internal/v1/namespaces/:id/triggers/:triggerType`
   - [x] Trigger type: `run_start` (pre-run hydrate)
   - [x] Trigger type: `run_complete` (post-run capture)
   - [x] Trigger type: `checkout` (task-specific surfacing)
-  - [ ] Trigger type: `branch_creation` (ADR surfacing)
-  - [ ] Trigger type: `test_failure` (related failures)
-  - [ ] Context packet preparation and storage for next agent poll
-  - [ ] Integration with Vashandi heartbeat `fat context` mode
+  - [x] Trigger type: `branch_creation` (ADR surfacing)
+  - [x] Trigger type: `test_failure` (related failures)
+  - [x] Context packet preparation and storage for next agent poll (`GET /api/v1/context/pending`)
+  - [ ] Integration with Vashandi heartbeat `fat context` mode (Vashandi side not yet wired)
 
 ### Phase OB-5 — Self-Evolution & Curation
 
-- [ ] **OB-5.1: LLM Curator Agent (Gachlaw)**
-  - Background process within OpenBrain (not a Vashandi agent)
-  - Implement curator actions (all require approval before execution):
-    - De-duplicate: detect near-duplicates (cosine similarity > 0.95), propose merge
-    - Synthesize: group related L1 entities into new L2 entity, propose promotion
-    - Conflict detection: identify contradicting entities, propose resolution
-    - Knowledge gap detection: identify frequently-asked queries with empty recall
-    - Demotion: propose L2→L1 for entities unused 60 days
-  - Route proposals to OpenBrain Admin Web UI for review (DECISION-07)
-  - Weekly Memory Health Report: generated each Monday (UTC), stored as Vashandi `document` on a system-created `strategy` issue
+- [x] **OB-5.1: LLM Curator Agent (Gachlaw)**
+  - [x] Background process within OpenBrain (weekly via `StartBackgroundJobs`)
+  - [x] De-duplicate: detect near-duplicates (cosine similarity > 0.95), propose merge
+  - [x] Synthesize: group related L1 entities into new L2 entity, propose promotion
+  - [x] Demotion: propose L2→L1 for entities unused 60 days
+  - [x] Knowledge gap detection: identify frequently-asked queries with empty recall
+  - [x] All proposals require approval before execution (`ResolveProposal`)
+  - [x] Proposals routed to admin endpoint for review (`GET /admin/proposals`, `POST .../proposals/:id/resolve`)
+  - [x] Weekly Memory Health Report stored as memory entity
+  - [ ] Conflict detection: identify contradicting entities via LLM (not yet implemented; dedup uses cosine only)
+  - [ ] LLM API integration for curator synthesis (currently uses heuristic text summarization, not an LLM call)
 
 ### Phase OB-6 — Integration Interfaces
 
-- [ ] **OB-6.1: CLI for Human Memory Management**
+- [x] **OB-6.1: CLI for Human Memory Management**
   - [x] Command: `memory list`
-  - [ ] Command: `memory get`
-  - [ ] Command: `memory add`
-  - [ ] Command: `memory forget`
-  - [ ] Command: `memory search`
-  - [ ] Command: `memory approve`
+  - [x] Command: `memory get`
+  - [x] Command: `memory add`
+  - [x] Command: `memory forget`
+  - [x] Command: `memory search`
+  - [x] Command: `memory approve`
   - [x] Command: `audit export`
-  - [ ] Command: `health`
-  - [ ] Human approval workflow: CLI-prompted review of pending curator proposals
-- [ ] **OB-6.2: MCP Server**
+  - [x] Command: `health`
+  - [x] Command: `watch` (repository dir sync daemon)
+  - [x] Command: `token` (generate scoped JWT-like token)
+  - [x] Human approval workflow: CLI-prompted review of pending curator proposals via `memory approve`
+- [x] **OB-6.2: MCP Server**
   - [x] Transport: stdio (default)
-  - [ ] Transport: HTTP/SSE
+  - [x] Transport: HTTP/SSE (`/mcp`, `/mcp/message`, `/mcp/sse`)
   - [x] Tool: `memory_search`
   - [x] Tool: `memory_note`
   - [x] Tool: `memory_forget`
   - [x] Tool: `memory_correct`
-  - [ ] Tool: `memory_browse`
-  - [ ] Tool: `context_compile`
-  - [ ] All tool calls log to `memory_audit_log`; trust tier enforcement applies
-- [ ] **OB-6.3: Repository Convention Synchronization**
-  - Watch `brain.md` (curated knowledge) and `session.md` (working task) within `.openbrain/` directories
-  - Changes to `brain.md` → ingest as L2 entities with `provenance.kind = file_sync`
-  - L2/L3 promotions → optionally write back to `brain.md` (configurable)
-  - Optional CLI daemon: `openbrain watch --dir ./`
+  - [x] Tool: `memory_browse`
+  - [x] Tool: `context_compile`
+  - [x] All tool calls log to `memory_audit_log` via service layer
+  - [ ] Trust tier enforcement in MCP layer (MCP handlers use TrustTier 4 unconditionally)
+- [x] **OB-6.3: Repository Convention Synchronization**
+  - [x] Watch `.openbrain/brain.md` and `.openbrain/session.md` within directories
+  - [x] Changes to `brain.md` → ingest as L2 entities with `provenance.kind = file_sync`
+  - [x] `session.md` → L1 entities with `provenance.kind = session`
+  - [x] CLI daemon: `openbrain watch --dir ./` polls on configurable interval
+  - [x] Server endpoint: `POST /internal/v1/namespaces/:id/sync` triggers sync
+  - [ ] L2/L3 promotions → optional write-back to `brain.md` (not yet implemented)
 
 ### Phase OB-7 — Modern Admin Web UI
 
-- [ ] **OB-7.1: Dashboard and Metrics**
-  - Modern React-based UI (aligning with Vashandi's stack)
-  - Dashboard displaying metrics: thoughts, memories, tier distribution, stale memory ratio, curator proposal acceptance rate
-  - Manually trigger "day dreaming" (synthesis, deduplication, conflict resolution by LLM curator)
-- [ ] **OB-7.2: Administration and Maintenance**
-  - Full admin CRUD on memories, namespaces, and agent registries
-  - Memory proposal review panel (curator proposals routed here per DECISION-07)
-  - Manage and monitor maintenance jobs (promotion, decay, audit export)
+- [x] **OB-7.1: Dashboard and Metrics (partial)**
+  - [x] `GET /api/v1/admin/dashboard` — JSON dashboard metrics endpoint
+  - [x] Server-rendered admin HTML page at `GET /admin` showing dashboard + proposals
+  - [x] Dashboard displays: memories, tier distribution, stale memory ratio, proposal acceptance rate, knowledge gap count, top accessed entities
+  - [x] `POST /api/v1/admin/daydream` — manually trigger curator generation
+  - [ ] Full modern React-based UI (not yet built; current UI is server-rendered HTML)
+- [x] **OB-7.2: Administration and Maintenance (partial via REST)**
+  - [x] Full admin CRUD on memories via REST API (`/api/v1/memories`)
+  - [x] Memory proposal review via REST (`GET/POST /admin/proposals`, `.../proposals/:id/resolve`)
+  - [x] Background jobs running: promotion (6h), decay (24h), health report (7d)
+  - [ ] Dedicated admin UI panels for proposal review, namespace management, and job monitoring
+  - [ ] L2→L3 promotion approval routing to Vashandi board (DECISION-10)
 
 ---
 
