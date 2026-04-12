@@ -7,3 +7,5 @@ use ./backend/db
 use ./backend/server
 
 use ./backend/cmd/paperclipai
+
+use ../openbrain
