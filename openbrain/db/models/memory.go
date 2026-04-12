@@ -20,7 +20,7 @@ type Memory struct {
 	SyncPath       string     `gorm:"index" json:"syncPath,omitempty"`
 	Title          string     `json:"title,omitempty"`
 	Text           string     `gorm:"type:text;not null" json:"text"`
-	Embedding      string     `gorm:"type:jsonb;not null;default:'[]'" json:"embedding"`
+	Embedding      string     `gorm:"type:vector(1536)" json:"embedding"`
 	Provenance     string     `gorm:"type:jsonb;not null;default:'{}'" json:"provenance"`
 	Identity       string     `gorm:"type:jsonb;not null;default:'{}'" json:"identity"`
 	Metadata       string     `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
@@ -44,7 +44,7 @@ type MemoryVersion struct {
 	Version      int       `gorm:"index:idx_memory_versions_namespace_entity_version,priority:3;not null" json:"version"`
 	Title        string    `json:"title,omitempty"`
 	Text         string    `gorm:"type:text;not null" json:"text"`
-	Embedding    string    `gorm:"type:jsonb;not null;default:'[]'" json:"embedding"`
+	Embedding    string    `gorm:"type:vector(1536)" json:"embedding"`
 	Metadata     string    `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
 	Provenance   string    `gorm:"type:jsonb;not null;default:'{}'" json:"provenance"`
 	Identity     string    `gorm:"type:jsonb;not null;default:'{}'" json:"identity"`

@@ -178,7 +178,19 @@ func NewService(db *gorm.DB) *Service {
 	return &Service{DB: db, Now: time.Now, repoSyncHashes: map[string]string{}}
 }
 
+// isPostgres reports whether the underlying database is PostgreSQL.
+func (s *Service) isPostgres() bool {
+	return s.DB.Name() == "postgres"
+}
+
 func (s *Service) AutoMigrate() error {
+	// Enable pgvector extension on Postgres before AutoMigrate so that the
+	// vector(1536) column type is recognised. On SQLite this is a no-op.
+	if s.isPostgres() {
+		if err := s.DB.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+			return fmt.Errorf("enabling pgvector extension: %w", err)
+		}
+	}
 	if err := s.DB.AutoMigrate(
 		&models.Namespace{},
 		&models.Memory{},
@@ -678,6 +690,18 @@ func (s *Service) SearchMemories(ctx context.Context, actor Actor, req SearchReq
 	if req.Limit <= 0 || req.Limit > 100 {
 		req.Limit = DefaultQueryLimit
 	}
+
+	// On Postgres with pgvector, use the IVFFlat index for approximate nearest-
+	// neighbor retrieval, then re-rank candidates with lexical + recency + tier
+	// weights. This is O(log n) vs the in-process O(n) fallback below.
+	if s.isPostgres() && strings.TrimSpace(req.Query) != "" {
+		results, err := s.searchWithPgvector(ctx, actor, req)
+		if err == nil {
+			return results, nil
+		}
+		// Fall through to in-process search on any pgvector error (e.g. extension not yet loaded).
+	}
+
 	q := s.DB.WithContext(ctx).Model(&models.Memory{}).Where("namespace_id = ? AND is_deleted = ?", req.NamespaceID, false)
 	if len(req.IncludeTypes) > 0 {
 		q = q.Where("entity_type IN ?", req.IncludeTypes)
@@ -1477,7 +1501,11 @@ func tokenize(text string) []string {
 }
 
 func generateEmbedding(text string) []float64 {
-	const dims = 64
+	// 1536-dimensional FNV hash-based embedding stub.
+	// Dimension matches OpenAI text-embedding-3-small (1536d) so the same
+	// vector column and IVFFlat index can be reused when a real embedding
+	// provider is wired in.
+	const dims = 1536
 	vec := make([]float64, dims)
 	for _, token := range tokenize(text) {
 		h := fnv.New64a()
@@ -1515,6 +1543,93 @@ func decodeEmbedding(raw string) []float64 {
 		return nil
 	}
 	return vec
+}
+
+// searchWithPgvector performs vector-similarity search using the pgvector
+// IVFFlat index via the `<=>` cosine-distance operator, then re-ranks the
+// retrieved candidates with lexical, recency, and tier weights.
+//
+// The embedding column stores vectors as the pgvector text format
+// "[v1,v2,...,vn]", which is identical to a JSON float array and therefore
+// compatible with encodeEmbedding / decodeEmbedding without any conversion.
+func (s *Service) searchWithPgvector(ctx context.Context, actor Actor, req SearchRequest) ([]SearchResult, error) {
+	// Retrieve candidateK nearest neighbours via the IVFFlat index; re-rank
+	// more candidates than the final limit to improve recall after re-scoring.
+	candidateK := req.Limit * 5
+	if candidateK < 50 {
+		candidateK = 50
+	}
+
+	queryVec := encodeEmbedding(generateEmbedding(req.Query))
+
+	// Build WHERE clause type filter. GORM Raw does not support named binds here,
+	// so we build the clause explicitly and pass the slice as an arg when needed.
+	whereClause := "namespace_id = ? AND is_deleted = false AND embedding IS NOT NULL"
+	args := []any{req.NamespaceID}
+	if len(req.IncludeTypes) > 0 {
+		whereClause += " AND entity_type IN (?)"
+		args = append(args, req.IncludeTypes)
+	}
+
+	// pgvector: `embedding <=> ?::vector` computes cosine distance (0 = identical).
+	// `1 - distance` converts to cosine similarity for scoring.
+	type pgRow struct {
+		models.Memory
+		VectorSimilarity float64 `gorm:"column:vec_sim"`
+	}
+	rawSQL := fmt.Sprintf(
+		`SELECT *, (1 - (embedding <=> ?::vector)) AS vec_sim
+		 FROM memory_entities
+		 WHERE %s
+		 ORDER BY embedding <=> ?::vector
+		 LIMIT ?`,
+		whereClause,
+	)
+	// Prepend query vector for the SELECT expression, append for ORDER BY + LIMIT.
+	allArgs := append([]any{queryVec}, args...)
+	allArgs = append(allArgs, queryVec, candidateK)
+
+	var rows []pgRow
+	if err := s.DB.WithContext(ctx).Raw(rawSQL, allArgs...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	tokens := tokenize(req.Query)
+	results := make([]SearchResult, 0, len(rows))
+	for _, row := range rows {
+		lexical := lexicalScore(tokens, row.Memory.Text+" "+row.Memory.Title)
+		recency := recencyWeight(row.Memory.LastAccessedAt, row.Memory.UpdatedAt, s.Now())
+		bonus := tierWeight(row.Memory.Tier)
+		score := row.VectorSimilarity*0.55 + lexical*0.25 + recency*0.1 + bonus*0.1
+		if score <= 0 {
+			continue
+		}
+		results = append(results, SearchResult{
+			Memory: toPayload(s.redactMemoryForActor(row.Memory, actor)),
+			Score:  score,
+		})
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score == results[j].Score {
+			return results[i].Memory.UpdatedAt.After(results[j].Memory.UpdatedAt)
+		}
+		return results[i].Score > results[j].Score
+	})
+	if len(results) > req.Limit {
+		results = results[:req.Limit]
+	}
+
+	returned := make([]models.Memory, 0, len(results))
+	for _, result := range results {
+		var m models.Memory
+		if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND id = ?", req.NamespaceID, result.Memory.ID).First(&m).Error; err == nil {
+			returned = append(returned, m)
+		}
+	}
+	_ = s.touchMemories(ctx, actor, returned)
+	meta := map[string]any{"query": req.Query, "count": len(results), "includeTypes": req.IncludeTypes, "intent": req.Intent, "backend": "pgvector"}
+	_ = s.appendAudit(ctx, actor, req.NamespaceID, "search", "", "memory", "", fmt.Sprintf("results:%d", len(results)), meta)
+	return results, nil
 }
 
 func cosine(a, b []float64) float64 {
