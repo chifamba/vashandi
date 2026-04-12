@@ -95,15 +95,16 @@ The two products must be designed and sequenced together because OpenBrain is th
 
 | Layer | Technology |
 |---|---|
-| API server | Node.js/TypeScript (Express) → **migrating to Go** (chi router, pgx, sqlc) |
+| API server | Node.js/TypeScript (Express) → **migrating to Go 1.26+** (chi router, pgx, sqlc) |
 | UI | React + Vite + TanStack Query — unchanged |
-| Database | PostgreSQL (embedded PGlite for local dev, Docker Postgres for prod-like) |
+| Database | PostgreSQL 18-alpine (embedded PGlite for local dev, Docker Postgres for prod-like) |
 | ORM/query layer | Drizzle (TS side) + pgx/sqlc (Go side) |
 | Migrations | Drizzle Kit (TS) / golang-migrate (Go) |
 | Realtime | WebSockets (gorilla/websocket in Go) |
 | CLI | cobra + charmbracelet/huh (Go) |
 | Plugin runtime | TypeScript plugin SDK (existing) — Go plugin host TBD |
 | Testing | Vitest (unit), Playwright (e2e) |
+| Infra | solution currently hosted using docker compose |
 
 ### 3.2 OpenBrain Stack
 
