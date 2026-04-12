@@ -1,51 +1,30 @@
 package routes
-
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
-	"strings"
-
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
-
-	"github.com/chifamba/paperclip/backend/server/services"
 )
-
-type ChatRequest struct {
-	Message string `json:"message"`
+func RegisterChatRoutes(r chi.Router, db *gorm.DB) {
+	r.Post("/ceo/chat", CeoChatIngestionHandler(db))
 }
-
-func IngestChatHandler(db *gorm.DB) http.HandlerFunc {
-	adapter := services.NewOpenBrainAdapter()
+func CeoChatIngestionHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
-
-		var req ChatRequest
+		var req struct{ Message string `json:"message"` }
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		lowerMsg := strings.ToLower(req.Message)
-		// Basic NLP keyword matching for strategy context
-		if strings.Contains(lowerMsg, "strategy") || strings.Contains(lowerMsg, "goal") || strings.Contains(lowerMsg, "priority") || strings.Contains(lowerMsg, "vision") {
-			metadata := map[string]string{
-				"source": "ceo_chat",
-				"type":   "strategy",
-			}
-
-			err := adapter.IngestMemory(r.Context(), companyID, req.Message, metadata)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]string{"status": "ingested_as_strategy"})
-			return
-		}
-
+		obReq := map[string]interface{}{"records": []map[string]interface{}{{"text": req.Message, "metadata": map[string]string{"type": "strategy", "source": "ceo_chat"}}}}
+		obBody, _ := json.Marshal(obReq)
+		obURL := "http://localhost:3101/v1/namespaces/" + companyID + "/memories"
+		httpReq, _ := http.NewRequest("POST", obURL, bytes.NewBuffer(obBody))
+		httpReq.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		client.Do(httpReq)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ignored_low_value"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ingested"})
 	}
 }
