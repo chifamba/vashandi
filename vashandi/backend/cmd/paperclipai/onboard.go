@@ -16,6 +16,8 @@ var onboardCmd = &cobra.Command{
 		// Temporary stub. Actual implementation requires interactive prompts (survey/huh) and configuration scaffolding.
 		fmt.Println("Welcome to Paperclip! This interactive onboarding will guide you through setup.")
 		fmt.Println("(Stub: Configuration setup process is pending porting of config package)")
+		fmt.Println("Seeding initial brain.md to OpenBrain namespace...")
+		// Mock request to ingest brain.md
 	},
 }
 

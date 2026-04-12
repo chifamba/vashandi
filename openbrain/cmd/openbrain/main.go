@@ -179,6 +179,63 @@ func main() {
 	})
 
 	// REST Forget
+	// Context Engine
+	r.Post("/v1/namespaces/{namespaceId}/context/compile", func(w http.ResponseWriter, r *http.Request) {
+		namespaceID := chi.URLParam(r, "namespaceId")
+		var req struct {
+			AgentID     string `json:"agentId"`
+			TaskQuery   string `json:"taskQuery"`
+			Intent      string `json:"intent"`
+			TokenBudget int    `json:"tokenBudget"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var memories []models.Memory
+		queryStr := "%" + req.TaskQuery + "%"
+		limit := 50
+		if err := db.Where("namespace_id = ? AND text LIKE ?", namespaceID, queryStr).Limit(limit).Find(&memories).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		type Snippet struct {
+			ID   string `json:"id"`
+			Text string `json:"text"`
+		}
+		var snippets []Snippet
+		tokenCount := 0
+		for _, mem := range memories {
+			cost := len(mem.Text) / 4
+			if cost == 0 {
+				cost = 1
+			}
+			if req.TokenBudget > 0 && tokenCount+cost > req.TokenBudget {
+				break
+			}
+			snippets = append(snippets, Snippet{ID: mem.ID, Text: mem.Text})
+			tokenCount += cost
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{"snippets": snippets, "tokenCount": tokenCount, "latencyMs": 10})
+	})
+
+	r.Post("/v1/namespaces/{namespaceId}/triggers/run_start", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "run_start_triggered"})
+	})
+
+	r.Post("/v1/namespaces/{namespaceId}/triggers/run_complete", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "run_complete_triggered"})
+	})
+
+	r.Post("/v1/namespaces/{namespaceId}/triggers/checkout", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "checkout_triggered"})
+	})
+
 	r.Delete("/v1/namespaces/{namespaceId}/memories", func(w http.ResponseWriter, r *http.Request) {
 		namespaceID := chi.URLParam(r, "namespaceId")
 
