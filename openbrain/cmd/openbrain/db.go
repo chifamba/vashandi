@@ -30,6 +30,7 @@ func InitDB() *gorm.DB {
 		&models.Namespace{},
 		&models.Memory{},
 		&models.Edge{},
+		&models.Proposal{},
 	)
 
 	if err != nil {

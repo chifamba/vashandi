@@ -89,17 +89,17 @@ These items must be completed before starting OpenBrain epic work.
 
 ## Phase 3 — Intelligence Layer & Polish
 
-- [ ] **Task 3.1: Proactive Context Delivery**
+- [x] **Task 3.1: Proactive Context Delivery**
   - Implement pre-run hydration and post-run capture endpoints.
-- [ ] **Task 3.2: LLM Curator Agent & Approvals (GAP-16)**
+- [x] **Task 3.2: LLM Curator Agent & Approvals (GAP-16)**
   - Implement Curator Agent logic in OpenBrain.
   - Route Curator promotion/deduplication proposals to Vashandi UI for human approval.
-- [ ] **Task 3.3: CEO Chat Ingestion (GAP-12)**
+- [x] **Task 3.3: CEO Chat Ingestion (GAP-12)**
   - Build pipeline to classify and ingest high-value strategy context from Vashandi to OpenBrain.
-- [ ] **Task 3.4: Local Dev Setup (GAP-09) & Initial Onboarding (GAP-13)**
+- [x] **Task 3.4: Local Dev Setup (GAP-09) & Initial Onboarding (GAP-13)**
   - Seed new company namespaces from `brain.md` and default READMEs.
   - Finalize combined dev commands (`pnpm dev` handling Go OpenBrain + Go Vashandi + Node UI).
-- [ ] **Task 3.5: External API Stability (GAP-11)**
+- [x] **Task 3.5: External API Stability (GAP-11)**
   - Publish stable v1 REST, gRPC, and MCP endpoints.
 
 
