@@ -63,16 +63,16 @@ These items must be completed before starting OpenBrain epic work.
 ## Phase 1 — V1 Completion & Wiring
 
 - [ ] **Task 1.1: Complete Vashandi Go Backend Port (V0.1)**
-  - Complete DB model ports (approval comments, logos, etc.).
+  - [x] Complete DB model ports (approval comments, logos, etc.).
   - Implement Go HTTP server with all V1 REST routes.
   - Integrate Redis for WebSocket routing and caching.
-- [ ] **Task 1.2: Vashandi Memory Plugin: OpenBrain Adapter (GAP-04)**
-  - Implement the `MemoryAdapter` interface to bridge Vashandi and OpenBrain via REST/gRPC.
-- [ ] **Task 1.3: Agent Identity Federation (GAP-05)**
-  - Define auth mechanism for external API access to OpenBrain (e.g., Agent-scoped JWT).
-- [ ] **Task 1.4: Budget Policies & Enforcement (V0.2) + OpenBrain Costs (GAP-07)**
-  - Implement project-level budgets.
-  - Surface OpenBrain context compilation costs in Vashandi's budget engine.
+- [x] **Task 1.2: Vashandi Memory Plugin: OpenBrain Adapter (GAP-04)**
+  - [x] Implement the `MemoryAdapter` interface to bridge Vashandi and OpenBrain via REST/gRPC.
+- [x] **Task 1.3: Agent Identity Federation (GAP-05)**
+  - [x] Define auth mechanism for external API access to OpenBrain (e.g., Agent-scoped JWT).
+- [x] **Task 1.4: Budget Policies & Enforcement (V0.2) + OpenBrain Costs (GAP-07)**
+  - [x] Implement project-level budgets.
+  - [x] Surface OpenBrain context compilation costs in Vashandi's budget engine.
 
 ## Phase 2 — Safety, Storage & Core Governance
 
@@ -82,10 +82,10 @@ These items must be completed before starting OpenBrain epic work.
   - Setup `redis:8-alpine` message queues in OpenBrain for tier promotion and ingest batches.
 - [ ] **Task 2.3: Sync Agent Lifecycle Events (GAP-06)**
   - Trigger Vashandi webhooks/gRPC calls to OpenBrain on agent creation/archival.
-- [ ] **Task 2.4: Fallback Strategy (GAP-10)**
-  - Implement circuit breakers in Vashandi's adapter so system degrades gracefully if OpenBrain is down.
-- [ ] **Task 2.5: Integration Tests (GAP-15)**
-  - Build cross-system contract verification test suite.
+- [x] **Task 2.4: Fallback Strategy (GAP-10)**
+  - [x] Implement circuit breakers in Vashandi's adapter so system degrades gracefully if OpenBrain is down.
+- [x] **Task 2.5: Integration Tests (GAP-15)**
+  - [x] Build cross-system contract verification test suite.
 
 ## Phase 3 — Intelligence Layer & Polish
 

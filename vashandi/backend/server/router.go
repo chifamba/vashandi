@@ -21,6 +21,16 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 	// Routes
 	r.Get("/health", routes.HealthHandler(db))
 
+	// Company Routes
+	r.Get("/companies", routes.ListCompaniesHandler(db))
+	r.Get("/companies/{id}", routes.GetCompanyHandler(db))
+
+	// Agent Routes
+	r.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
+	r.Get("/agents/{id}", routes.GetAgentHandler(db))
+	r.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db))
+	r.Delete("/agents/{id}", routes.DeleteAgentHandler(db))
+
 	// Dashboard Routes
 	r.Get("/companies/{companyId}/dashboard", routes.DashboardHandler(db))
 
