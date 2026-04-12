@@ -14,7 +14,7 @@ OpenBrain is the dedicated memory service for Vashandi agents.
 ## Running locally
 
 ```sh
-cd /home/runner/work/vashandi/vashandi/openbrain
+cd openbrain
 go test ./...
 go build ./cmd/openbrain
 ./openbrain serve

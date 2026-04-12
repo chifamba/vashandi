@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -617,7 +618,11 @@ func (app *application) handleAdminHTML(w http.ResponseWriter, r *http.Request) 
 	if namespaceID == "" {
 		namespaceID = "default"
 	}
-	page := fmt.Sprintf(`<!doctype html><html><head><title>OpenBrain Admin</title><style>body{font-family:sans-serif;max-width:1000px;margin:2rem auto;padding:0 1rem}pre{background:#111;color:#eee;padding:1rem;overflow:auto}button{padding:.5rem 1rem}</style></head><body><h1>OpenBrain Admin</h1><p>Namespace: <code>%s</code></p><button id="refresh">Refresh</button> <button id="daydream">Day dream</button><h2>Dashboard</h2><pre id="dashboard"></pre><h2>Proposals</h2><pre id="proposals"></pre><script>const headers={Authorization: %q}; async function load(){const dash=await fetch('/api/v1/admin/dashboard?namespaceId=%s',{headers}).then(r=>r.json());document.getElementById('dashboard').textContent=JSON.stringify(dash,null,2);const props=await fetch('/api/v1/admin/proposals?namespaceId=%s',{headers}).then(r=>r.json());document.getElementById('proposals').textContent=JSON.stringify(props,null,2);}document.getElementById('refresh').onclick=load;document.getElementById('daydream').onclick=async()=>{await fetch('/api/v1/admin/daydream',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({namespaceId:%q})});await load();};load();</script></body></html>`, namespaceID, strconv.Quote(r.Header.Get("Authorization")), namespaceID, namespaceID, namespaceID)
+	metrics, _ := app.service.Dashboard(r.Context(), namespaceID)
+	proposals, _ := app.service.ListProposals(r.Context(), actorFromRequest(r), namespaceID, "")
+	metricsJSON, _ := json.MarshalIndent(metrics, "", "  ")
+	proposalsJSON, _ := json.MarshalIndent(proposals, "", "  ")
+	page := fmt.Sprintf(`<!doctype html><html><head><title>OpenBrain Admin</title><style>body{font-family:sans-serif;max-width:1000px;margin:2rem auto;padding:0 1rem}pre{background:#111;color:#eee;padding:1rem;overflow:auto;white-space:pre-wrap}code{background:#f4f4f4;padding:.1rem .3rem}</style></head><body><h1>OpenBrain Admin</h1><p>Namespace: <code>%s</code></p><p>This page is server-rendered to avoid exposing bearer tokens in client-side JavaScript. Use the JSON admin endpoints or CLI for mutating actions such as curator day-dreaming.</p><p>Trigger curator generation with: <code>openbrain --base-url http://localhost:3101 --token YOUR_TOKEN memory approve &lt;proposal-id&gt; --namespace %s</code> or call <code>POST /api/v1/admin/daydream</code>.</p><h2>Dashboard</h2><pre>%s</pre><h2>Proposals</h2><pre>%s</pre></body></html>`, namespaceID, namespaceID, string(metricsJSON), string(proposalsJSON))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(page))
 }

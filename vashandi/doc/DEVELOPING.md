@@ -37,7 +37,7 @@ This starts:
 
 - API server: `http://localhost:3100`
 - UI: served by the API server in dev middleware mode (same origin as API)
-- OpenBrain can be started separately from `/home/runner/work/vashandi/vashandi/openbrain` with `go test ./...`, `go build ./cmd/openbrain`, and `./openbrain serve`
+- OpenBrain can be started separately from the monorepo `openbrain/` directory with `go test ./...`, `go build ./cmd/openbrain`, and `./openbrain serve`
 
 `pnpm dev` runs the server in watch mode and restarts on changes from workspace packages (including adapter packages). Use `pnpm dev:once` to run without file watching.
 

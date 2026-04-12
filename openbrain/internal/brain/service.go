@@ -833,6 +833,8 @@ func (s *Service) RunDecayScan(ctx context.Context, actor Actor) ([]models.Memor
 }
 
 func (s *Service) SyncRepositoryDir(ctx context.Context, actor Actor, namespaceID, dir string) ([]models.Memory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.EnsureNamespace(ctx, namespaceID); err != nil {
 		return nil, err
 	}
@@ -858,10 +860,8 @@ func (s *Service) SyncRepositoryDir(ctx context.Context, actor Actor, namespaceI
 			return err
 		}
 		hash := hashString(string(content))
-		s.mu.Lock()
 		lastHash := s.repoSyncHashes[namespaceID+":"+rel]
 		s.repoSyncHashes[namespaceID+":"+rel] = hash
-		s.mu.Unlock()
 		if lastHash == hash {
 			return nil
 		}
@@ -927,7 +927,7 @@ func (s *Service) Dashboard(ctx context.Context, namespaceID string) (DashboardM
 		metrics.TierDistribution[tier] = count
 	}
 	var stale int64
-	_ = s.DB.WithContext(ctx).Model(&models.Memory{}).Where("namespace_id = ? AND tier = ? AND is_deleted = ? AND created_at < ?", namespaceID, 0, true, s.Now().Add(-24*time.Hour)).Count(&stale).Error
+	_ = s.DB.WithContext(ctx).Model(&models.Memory{}).Where("namespace_id = ? AND tier = ? AND is_deleted = ? AND created_at < ?", namespaceID, 0, false, s.Now().Add(-24*time.Hour)).Count(&stale).Error
 	if metrics.Memories > 0 {
 		metrics.StaleMemoryRatio = float64(stale) / float64(metrics.Memories)
 	}
