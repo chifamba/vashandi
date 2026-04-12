@@ -27,11 +27,11 @@ See also: [OpenBrain Implementation Plan](./openbrain-implementation-plan.md)
 | Plugin system | ✅ Implemented (runtime + SDK) |
 | Go backend port | ✅ Partial — models and routes ported; HTTP server, middleware, CLI, WebSocket, and UI serving remain |
 | Asset/attachment storage | ⚠️ Partial — image-centric, non-image MIME incomplete |
-| Multi-agent parallel dispatch | ❌ Not started |
-| Teams & team-scoped auth | ❌ Not started |
-| Memory service surface | ❌ Not started (spec written in 2026-03-17) |
-| MCP tool management | ❌ Not started |
-| Observability dashboarding | ❌ Not started |
+| Multi-agent parallel dispatch | ✅ Completed |
+| Teams & team-scoped auth | ✅ Completed |
+| Memory service surface | ✅ Completed |
+| MCP tool management | ✅ Completed |
+| Observability dashboarding | ✅ Completed |
 | Guided onboarding V2 | ❌ Not started (spec written) |
 | CEO Chat / command composer | ❌ Not started (spec written) |
 
@@ -80,7 +80,7 @@ See also: [OpenBrain Implementation Plan](./openbrain-implementation-plan.md)
 
 ### Phase V1 — Control Plane Hardening
 
-- [ ] **V1.1: Multi-Agent Parallel Dispatch** (Issue #31, first half)
+- [x] **V1.1: Multi-Agent Parallel Dispatch** (Issue #31, first half)
   - Remove serialized task completion constraint; support concurrent active runs per company
   - Add dispatch coordinator: tracks which agents have active runs, routes new heartbeat ticks
   - Implement parallel task checkout: multiple agents can hold `in_progress` issues simultaneously
@@ -95,13 +95,13 @@ See also: [OpenBrain Implementation Plan](./openbrain-implementation-plan.md)
   - Full traceability: activity log records both sides of handoff
   - `GET /companies/:companyId/issues?status=in_handoff&targetAgent=me`
   - Schema: `issues.status` enum adds `in_handoff`; new `issue_handoffs` table
-- [ ] **V1.3: Teams as First-Class Entity** (Issue #32, first half)
+- [x] **V1.3: Teams as First-Class Entity** (Issue #32, first half)
   - Introduce `teams` table: `id`, `company_id`, `name`, `description`, `lead_agent_id` nullable
   - Introduce `team_memberships` table: `id`, `company_id`, `team_id`, `agent_id`, `role` (enum: `lead | member`)
   - Teams are organizational groupings within a company (do not replace the org tree)
   - Board can create, update, and archive teams
   - UI: team management page under company settings
-- [ ] **V1.4: Team-Scoped Authorization** (Issue #32, second half)
+- [x] **V1.4: Team-Scoped Authorization** (Issue #32, second half)
   - Scope agent API key access to team-owned resources (optional flag per company)
   - Team budget: `team_budgets` table; enforcement mirrors agent-level policy
   - Agent cannot access issues assigned to agents outside their team when team isolation mode is on
@@ -109,7 +109,7 @@ See also: [OpenBrain Implementation Plan](./openbrain-implementation-plan.md)
 
 ### Phase V2 — Intelligence Layer
 
-- [ ] **V2.1: Memory Service Surface** (Issue #33)
+- [x] **V2.1: Memory Service Surface** (Issue #33)
   - Data model: `memory_bindings`, `memory_binding_targets`, `memory_operations` tables
   - API: `GET/POST /companies/:companyId/memory/bindings`, `PATCH/DELETE /memory/bindings/:bindingId`, `GET /companies/:companyId/memory/operations`, `POST /companies/:companyId/memory/{query,write,forget}`
   - Automatic hooks: pre-run hydrate (before heartbeat invoke) and post-run capture (after run completes)
@@ -121,7 +121,7 @@ See also: [OpenBrain Implementation Plan](./openbrain-implementation-plan.md)
   - Memory operations carry team namespace if agent is team-member and team isolation is active
   - Pre-run hydrate scoped to agent's team by default; configurable per binding
   - `memory_operations` log includes `team_id` field when team context is active
-- [ ] **V2.3: MCP Tool Access Control** (Issue #34, first requirement)
+- [x] **V2.3: MCP Tool Access Control** (Issue #34, first requirement)
   - `mcp_tool_definitions` table: `id`, `company_id`, `name`, `description`, `schema jsonb`, `source`
   - `mcp_entitlement_profiles` table: `id`, `company_id`, `name`, `tool_ids uuid[]`
   - `agent_mcp_entitlements` table: `id`, `company_id`, `agent_id`, `profile_id`
@@ -146,7 +146,7 @@ See also: [OpenBrain Implementation Plan](./openbrain-implementation-plan.md)
 
 ### Phase V3 — Platform Maturity
 
-- [ ] **V3.1: Platform Observability Dashboarding** (Issue #35)
+- [x] **V3.1: Platform Observability Dashboarding** (Issue #35)
   - Company-level dashboard endpoint: active/running/paused/error agent counts, open/in-progress/blocked/done issue counts, month-to-date spend and budget utilization, pending approvals count, team health summary, memory hit rate, MCP invocation counts
   - `GET /api/platform/metrics` (board-only, across all companies)
   - Live activity feed via WebSocket: `ws://host/api/ws/companies/:companyId/activity`
