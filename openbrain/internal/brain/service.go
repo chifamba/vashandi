@@ -74,6 +74,7 @@ type MemoryPayload struct {
 	NamespaceID string         `json:"namespaceId,omitempty"`
 	TeamID      string         `json:"teamId,omitempty"`
 	EntityType  string         `json:"entityType,omitempty"`
+	SyncPath    string         `json:"syncPath,omitempty"`
 	Title       string         `json:"title,omitempty"`
 	Text        string         `json:"text"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
@@ -391,6 +392,7 @@ func (s *Service) CreateMemory(ctx context.Context, actor Actor, input MemoryPay
 		NamespaceID:    input.NamespaceID,
 		TeamID:         input.TeamID,
 		EntityType:     firstNonEmpty(input.EntityType, "note"),
+		SyncPath:       firstNonEmpty(input.SyncPath, stringFromMap(input.Metadata, "sync_path")),
 		Title:          input.Title,
 		Text:           strings.TrimSpace(input.Text),
 		Embedding:      embedding,
@@ -486,6 +488,7 @@ func (s *Service) UpdateMemory(ctx context.Context, actor Actor, namespaceID, me
 	}
 	if v, ok := patch["metadata"].(map[string]any); ok {
 		memory.Metadata = mustJSON(v, "{}")
+		memory.SyncPath = firstNonEmpty(stringFromMap(v, "sync_path"), memory.SyncPath)
 	}
 	if v, ok := patch["provenance"].(map[string]any); ok {
 		memory.Provenance = mustJSON(v, "{}")
@@ -1009,10 +1012,10 @@ func exportAuditSQLite(logs []models.AuditLog) ([]byte, string, error) {
 
 func (s *Service) upsertSyncedMemory(ctx context.Context, actor Actor, namespaceID, path, content, kind string, tier int) (models.Memory, error) {
 	var memories []models.Memory
-	if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND metadata LIKE ?", namespaceID, "%\"sync_path\":\""+strings.ReplaceAll(path, "\"", "")+"\"%").Find(&memories).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND sync_path = ?", namespaceID, path).Find(&memories).Error; err != nil {
 		return models.Memory{}, err
 	}
-	payload := MemoryPayload{NamespaceID: namespaceID, EntityType: "note", Title: filepath.Base(path), Text: content, Tier: tier, Metadata: map[string]any{"sync_path": path, "sync_kind": kind}, Provenance: map[string]any{"kind": kind, "path": path}, Identity: map[string]any{"createdVia": "file_sync", "createdByAgentId": actor.AgentID}}
+	payload := MemoryPayload{NamespaceID: namespaceID, EntityType: "note", SyncPath: path, Title: filepath.Base(path), Text: content, Tier: tier, Metadata: map[string]any{"sync_path": path, "sync_kind": kind}, Provenance: map[string]any{"kind": kind, "path": path}, Identity: map[string]any{"createdVia": "file_sync", "createdByAgentId": actor.AgentID}}
 	if len(memories) == 0 {
 		return s.CreateMemory(ctx, actor, payload)
 	}
@@ -1456,7 +1459,7 @@ func cosine(a, b []float64) float64 {
 }
 
 func toPayload(memory models.Memory) MemoryPayload {
-	return MemoryPayload{ID: memory.ID, NamespaceID: memory.NamespaceID, TeamID: memory.TeamID, EntityType: memory.EntityType, Title: memory.Title, Text: memory.Text, Metadata: decodeJSONMap(memory.Metadata), Provenance: decodeJSONMap(memory.Provenance), Identity: decodeJSONMap(memory.Identity), Tier: memory.Tier, Version: memory.Version, AccessCount: memory.AccessCount, CreatedAt: memory.CreatedAt, UpdatedAt: memory.UpdatedAt}
+	return MemoryPayload{ID: memory.ID, NamespaceID: memory.NamespaceID, TeamID: memory.TeamID, EntityType: memory.EntityType, SyncPath: memory.SyncPath, Title: memory.Title, Text: memory.Text, Metadata: decodeJSONMap(memory.Metadata), Provenance: decodeJSONMap(memory.Provenance), Identity: decodeJSONMap(memory.Identity), Tier: memory.Tier, Version: memory.Version, AccessCount: memory.AccessCount, CreatedAt: memory.CreatedAt, UpdatedAt: memory.UpdatedAt}
 }
 
 func toProposalPayload(proposal models.Proposal) ProposalPayload {
@@ -1539,6 +1542,16 @@ func mergeMap(base, extra map[string]any) map[string]any {
 		result[k] = v
 	}
 	return result
+}
+
+func stringFromMap(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	if value, ok := values[key].(string); ok {
+		return value
+	}
+	return ""
 }
 
 func defaultMap(value map[string]any) map[string]any {

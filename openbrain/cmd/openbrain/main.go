@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
@@ -623,9 +624,9 @@ func (app *application) handleAdminHTML(w http.ResponseWriter, r *http.Request) 
 	proposals, _ := app.service.ListProposals(r.Context(), actorFromRequest(r), namespaceID, "")
 	metricsJSON, _ := json.MarshalIndent(metrics, "", "  ")
 	proposalsJSON, _ := json.MarshalIndent(proposals, "", "  ")
-	page := fmt.Sprintf(`<!doctype html><html><head><title>OpenBrain Admin</title><style>body{font-family:sans-serif;max-width:1000px;margin:2rem auto;padding:0 1rem}pre{background:#111;color:#eee;padding:1rem;overflow:auto;white-space:pre-wrap}code{background:#f4f4f4;padding:.1rem .3rem}</style></head><body><h1>OpenBrain Admin</h1><p>Namespace: <code>%s</code></p><p>This page is server-rendered to avoid exposing bearer tokens in client-side JavaScript. Use the JSON admin endpoints or CLI for mutating actions such as curator day-dreaming.</p><p>Trigger curator generation with: <code>openbrain --base-url http://localhost:3101 --token YOUR_TOKEN memory approve &lt;proposal-id&gt; --namespace %s</code> or call <code>POST /api/v1/admin/daydream</code>.</p><h2>Dashboard</h2><pre>%s</pre><h2>Proposals</h2><pre>%s</pre></body></html>`, namespaceID, namespaceID, string(metricsJSON), string(proposalsJSON))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(page))
+	page := template.Must(template.New("admin").Parse(`<!doctype html><html><head><title>OpenBrain Admin</title><style>body{font-family:sans-serif;max-width:1000px;margin:2rem auto;padding:0 1rem}pre{background:#111;color:#eee;padding:1rem;overflow:auto;white-space:pre-wrap}code{background:#f4f4f4;padding:.1rem .3rem}</style></head><body><h1>OpenBrain Admin</h1><p>Namespace: <code>{{.Namespace}}</code></p><p>This page is server-rendered to avoid exposing bearer tokens in client-side JavaScript. Use the JSON admin endpoints or CLI for mutating actions such as curator day-dreaming.</p><p>Trigger curator generation with: <code>openbrain --base-url http://localhost:3101 --token YOUR_TOKEN memory approve &lt;proposal-id&gt; --namespace {{.Namespace}}</code> or call <code>POST /api/v1/admin/daydream</code>.</p><h2>Dashboard</h2><pre>{{.Metrics}}</pre><h2>Proposals</h2><pre>{{.Proposals}}</pre></body></html>`))
+	_ = page.Execute(w, map[string]string{"Namespace": namespaceID, "Metrics": string(metricsJSON), "Proposals": string(proposalsJSON)})
 }
 
 func (app *application) handleLegacyIngest(w http.ResponseWriter, r *http.Request) {

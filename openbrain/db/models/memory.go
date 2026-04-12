@@ -17,6 +17,7 @@ type Memory struct {
 	NamespaceID    string     `gorm:"index:idx_memory_namespace_type_tier,priority:1;index:idx_memory_namespace_updated,priority:1;not null" json:"namespaceId"`
 	TeamID         string     `gorm:"index" json:"teamId,omitempty"`
 	EntityType     string     `gorm:"index:idx_memory_namespace_type_tier,priority:2;not null" json:"entityType"`
+	SyncPath       string     `gorm:"index" json:"syncPath,omitempty"`
 	Title          string     `json:"title,omitempty"`
 	Text           string     `gorm:"type:text;not null" json:"text"`
 	Embedding      string     `gorm:"type:jsonb;not null;default:'[]'" json:"embedding"`

@@ -19,6 +19,15 @@ type Server struct {
 	out     io.Writer
 }
 
+var supportedTools = []string{
+	"memory_search",
+	"memory_note",
+	"memory_forget",
+	"memory_correct",
+	"memory_browse",
+	"context_compile",
+}
+
 type Request struct {
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params"`
@@ -116,7 +125,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	announce := map[string]any{"tools": []string{"memory_search", "memory_note", "memory_forget", "memory_correct", "memory_browse", "context_compile"}, "transport": "http+sse"}
+	announce := map[string]any{"tools": supportedTools, "transport": "http+sse"}
 	body, _ := json.Marshal(announce)
 	fmt.Fprintf(w, "event: ready\ndata: %s\n\n", body)
 	flusher.Flush()
