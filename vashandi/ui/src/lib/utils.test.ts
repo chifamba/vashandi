@@ -72,19 +72,19 @@ describe("utils", () => {
     });
 
     it("returns 'just now' for very recent dates", () => {
-      expect(relativeTime(now - 10 * 1000)).toBe("just now");
+      expect(relativeTime(new Date(now - 10 * 1000))).toBe("just now");
     });
 
     it("returns minutes ago", () => {
-      expect(relativeTime(now - 5 * 60 * 1000)).toBe("5m ago");
+      expect(relativeTime(new Date(now - 5 * 60 * 1000))).toBe("5m ago");
     });
 
     it("returns hours ago", () => {
-      expect(relativeTime(now - 3 * 60 * 60 * 1000)).toBe("3h ago");
+      expect(relativeTime(new Date(now - 3 * 60 * 60 * 1000))).toBe("3h ago");
     });
 
     it("returns days ago", () => {
-      expect(relativeTime(now - 2 * 24 * 60 * 60 * 1000)).toBe("2d ago");
+      expect(relativeTime(new Date(now - 2 * 24 * 60 * 60 * 1000))).toBe("2d ago");
     });
 
     it("falls back to formatDate for older dates", () => {
