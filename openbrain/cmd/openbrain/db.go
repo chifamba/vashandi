@@ -36,6 +36,13 @@ func InitDB() *gorm.DB {
 	if err != nil {
 		log.Fatalf("failed to parse DATABASE_URL: %v", err)
 	}
+	// Pool sizing defaults are calibrated for a typical single-node OpenBrain
+	// deployment alongside Vashandi (shared Postgres, moderate memory write/read
+	// throughput). Tune via env vars for high-traffic or multi-tenant deployments.
+	// DB_MAX_CONNS: max concurrent connections (default 20; match Postgres max_connections/4).
+	// DB_MIN_CONNS: always-open idle connections (default 2; keeps TCP warm).
+	// DB_MAX_CONN_IDLE_SECS: close idle conns after N seconds (default 300).
+	// DB_MAX_CONN_LIFETIME_SECS: force-recycle conns after N seconds (default 1800).
 	poolCfg.MaxConns = envInt32("DB_MAX_CONNS", 20)
 	poolCfg.MinConns = envInt32("DB_MIN_CONNS", 2)
 	poolCfg.MaxConnIdleTime = envDuration("DB_MAX_CONN_IDLE_SECS", 5*time.Minute)
@@ -85,7 +92,8 @@ func runMigrations(sqlDB *sql.DB) error {
 		return fmt.Errorf("creating migrator: %w", err)
 	}
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("applying migrations: %w", err)
+		v, dirty, _ := m.Version()
+		return fmt.Errorf("applying migrations (at version %d, dirty=%v): %w", v, dirty, err)
 	}
 	v, _, _ := m.Version()
 	slog.Info("database migrations applied", "version", v)

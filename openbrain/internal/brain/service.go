@@ -36,6 +36,27 @@ const (
 	Tier0TTL                 = 24 * time.Hour
 	Tier1DecayWindow         = 30 * 24 * time.Hour
 	Tier2DemotionWindow      = 60 * 24 * time.Hour
+
+	// pgvector re-ranking constants.
+	// pgvectorCandidateMultiplier controls how many ANN candidates are fetched
+	// from the IVFFlat index before lexical+recency+tier re-ranking. Higher
+	// values improve recall at the cost of re-ranking work.
+	pgvectorCandidateMultiplier = 5
+	// pgvectorMinCandidates is the floor for candidateK regardless of the
+	// requested limit, preventing very small fetches that hurt recall.
+	pgvectorMinCandidates = 50
+
+	// Scoring weights for the composite score:
+	//   semantic (vector similarity): 0.55
+	//   lexical (token overlap):      0.25
+	//   recency (time decay):         0.10
+	//   tier bonus:                   0.10
+	// These match the in-process fallback in SearchMemories to keep results
+	// consistent across backends.
+	scoreWeightSemantic = 0.55
+	scoreWeightLexical  = 0.25
+	scoreWeightRecency  = 0.10
+	scoreWeightTier     = 0.10
 )
 
 type Service struct {
@@ -718,7 +739,7 @@ func (s *Service) SearchMemories(ctx context.Context, actor Actor, req SearchReq
 		lexical := lexicalScore(tokens, memory.Text+" "+memory.Title)
 		recency := recencyWeight(memory.LastAccessedAt, memory.UpdatedAt, s.Now())
 		bonus := tierWeight(memory.Tier)
-		score := semantic*0.55 + lexical*0.25 + recency*0.1 + bonus*0.1
+		score := semantic*scoreWeightSemantic + lexical*scoreWeightLexical + recency*scoreWeightRecency + bonus*scoreWeightTier
 		if strings.TrimSpace(req.Query) == "" {
 			score = recency + bonus
 		}
@@ -1553,11 +1574,11 @@ func decodeEmbedding(raw string) []float64 {
 // "[v1,v2,...,vn]", which is identical to a JSON float array and therefore
 // compatible with encodeEmbedding / decodeEmbedding without any conversion.
 func (s *Service) searchWithPgvector(ctx context.Context, actor Actor, req SearchRequest) ([]SearchResult, error) {
-	// Retrieve candidateK nearest neighbours via the IVFFlat index; re-rank
-	// more candidates than the final limit to improve recall after re-scoring.
-	candidateK := req.Limit * 5
-	if candidateK < 50 {
-		candidateK = 50
+	// Retrieve candidateK nearest neighbours via the IVFFlat index, then
+	// re-rank more candidates than the final limit to improve recall.
+	candidateK := req.Limit * pgvectorCandidateMultiplier
+	if candidateK < pgvectorMinCandidates {
+		candidateK = pgvectorMinCandidates
 	}
 
 	queryVec := encodeEmbedding(generateEmbedding(req.Query))
@@ -1572,7 +1593,11 @@ func (s *Service) searchWithPgvector(ctx context.Context, actor Actor, req Searc
 	}
 
 	// pgvector: `embedding <=> ?::vector` computes cosine distance (0 = identical).
-	// `1 - distance` converts to cosine similarity for scoring.
+	// `1 - distance` converts to cosine similarity for the final score.
+	//
+	// ORDER BY must reference the raw `<=>` expression (not the alias) for
+	// PostgreSQL to use the IVFFlat index path. The database optimizer evaluates
+	// the identical expression in SELECT and ORDER BY once per row.
 	type pgRow struct {
 		models.Memory
 		VectorSimilarity float64 `gorm:"column:vec_sim"`
@@ -1596,18 +1621,26 @@ func (s *Service) searchWithPgvector(ctx context.Context, actor Actor, req Searc
 
 	tokens := tokenize(req.Query)
 	results := make([]SearchResult, 0, len(rows))
+	// rawMemories collects the underlying Memory for touchMemories (access stats).
+	rawMemories := make([]models.Memory, 0, len(rows))
 	for _, row := range rows {
 		lexical := lexicalScore(tokens, row.Memory.Text+" "+row.Memory.Title)
 		recency := recencyWeight(row.Memory.LastAccessedAt, row.Memory.UpdatedAt, s.Now())
 		bonus := tierWeight(row.Memory.Tier)
-		score := row.VectorSimilarity*0.55 + lexical*0.25 + recency*0.1 + bonus*0.1
+		score := row.VectorSimilarity*scoreWeightSemantic +
+			lexical*scoreWeightLexical +
+			recency*scoreWeightRecency +
+			bonus*scoreWeightTier
 		if score <= 0 {
 			continue
 		}
+		// row.Memory already contains the full entity from the pgvector query;
+		// no additional per-row database round-trip is needed.
 		results = append(results, SearchResult{
 			Memory: toPayload(s.redactMemoryForActor(row.Memory, actor)),
 			Score:  score,
 		})
+		rawMemories = append(rawMemories, row.Memory)
 	}
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {
@@ -1617,16 +1650,10 @@ func (s *Service) searchWithPgvector(ctx context.Context, actor Actor, req Searc
 	})
 	if len(results) > req.Limit {
 		results = results[:req.Limit]
+		rawMemories = rawMemories[:req.Limit]
 	}
 
-	returned := make([]models.Memory, 0, len(results))
-	for _, result := range results {
-		var m models.Memory
-		if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND id = ?", req.NamespaceID, result.Memory.ID).First(&m).Error; err == nil {
-			returned = append(returned, m)
-		}
-	}
-	_ = s.touchMemories(ctx, actor, returned)
+	_ = s.touchMemories(ctx, actor, rawMemories)
 	meta := map[string]any{"query": req.Query, "count": len(results), "includeTypes": req.IncludeTypes, "intent": req.Intent, "backend": "pgvector"}
 	_ = s.appendAudit(ctx, actor, req.NamespaceID, "search", "", "memory", "", fmt.Sprintf("results:%d", len(results)), meta)
 	return results, nil
