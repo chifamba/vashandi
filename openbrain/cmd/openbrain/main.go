@@ -75,6 +75,7 @@ func main() {
 		}
 		return
 	}
+	// No subcommand means container/server mode; CLI actions are always invoked explicitly.
 	if err := runServer(); err != nil {
 		slog.Error("openbrain server failed", "error", err)
 		os.Exit(1)

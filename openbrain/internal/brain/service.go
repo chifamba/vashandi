@@ -30,6 +30,12 @@ const (
 	DefaultAuthSecret        = "dev_secret_token"
 	DefaultQueryLimit        = 10
 	DefaultContextCandidateK = 50
+	Tier0PromotionThreshold  = 3
+	Tier1PromotionThreshold  = 5
+	Tier0PromotionWindow     = 24 * time.Hour
+	Tier0TTL                 = 24 * time.Hour
+	Tier1DecayWindow         = 30 * 24 * time.Hour
+	Tier2DemotionWindow      = 60 * 24 * time.Hour
 )
 
 type Service struct {
@@ -799,7 +805,7 @@ func (s *Service) RunDecayScan(ctx context.Context, actor Actor) ([]models.Memor
 		modified := false
 		switch memory.Tier {
 		case 0:
-			if memory.CreatedAt.Before(now.Add(-24 * time.Hour)) {
+			if memory.CreatedAt.Before(now.Add(-Tier0TTL)) {
 				memory.IsDeleted = true
 				modified = true
 			}
@@ -808,7 +814,7 @@ func (s *Service) RunDecayScan(ctx context.Context, actor Actor) ([]models.Memor
 			if memory.LastAccessedAt != nil {
 				last = *memory.LastAccessedAt
 			}
-			if last.Before(now.Add(-30 * 24 * time.Hour)) {
+			if last.Before(now.Add(-Tier1DecayWindow)) {
 				memory.Tier = 0
 				if decayAt := computeDecayAt(0, now); !decayAt.IsZero() {
 					memory.DecayAt = &decayAt
@@ -927,7 +933,7 @@ func (s *Service) Dashboard(ctx context.Context, namespaceID string) (DashboardM
 		metrics.TierDistribution[tier] = count
 	}
 	var stale int64
-	_ = s.DB.WithContext(ctx).Model(&models.Memory{}).Where("namespace_id = ? AND tier = ? AND is_deleted = ? AND created_at < ?", namespaceID, 0, false, s.Now().Add(-24*time.Hour)).Count(&stale).Error
+	_ = s.DB.WithContext(ctx).Model(&models.Memory{}).Where("namespace_id = ? AND tier = ? AND is_deleted = ? AND created_at < ?", namespaceID, 0, false, s.Now().Add(-Tier0TTL)).Count(&stale).Error
 	if metrics.Memories > 0 {
 		metrics.StaleMemoryRatio = float64(stale) / float64(metrics.Memories)
 	}
@@ -1064,10 +1070,10 @@ func (s *Service) evaluatePromotion(ctx context.Context, actor Actor, memory mod
 	now := s.Now().UTC()
 	promoted := false
 	switch {
-	case memory.Tier == 0 && (memory.AccessCount >= 3 || memory.ManualPromote) && memory.CreatedAt.After(now.Add(-24*time.Hour)):
+	case memory.Tier == 0 && (memory.AccessCount >= Tier0PromotionThreshold || memory.ManualPromote) && memory.CreatedAt.After(now.Add(-Tier0PromotionWindow)):
 		memory.Tier = 1
 		promoted = true
-	case memory.Tier == 1 && (memory.AccessCount >= 5 || memory.ManualPromote):
+	case memory.Tier == 1 && (memory.AccessCount >= Tier1PromotionThreshold || memory.ManualPromote):
 		memory.Tier = 2
 		promoted = true
 	}
@@ -1180,7 +1186,7 @@ func (s *Service) demotionProposals(ctx context.Context, namespaceID string, mem
 		if memory.LastAccessedAt != nil {
 			last = *memory.LastAccessedAt
 		}
-		if last.After(now.Add(-60 * 24 * time.Hour)) {
+		if last.After(now.Add(-Tier2DemotionWindow)) {
 			continue
 		}
 		proposal, err := s.createProposalIfMissing(ctx, models.Proposal{NamespaceID: namespaceID, ProposalType: "demote", MemoryIDs: mustJSON([]string{memory.ID}, "[]"), Summary: fmt.Sprintf("Demote stale reference memory %s", memory.ID), SuggestedText: memory.Text, Status: "pending", Details: mustJSON(map[string]any{"reason": "unused_60_days"}, "{}")})
@@ -1269,9 +1275,9 @@ func (s *Service) requireDeleteTrust(actor Actor) error {
 func computeDecayAt(tier int, now time.Time) time.Time {
 	switch tier {
 	case 0:
-		return now.Add(24 * time.Hour)
+		return now.Add(Tier0TTL)
 	case 1:
-		return now.Add(30 * 24 * time.Hour)
+		return now.Add(Tier1DecayWindow)
 	default:
 		return time.Time{}
 	}
