@@ -1,3 +1,5 @@
+import { getAvailableCLIAdapters } from "../../adapters/index.js";
+import type { CLIAdapterModule } from "@paperclipai/adapter-utils";
 import { Command } from "commander";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -371,19 +373,21 @@ export function buildSelectedFilesFromImportSelection(
 
 export function buildDefaultImportAdapterOverrides(
   preview: Pick<CompanyPortabilityPreviewResult, "manifest" | "selectedAgentSlugs">,
+  selectedAdapterType?: string,
 ): Record<string, { adapterType: string }> | undefined {
   const selectedAgentSlugs = new Set(preview.selectedAgentSlugs);
   const overrides = Object.fromEntries(
     preview.manifest.agents
       .filter((agent) => selectedAgentSlugs.size === 0 || selectedAgentSlugs.has(agent.slug))
       .filter((agent) => agent.adapterType === "process")
-      .map((agent) => [
-        agent.slug,
-        {
-          // TODO: replace this temporary claude_local fallback with adapter selection in the import TUI.
-          adapterType: "claude_local",
-        },
-      ]),
+      .map((agent) => {
+        if (!selectedAdapterType) return null;
+        return [
+          agent.slug,
+          { adapterType: selectedAdapterType },
+        ];
+      })
+      .filter((entry): entry is [string, { adapterType: string }] => entry !== null),
   );
   return Object.keys(overrides).length > 0 ? overrides : undefined;
 }
@@ -1381,7 +1385,40 @@ export function registerCompanyCommands(program: Command): void {
           if (!preview) {
             throw new Error("Import preview returned no data.");
           }
-          const adapterOverrides = buildDefaultImportAdapterOverrides(preview);
+
+          let selectedAdapterType: string | undefined;
+          const agentsArray = Array.isArray(preview.manifest.agents) ? preview.manifest.agents : Object.values(preview.manifest.agents || {});
+          const needsAdapterSelection = agentsArray.some((agent: any) =>
+            (preview.selectedAgentSlugs.length === 0 || preview.selectedAgentSlugs.includes(agent.slug)) &&
+            agent.adapterType === "process"
+          );
+
+          if (interactiveView && needsAdapterSelection && !opts.yes) {
+             const availableAdapters = getAvailableCLIAdapters().filter((a: CLIAdapterModule) => a.type !== "process" && a.type !== "http");
+             const adapterChoice = await p.select({
+                message: "Select an adapter to use for imported process agents",
+                options: [
+                  ...availableAdapters.map((a: CLIAdapterModule) => ({
+                    value: a.type,
+                    label: a.type.replace(/_/g, " ")
+                  })),
+                  { value: "skip", label: "Use original process adapter (may fail if process is missing)" }
+                ]
+             });
+
+             if (p.isCancel(adapterChoice)) {
+                p.cancel("Import cancelled.");
+                process.exit(0);
+             }
+
+             if (adapterChoice !== "skip") {
+                selectedAdapterType = adapterChoice as string;
+             }
+          } else if (needsAdapterSelection && opts.yes) {
+             selectedAdapterType = "claude_local";
+          }
+
+          const adapterOverrides = buildDefaultImportAdapterOverrides(preview, selectedAdapterType);
           const adapterMessages = buildDefaultImportAdapterMessages(adapterOverrides);
 
           if (opts.dryRun) {
