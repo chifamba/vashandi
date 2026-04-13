@@ -29,7 +29,7 @@ export function resolveServerDevWatchIgnorePaths(serverRoot: string): string[] {
     "../ui/.vite",
     "../ui/dist",
     // npm install during reinstall would trigger a restart mid-request
-    // if tsx watch sees the new files. Exclude the managed plugins dir.
+    // whenever tsx watch sees the new files. Exclude the managed plugins dir.
     process.env.HOME + "/.paperclip/adapter-plugins",
   ]) {
     addIgnorePath(ignorePaths, path.resolve(serverRoot, relativePath));
