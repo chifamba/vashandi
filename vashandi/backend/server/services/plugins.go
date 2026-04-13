@@ -10,11 +10,15 @@ import (
 )
 
 type PluginService struct {
-	DB *gorm.DB
+	DB       *gorm.DB
+	Activity *ActivityService
 }
 
-func NewPluginService(db *gorm.DB) *PluginService {
-	return &PluginService{DB: db}
+func NewPluginService(db *gorm.DB, activity *ActivityService) *PluginService {
+	return &PluginService{
+		DB:       db,
+		Activity: activity,
+	}
 }
 
 // ListPlugins returns all installed plugins.
@@ -41,12 +45,28 @@ func (s *PluginService) GetPluginManifest(ctx context.Context, pluginKey string)
 	return manifest, nil
 }
 
-// UpdatePluginStatus updates the operational status of a plugin.
+// UpdatePluginStatus updates the operational status of a plugin and logs the change.
 func (s *PluginService) UpdatePluginStatus(ctx context.Context, pluginKey string, status string, lastError *string) error {
-	return s.DB.WithContext(ctx).Model(&models.Plugin{}).
+	err := s.DB.WithContext(ctx).Model(&models.Plugin{}).
 		Where("plugin_key = ?", pluginKey).
 		Updates(map[string]interface{}{
 			"status":     status,
 			"last_error": lastError,
 		}).Error
+
+	if err == nil && s.Activity != nil {
+		_, _ = s.Activity.Log(ctx, LogEntry{
+			CompanyID:  "system", // Plugins are often system-wide or belong to a specific context
+			ActorType:  "system",
+			ActorID:    "system",
+			Action:     "plugin.status_updated",
+			EntityType: "plugin",
+			EntityID:   pluginKey,
+			Details: map[string]interface{}{
+				"status": status,
+				"error":  lastError,
+			},
+		})
+	}
+	return err
 }

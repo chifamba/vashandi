@@ -9,8 +9,8 @@ import (
 )
 
 // ListPluginsHandler returns a list of installed plugins
-func ListPluginsHandler(db *gorm.DB) http.HandlerFunc {
-	service := services.NewPluginService(db)
+func ListPluginsHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
+	service := services.NewPluginService(db, activity)
 	return func(w http.ResponseWriter, r *http.Request) {
 		plugins, err := service.ListPlugins(r.Context())
 		if err != nil {

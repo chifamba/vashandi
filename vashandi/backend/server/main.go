@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/cors"
 	"gorm.io/gorm"
 
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 )
 
@@ -20,13 +21,8 @@ type App struct {
 }
 
 func NewApp(db *gorm.DB) *App {
-	r := chi.NewRouter()
-
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-
+	r := SetupRouter(db)
+	
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -35,27 +31,6 @@ func NewApp(db *gorm.DB) *App {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
-
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	// API Group
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Get("/companies", routes.ListCompaniesHandler(db))
-		r.Get("/companies/{id}", routes.GetCompanyHandler(db))
-		r.Post("/companies", routes.CreateCompanyHandler(db))
-
-		// Heartbeat Routes
-		r.Route("/heartbeat", func(r chi.Router) {
-			r.Post("/wakeup", routes.HeartbeatWakeupHandler(db))
-			r.Get("/runs", routes.ListHeartbeatRunsHandler(db))
-		})
-
-		// Plugin Routes
-		r.Get("/plugins", routes.ListPluginsHandler(db))
-	})
 
 	return &App{
 		Router: r,

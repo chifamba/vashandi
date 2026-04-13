@@ -28,9 +28,10 @@ type HeartbeatService struct {
 	Logs       *RunLogStore
 	Costs      *CostService
 	Workspaces *WorkspaceService
+	Activity   *ActivityService
 }
 
-func NewHeartbeatService(db *gorm.DB, secrets *SecretService, runner AgentRunner) *HeartbeatService {
+func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *ActivityService, runner AgentRunner) *HeartbeatService {
 	logStore := NewRunLogStore("")
 	costSvc := NewCostService(db)
 	workspaceSvc := NewWorkspaceService()
@@ -44,6 +45,7 @@ func NewHeartbeatService(db *gorm.DB, secrets *SecretService, runner AgentRunner
 		Logs:       logStore,
 		Costs:      costSvc,
 		Workspaces: workspaceSvc,
+		Activity:   activity,
 	}
 }
 
@@ -67,6 +69,23 @@ func (s *HeartbeatService) Wakeup(ctx context.Context, companyID, agentID string
 
 	if err := s.DB.WithContext(ctx).Create(run).Error; err != nil {
 		return nil, fmt.Errorf("failed to create heartbeat run: %w", err)
+	}
+
+	// Log activity
+	if s.Activity != nil {
+		_, _ = s.Activity.Log(ctx, LogEntry{
+			CompanyID:  companyID,
+			ActorType:  "system",
+			ActorID:    "system",
+			Action:     "heartbeat.wakeup",
+			EntityType: "agent",
+			EntityID:   agentID,
+			AgentID:    &agentID,
+			RunID:      &run.ID,
+			Details: map[string]interface{}{
+				"source": opts.Source,
+			},
+		})
 	}
 
 	// Initialize log handle

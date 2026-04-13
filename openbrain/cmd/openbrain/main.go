@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
-	"github.com/chifamba/paperclip/backend/shared/tls"
+	"github.com/chifamba/vashandi/vashandi/backend/shared/tls"
 	"github.com/chifamba/vashandi/openbrain/db/models"
 	"github.com/chifamba/vashandi/openbrain/internal/brain"
 	mcppkg "github.com/chifamba/vashandi/openbrain/internal/mcp"

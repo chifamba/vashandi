@@ -10,11 +10,15 @@ import (
 )
 
 type SecretService struct {
-	DB *gorm.DB
+	DB       *gorm.DB
+	Activity *ActivityService
 }
 
-func NewSecretService(db *gorm.DB) *SecretService {
-	return &SecretService{DB: db}
+func NewSecretService(db *gorm.DB, activity *ActivityService) *SecretService {
+	return &SecretService{
+		DB:       db,
+		Activity: activity,
+	}
 }
 
 // ResolveSecretValue resolves a secret reference to its decrypted value.
