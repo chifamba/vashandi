@@ -1,0 +1,6 @@
+# Compiled binary
+openbrain
+
+# Test caches and coverage
+*.test
+coverage.out

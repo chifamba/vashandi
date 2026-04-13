@@ -11,7 +11,7 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 
 ## 1. Current State Assessment
 
-*Last updated: 2026-04-12 (updated by agent on 2026-04-12 after implementing pgvector/golang-migrate/pgxpool/integration-contract). The codebase is substantially further along than previous assessments indicated. The table below reflects the actual state as verified against the code in `openbrain/`.*
+*Last updated: 2026-04-12 (updated by agent on 2026-04-12 after implementing pgvector/golang-migrate/pgxpool/integration-contract; further updated 2026-04-12 to reflect Admin Web UI, CI step, and DEVELOPING.md completion). The codebase is substantially further along than previous assessments indicated. The table below reflects the actual state as verified against the code in `openbrain/`.*
 
 | Area | Status |
 |---|---|
@@ -31,7 +31,7 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 | MCP server | ✅ stdio + HTTP/SSE transports; all 6 tools: `memory_search`, `memory_note`, `memory_forget`, `memory_correct`, `memory_browse`, `context_compile` |
 | gRPC server | ✅ Implemented — Ingest, Query, Forget via proto/v1 |
 | Repository convention sync (brain.md) | ✅ Implemented — `SyncRepositoryDir`, `WatchRepositoryDir`, `.openbrain/brain.md` → L2 ingest, session.md → L1 |
-| Admin Web UI | 🟡 Minimal — server-rendered HTML admin page at `/admin`; full React admin UI not yet built |
+| Admin Web UI | ✅ Full React+Vite SPA at `/admin/` — embedded in Go binary via `//go:embed ui/dist`; Dashboard, Memories, Proposals, Audit Log, Agents tabs; login/token screen; approve/reject proposals |
 | OpenBrain in Vashandi Docker Compose | ✅ `openbrain` service added to `vashandi/docker/docker-compose.yml` |
 | Delete edge endpoint (`DELETE /api/v1/memories/edges/:edgeId`) | ✅ Implemented |
 | Agent registry GET/PATCH endpoints | ✅ Implemented |
@@ -39,8 +39,8 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 | MCP trust tier enforcement | ✅ Implemented — HTTP path propagates token actor; stdio callers provide trustTier in params |
 | golang-migrate SQL migrations | ✅ Implemented — versioned SQL files in `openbrain/db/migrations/`; embedded via `embed.FS`; runs on startup before GORM AutoMigrate |
 | pgxpool connection pool | ✅ Implemented — pgxpool with configurable DB_MAX_CONNS/DB_MIN_CONNS/DB_MAX_CONN_IDLE_SECS/DB_MAX_CONN_LIFETIME_SECS; pool reused by both golang-migrate and GORM |
-| CI build/test step for OpenBrain | ❌ Not added to CI |
-| DEVELOPING.md update for OpenBrain | 🟡 Partial — brief mention exists; full combined dev commands not documented |
+| CI build/test step for OpenBrain | ✅ Added to `vashandi/.github/workflows/pr.yml` — builds UI (`npm ci && npm run build`), then `go test ./...` and `go build ./cmd/openbrain` |
+| DEVELOPING.md update for OpenBrain | ✅ Full OpenBrain section added to `vashandi/doc/DEVELOPING.md` — architecture, env vars, CLI, REST API, gRPC, MCP, admin UI, migrations, CI, integration guide |
 | Vashandi↔OpenBrain integration contract doc | ✅ Implemented — formal OpenAPI spec at `openbrain/docs/vashandi-integration-contract.yaml`; covers internal API, auth model, entity mappings, lifecycle sequences |
 
 ---
@@ -121,8 +121,8 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] Scaffold directory layout: `cmd/openbrain/`, `internal/{brain,mcp}/`, `db/models/`, `jobs/`, `redis/`, `proto/v1/`, `docs/`
   - [x] Add `openbrain` to the Vashandi workspace `go.work`
   - [x] Add OpenBrain service to the Vashandi Docker Compose dev stack (`vashandi/docker/docker-compose.yml`)
-  - [ ] CI: add `go build ./openbrain/...` and `go test ./openbrain/...` steps
-  - [x] Update `DEVELOPING.md` with combined dev commands (partial — brief mention present)
+  - [x] CI: add `go build ./openbrain/...` and `go test ./openbrain/...` steps (added to `vashandi/.github/workflows/pr.yml`; also builds `openbrain/ui` via `npm ci && npm run build` before Go build)
+  - [x] Update `DEVELOPING.md` with combined dev commands (full OpenBrain section added with architecture, env vars, CLI, REST/gRPC/MCP API reference, admin UI, migrations, CI, integration guide)
 - [x] **OB-0.2: Define Vashandi↔OpenBrain Integration Interface**
   - [x] Document exact HTTP/REST, gRPC, and MCP interfaces — formal OpenAPI spec at `openbrain/docs/vashandi-integration-contract.yaml` covering all `/internal/v1/` endpoints
   - [ ] Define service token strategy: Vashandi generates a service token per company at creation, stored as `company_secrets` (token format specified in contract; Vashandi side not yet wired)
@@ -267,17 +267,17 @@ These items must be completed before starting any other OpenBrain epic work.
 
 ### Phase OB-7 — Modern Admin Web UI
 
-- [x] **OB-7.1: Dashboard and Metrics (partial)**
+- [x] **OB-7.1: Dashboard and Metrics**
   - [x] `GET /api/v1/admin/dashboard` — JSON dashboard metrics endpoint
-  - [x] Server-rendered admin HTML page at `GET /admin` showing dashboard + proposals
+  - [x] Full React+Vite SPA at `/admin/` — embedded in Go binary via `//go:embed ui/dist`
   - [x] Dashboard displays: memories, tier distribution, stale memory ratio, proposal acceptance rate, knowledge gap count, top accessed entities
   - [x] `POST /api/v1/admin/daydream` — manually trigger curator generation
-  - [ ] Full modern React-based UI (not yet built; current UI is server-rendered HTML)
+  - [x] Full modern React-based UI — built with Vite+React+TypeScript; login screen, tabbed navigation, per-tab data loading
 - [x] **OB-7.2: Administration and Maintenance (partial via REST)**
   - [x] Full admin CRUD on memories via REST API (`/api/v1/memories`)
   - [x] Memory proposal review via REST (`GET/POST /admin/proposals`, `.../proposals/:id/resolve`)
   - [x] Background jobs running: promotion (6h), decay (24h), health report (7d)
-  - [ ] Dedicated admin UI panels for proposal review, namespace management, and job monitoring
+  - [x] Dedicated admin UI panels: Memories browser, Proposals review (approve/reject), Audit Log, Agents list
   - [ ] L2→L3 promotion approval routing to Vashandi board (DECISION-10)
 
 ---
