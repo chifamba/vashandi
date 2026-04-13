@@ -134,14 +134,34 @@ func (s *HeartbeatService) ResumeQueuedRuns(ctx context.Context, agentID string)
 	var runningCount int64
 	s.DB.Model(&models.HeartbeatRun{}).Where("agent_id = ? AND status = ?", agentID, "running").Count(&runningCount)
 
-	if runningCount >= 1 { // In parity, we often start with 1
+	if runningCount >= 1 {
 		return
 	}
 
 	var nextRun models.HeartbeatRun
 	if err := s.DB.Where("agent_id = ? AND status = ?", agentID, "queued").Order("created_at asc").First(&nextRun).Error; err == nil {
-		_ = s.StartRun(ctx, nextRun.ID)
+		// Atomic claim
+		if claimed := s.claimQueuedRun(ctx, nextRun.ID); claimed != nil {
+			_ = s.StartRun(ctx, claimed.ID)
+		}
 	}
+}
+
+func (s *HeartbeatService) claimQueuedRun(ctx context.Context, runID string) *models.HeartbeatRun {
+	var run models.HeartbeatRun
+	result := s.DB.WithContext(ctx).Model(&run).
+		Where("id = ? AND status = ?", runID, "queued").
+		Updates(map[string]interface{}{
+			"status": "starting",
+			"started_at": time.Now(),
+		})
+	
+	if result.Error != nil || result.RowsAffected == 0 {
+		return nil
+	}
+
+	s.DB.First(&run, "id = ?", runID)
+	return &run
 }
 
 // ReapOrphanedRuns cleans up runs that are marked as running but the process is gone.
@@ -207,11 +227,14 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 		return err
 	}
 
-	// Update status to starting
-	now := time.Now()
-	run.Status = "starting"
-	run.StartedAt = &now
-	s.DB.WithContext(ctx).Save(&run)
+	// Check if run is already starting or running (idempotency)
+	if run.Status != "starting" {
+		claimed := s.claimQueuedRun(ctx, runID)
+		if claimed == nil {
+			return nil // Already claimed or finished
+		}
+		run = *claimed
+	}
 
 	// Resolve environment from agent config and secrets
 	runtimeConfig := make(map[string]interface{})
