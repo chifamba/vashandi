@@ -3507,10 +3507,12 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         )
       : [];
 
+    const selectedSlugsSet = new Set(selectedSlugs);
     const selectedAgents = include.agents
-      ? manifest.agents.filter((agent) => selectedSlugs.includes(agent.slug))
+      ? manifest.agents.filter((agent) => selectedSlugsSet.has(agent.slug))
       : [];
-    const selectedMissing = selectedSlugs.filter((slug) => !manifest.agents.some((agent) => agent.slug === slug));
+    const manifestAgentSlugsSet = new Set(manifest.agents.map((agent) => agent.slug));
+    const selectedMissing = selectedSlugs.filter((slug) => !manifestAgentSlugsSet.has(slug));
     for (const missing of selectedMissing) {
       errors.push(`Selected agent slug not found in manifest: ${missing}`);
     }
