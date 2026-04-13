@@ -14,7 +14,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/chifamba/paperclip/backend/db/models"
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {

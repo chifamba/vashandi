@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 
-	"github.com/chifamba/paperclip/backend/server/services"
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
 
 // ListProposalsHandler returns a list of pending deduplication proposals

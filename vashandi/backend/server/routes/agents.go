@@ -9,7 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 
-	"github.com/chifamba/paperclip/backend/db/models"
+	"github.com/chifamba/vashandi/vashandi/backend/shared"
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
 // ListAgentsHandler returns a list of agents for a company

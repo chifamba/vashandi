@@ -1,4 +1,4 @@
-module github.com/chifamba/paperclip/backend/shared
+module github.com/chifamba/vashandi/vashandi/backend/shared
 
 go 1.25.0
 

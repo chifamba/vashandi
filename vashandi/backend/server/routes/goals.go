@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/chifamba/paperclip/backend/db/models"
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )

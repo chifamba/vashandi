@@ -3,7 +3,7 @@ package server
 import (
 	"os"
 
-	"github.com/chifamba/paperclip/backend/shared"
+	"github.com/chifamba/vashandi/vashandi/backend/shared"
 )
 
 // In a real port, this would read from the file. For now, we mock the default config.

@@ -1,4 +1,4 @@
-module github.com/chifamba/paperclip/backend/cmd/paperclipai
+module github.com/chifamba/vashandi/vashandi/backend/cmd/paperclipai
 
 go 1.25.0
 

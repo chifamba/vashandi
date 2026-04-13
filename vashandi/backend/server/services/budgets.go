@@ -3,7 +3,7 @@ package services
 import (
 	"gorm.io/gorm"
 
-	"github.com/chifamba/paperclip/backend/db/models"
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
 // CheckProjectBudget queries the budget_policies table where ScopeType = "project" and ScopeID = projectID,

@@ -5,7 +5,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"gorm.io/gorm"
 
-	"github.com/chifamba/paperclip/backend/server/routes"
+	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 )
 
 // SetupRouter initializes the chi router with common middleware and routes

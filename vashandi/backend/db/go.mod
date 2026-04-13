@@ -1,4 +1,4 @@
-module github.com/chifamba/paperclip/backend/db
+module github.com/chifamba/vashandi/vashandi/backend/db
 
 go 1.25.0
 
