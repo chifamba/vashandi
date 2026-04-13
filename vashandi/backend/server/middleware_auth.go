@@ -27,11 +27,7 @@ func ActorMiddleware(next http.Handler) http.Handler {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			// In a real implementation, we would verify the JWT or session token here.
 			// For now, we just pass the token as the user ID for testing.
-			if token == "system" {
-				actor = ActorInfo{IsSystem: true}
-			} else {
-				actor = ActorInfo{UserID: token, IsAgent: false}
-			}
+			actor = ActorInfo{UserID: token, IsAgent: false}
 		}
 
 		ctx := context.WithValue(r.Context(), ActorContextKey, actor)

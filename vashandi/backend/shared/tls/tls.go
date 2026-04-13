@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/acme"
-	"github.com/smallstep/certificates/acme/autocert"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 // Config represents the internal TLS configuration
@@ -96,7 +96,6 @@ func GetServerConfig(ctx context.Context, cfg Config) (*tls.Config, error) {
 	manager := &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist(cfg.DNSNames...),
-		Directory:  cfg.CAURL + "/acme/acme/directory",
 		Cache:      autocert.DirCache("/tmp/acme-cache"),
 		Client: &acme.Client{
 			DirectoryURL: cfg.CAURL + "/acme/acme/directory",
@@ -143,7 +142,6 @@ func GetClientConfig(ctx context.Context, cfg Config) (*tls.Config, error) {
 	// Use ACME to get a client certificate
 	manager := &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
-		Directory:  cfg.CAURL + "/acme/acme/directory",
 		Cache:      autocert.DirCache("/tmp/acme-cache-client"),
 		HostPolicy: autocert.HostWhitelist(cfg.DNSNames...),
 		Client: &acme.Client{
