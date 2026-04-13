@@ -47,7 +47,7 @@ import {
 } from "../lib/optimistic-issue-comments";
 import { removeLiveRunById, upsertInterruptedRun } from "../lib/optimistic-issue-runs";
 import { useProjectOrder } from "../hooks/useProjectOrder";
-import { relativeTime, cn, formatTokens, visibleRunCostUsd } from "../lib/utils";
+import { relativeTime, cn, formatTokens, visibleRunCostUsd, decodeEntities } from "../lib/utils";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { InlineEditor } from "../components/InlineEditor";
 import { IssueChatThread, type IssueChatComposerHandle } from "../components/IssueChatThread";
@@ -1526,11 +1526,6 @@ export function IssueDetail() {
 
   const copyIssueToClipboard = async () => {
     if (!issue) return;
-    const decodeEntities = (text: string) => {
-      const el = document.createElement("textarea");
-      el.innerHTML = text;
-      return el.value;
-    };
     const title = decodeEntities(issue.title);
     const body = decodeEntities(issue.description ?? "");
     const md = `# ${issue.identifier}: ${title}\n\n${body}`.trimEnd();

@@ -19,9 +19,53 @@ import {
   projectRouteRef,
   projectUrl,
   projectWorkspaceUrl,
+  decodeEntities,
 } from "./utils";
 
 describe("utils", () => {
+  describe("decodeEntities", () => {
+    it("decodes basic HTML entities", () => {
+      expect(decodeEntities("&lt;tag&gt;")).toBe("<tag>");
+      expect(decodeEntities("Text &amp; more")).toBe("Text & more");
+      expect(decodeEntities("&quot;quoted&quot;")).toBe('"quoted"');
+      expect(decodeEntities("&#39;single quoted&#39;")).toBe("'single quoted'");
+    });
+
+    it("handles plain text without entities", () => {
+      expect(decodeEntities("Just some plain text")).toBe("Just some plain text");
+    });
+
+    it("preserves HTML-like tags and non-entity content", () => {
+      expect(decodeEntities("List<String>")).toBe("List<String>");
+      expect(decodeEntities("<b>bold</b>")).toBe("<b>bold</b>");
+      expect(decodeEntities("a < b && b > c")).toBe("a < b && b > c");
+    });
+
+    it("decodes entities within text containing tags", () => {
+      expect(decodeEntities("<b>&lt;tag&gt;</b>")).toBe("<b><tag></b>");
+      expect(decodeEntities("Value &amp; <b>Bold</b>")).toBe("Value & <b>Bold</b>");
+    });
+
+    it("is safe from XSS (does not execute or strip non-entity HTML)", () => {
+      const malicious = '<img src=x onerror="alert(1)">';
+      // It should preserve the string as-is because it contains no entities.
+      // Crucially, it should not be parsed in a way that executes the onerror handler.
+      expect(decodeEntities(malicious)).toBe(malicious);
+    });
+
+    it("handles complex entities", () => {
+      // Note: &copy; and &trade; might not be in the basic fallback,
+      // so if DOMParser is missing, they will be returned as is.
+      // In a real browser/DOM environment, they will be decoded.
+      const result = decodeEntities("&copy; 2024 &trade;");
+      if (typeof DOMParser !== "undefined") {
+        expect(result).toBe("© 2024 ™");
+      } else {
+        expect(result).toBe("&copy; 2024 &trade;");
+      }
+    });
+  });
+
   describe("cn", () => {
     it("merges tailwind classes correctly", () => {
       expect(cn("px-2 py-2", "p-4")).toBe("p-4");
