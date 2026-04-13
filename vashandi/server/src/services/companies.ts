@@ -256,6 +256,7 @@ export function companyService(db: Db) {
           .then((rows) => rows[0] ?? null);
         if (!row) return null;
         const [hydrated] = await hydrateCompanySpend([row], tx);
+        await openBrainClient.archiveNamespace(id);
         return enrichCompany(hydrated);
       }),
 
@@ -291,7 +292,12 @@ export function companyService(db: Db) {
           .delete(companies)
           .where(eq(companies.id, id))
           .returning();
-        return rows[0] ?? null;
+        
+        const deleted = rows[0] ?? null;
+        if (deleted) {
+          await openBrainClient.deleteNamespace(id);
+        }
+        return deleted;
       }),
 
     stats: () =>

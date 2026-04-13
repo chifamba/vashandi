@@ -285,6 +285,21 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 		return workspaceErr
 	}
 	recorder.Finish(ctx, op.ID, 0, nil)
+	
+	// --- Fat Context Injection ---
+	semanticContext, err := s.Memory.CompileContext(ctx, ContextRequest{
+		NamespaceID: run.CompanyID,
+		AgentID:     run.AgentID,
+		Intent:      "heartbeat_invocation",
+		Query:       run.TaskID,
+	})
+	if err == nil && semanticContext != nil {
+		// Merge into context data
+		contextData["openBrainMemories"] = semanticContext
+		updatedContextJSON, _ := json.Marshal(contextData)
+		run.ContextSnapshot = datatypes.JSON(updatedContextJSON)
+	}
+	// -----------------------------
 
 	// 2. Execute via runner
 	run.Status = "running"
@@ -325,20 +340,20 @@ func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.Hear
 	// notify OpenBrain
 	go func() {
 		summary := fmt.Sprintf("Run %s completed for agent %s on task %s", run.ID, run.AgentID, run.TaskID)
-		exitCode := 0
-		if err != nil {
-			exitCode = 1
+		if err == nil {
+			// standard experience persistence
+			_ = s.Memory.CreateMemory(context.Background(), run.CompanyID, MemoryPayload{
+				EntityType: "run_summary",
+				Text:       summary,
+				Title:      "Heartbeat Run",
+				Metadata: map[string]interface{}{
+					"runId":    run.ID,
+					"agentId":  run.AgentID,
+					"outcome":  "succeeded",
+					"finished": finishedAt,
+				},
+			})
 		}
-		_, _ = s.Memory.HandleTrigger(context.Background(), run.CompanyID, "run_complete", TriggerRequest{
-			AgentID:   run.AgentID,
-			TaskQuery: run.TaskID,
-			Summary:   summary,
-			Metadata: map[string]any{
-				"runId":      run.ID,
-				"exitCode":   exitCode,
-				"finishedAt": finishedAt,
-			},
-		})
 	}()
 
 	s.resumeNextRun(run.AgentID)

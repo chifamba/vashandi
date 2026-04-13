@@ -63,16 +63,69 @@ export class OpenBrainClient {
     }
   }
 
-  async registerAgent(namespaceId: string, agentId: string, name: string) {
+  async archiveNamespace(namespaceId: string) {
     if (!this.client) return;
     try {
-      await this.client.post(`/internal/v1/namespaces/${namespaceId}/agents`, {
-        agentId,
-        name,
-      });
-      logger.info("Agent registered in OpenBrain", { namespaceId, agentId });
+      await this.client.delete(`/internal/v1/namespaces/${namespaceId}`);
+      logger.info("Namespace archived in OpenBrain", { namespaceId });
     } catch (err) {
-      logger.error({ err, agentId }, "Failed to register agent in OpenBrain");
+      logger.error({ err, namespaceId }, "Failed to archive namespace in OpenBrain");
+    }
+  }
+
+  async deleteNamespace(namespaceId: string) {
+    if (!this.client) return;
+    try {
+      // In OpenBrain internal API, DELETE handles both archiving and deletion (data is soft-deleted by status)
+      await this.client.delete(`/internal/v1/namespaces/${namespaceId}`);
+      logger.info("Namespace deleted in OpenBrain", { namespaceId });
+    } catch (err) {
+      logger.error({ err, namespaceId }, "Failed to delete namespace in OpenBrain");
+    }
+  }
+
+  async deregisterAgent(namespaceId: string, agentId: string) {
+    if (!this.client) return;
+    try {
+      await this.client.delete(`/internal/v1/namespaces/${namespaceId}/agents/${agentId}`);
+      logger.info("Agent deregistered in OpenBrain", { namespaceId, agentId });
+    } catch (err) {
+      logger.error({ err, agentId }, "Failed to deregister agent in OpenBrain");
+    }
+  }
+
+  async compileContext(namespaceId: string, agentId: string, intent: string, query?: string) {
+    if (!this.client) return null;
+    try {
+      const response = await this.client.post("/api/v1/context/compile", {
+        namespaceId,
+        agentId,
+        intent,
+        query,
+      });
+      return response.data;
+    } catch (err) {
+      logger.error({ err, agentId }, "Failed to compile semantic context from OpenBrain");
+      return null;
+    }
+  }
+
+  async createMemory(namespaceId: string, payload: {
+    entityType: string;
+    text: string;
+    title?: string;
+    metadata?: Record<string, any>;
+    tier?: number;
+  }) {
+    if (!this.client) return;
+    try {
+      await this.client.post("/api/v1/memories", {
+        namespaceId,
+        ...payload,
+      });
+      logger.info("Memory created in OpenBrain", { namespaceId, entityType: payload.entityType });
+    } catch (err) {
+      logger.error({ err, namespaceId }, "Failed to create memory in OpenBrain");
     }
   }
 }

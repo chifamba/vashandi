@@ -18,6 +18,7 @@ import {
 } from "@paperclipai/db";
 import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { openBrainClient } from "./openbrain-client.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 
@@ -404,7 +405,9 @@ export function agentService(db: Db) {
         .returning()
         .then((rows) => rows[0]);
 
-      return normalizeAgentRow(created);
+      const normalized = normalizeAgentRow(created);
+      await openBrainClient.registerAgent(companyId, normalized.id, normalized.name);
+      return normalized;
     },
 
     update: updateAgent,
@@ -501,7 +504,12 @@ export function agentService(db: Db) {
           .where(eq(agents.id, id))
           .returning()
           .then((rows) => rows[0] ?? null);
-        return deleted ? normalizeAgentRow(deleted) : null;
+        
+        const normalizedDeleted = deleted ? normalizeAgentRow(deleted) : null;
+        if (normalizedDeleted) {
+          await openBrainClient.deregisterAgent(existing.companyId, id);
+        }
+        return normalizedDeleted;
       });
     },
 

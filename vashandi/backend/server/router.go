@@ -26,9 +26,9 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	// Company Routes
 	r.Get("/companies", routes.ListCompaniesHandler(db))
-	r.Post("/companies", routes.CreateCompanyHandler(db, secretsSvc))
+	r.Post("/companies", routes.CreateCompanyHandler(db, secretsSvc, heartbeatSvc.Memory))
 	r.Get("/companies/{id}", routes.GetCompanyHandler(db))
-	r.Patch("/companies/{id}/archive", routes.ArchiveCompanyHandler(db))
+	r.Patch("/companies/{id}/archive", routes.ArchiveCompanyHandler(db, heartbeatSvc.Memory))
 
 	// API v1 Routes
 	r.Route("/api/v1", func(api chi.Router) {
@@ -63,8 +63,8 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		// Agent Routes
 		api.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
 		api.Get("/agents/{id}", routes.GetAgentHandler(db))
-		api.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db))
-		api.Delete("/agents/{id}", routes.DeleteAgentHandler(db))
+		api.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db, heartbeatSvc.Memory))
+		api.Delete("/agents/{id}", routes.DeleteAgentHandler(db, heartbeatSvc.Memory))
 
 		// MCP Governance Routes
 		api.Get("/companies/{companyId}/mcp/tools", routes.MCPToolsHandler(db))

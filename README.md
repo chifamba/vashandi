@@ -25,6 +25,31 @@ OpenBrain is a new project in this monorepo. Details and documentation will be a
 
 ---
 
+## Docker Quickstart (Maturity Phase I)
+
+The easiest way to run the full hardened stack (Vashandi + OpenBrain + mTLS) is via the root-level Docker Compose.
+
+1. **Bootstrap CA**:
+   ```bash
+   docker compose up ca
+   ```
+   Capture the `Fingerprint` shown in the logs.
+
+2. **Configure**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and paste the STEP_CA_FINGERPRINT
+   ```
+
+3. **Launch**:
+   ```bash
+   docker compose up -d
+   ```
+
+Vashandi will be available at `http://localhost:3100` and OpenBrain at `http://localhost:3101`. Communications between them are secured via mTLS auto-rotated by Step-CA.
+
+---
+
 ## Repository Layout
 
 ```

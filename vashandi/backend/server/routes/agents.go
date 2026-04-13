@@ -11,6 +11,7 @@ import (
 
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
 
 // ListAgentsHandler returns a list of agents for a company
@@ -50,7 +51,7 @@ func GetAgentHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 // CreateAgentHandler unmarshals JSON into an Agent, saves it, and triggers OpenBrain sync
-func CreateAgentHandler(db *gorm.DB) http.HandlerFunc {
+func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
 
@@ -72,18 +73,9 @@ func CreateAgentHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		// Fire HTTP POST to OpenBrain webhook for Agent Sync Lifecycle Events (Task 2.3)
-		go func(agentID, compID string) {
-			url := fmt.Sprintf("http://openbrain:3101/internal/v1/namespaces/%s/agents", compID)
-
-			payload := map[string]string{"agent_id": agentID}
-			bodyBytes, _ := json.Marshal(payload)
-
-			// Non-blocking fire and forget for sync webhook
-			req, _ := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer dev_secret_token") // Dev default
-			http.DefaultClient.Do(req)
-		}(agent.ID, companyID)
+		go func(agentID, agentName, compID string) {
+			_ = memory.RegisterAgent(context.Background(), compID, agentID, agentName)
+		}(agent.ID, agent.Name, companyID)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -92,7 +84,7 @@ func CreateAgentHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 // DeleteAgentHandler soft deletes an Agent and triggers OpenBrain namespace closure
-func DeleteAgentHandler(db *gorm.DB) http.HandlerFunc {
+func DeleteAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
@@ -113,11 +105,7 @@ func DeleteAgentHandler(db *gorm.DB) http.HandlerFunc {
 
 		// Fire HTTP DELETE to OpenBrain webhook for Agent Sync Lifecycle Events (Task 2.3)
 		go func(agentID, compID string) {
-			url := fmt.Sprintf("http://openbrain:3101/internal/v1/namespaces/%s/agents/%s", compID, agentID)
-
-			req, _ := http.NewRequest("DELETE", url, nil)
-			req.Header.Set("Authorization", "Bearer dev_secret_token") // Dev default
-			http.DefaultClient.Do(req)
+			_ = memory.DeregisterAgent(context.Background(), compID, agentID)
 		}(agent.ID, agent.CompanyID)
 
 		w.WriteHeader(http.StatusNoContent)

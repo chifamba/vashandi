@@ -48,8 +48,7 @@ func GetCompanyHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 // CreateCompanyHandler creates a new company and seeds OpenBrain
-func CreateCompanyHandler(db *gorm.DB, secrets *services.SecretService) http.HandlerFunc {
-	adapter := services.NewOpenBrainAdapter()
+func CreateCompanyHandler(db *gorm.DB, secrets *services.SecretService, memory services.MemoryAdapter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var company models.Company
 		if err := json.NewDecoder(r.Body).Decode(&company); err != nil {
@@ -78,7 +77,7 @@ func CreateCompanyHandler(db *gorm.DB, secrets *services.SecretService) http.Han
 			go func() {
 				// We need a version of IngestMemory that takes a token override or we use the default
 				// Since we are porting, we'll assume the adapter uses the token provided or env
-				_ = adapter.IngestMemory(r.Context(), company.ID, seedText, metadata)
+				_ = memory.IngestMemory(r.Context(), company.ID, seedText, metadata)
 			}()
 		}
 
@@ -89,8 +88,7 @@ func CreateCompanyHandler(db *gorm.DB, secrets *services.SecretService) http.Han
 }
 
 // ArchiveCompanyHandler archives a company and notifies OpenBrain
-func ArchiveCompanyHandler(db *gorm.DB) http.HandlerFunc {
-	adapter := services.NewOpenBrainAdapter()
+func ArchiveCompanyHandler(db *gorm.DB, memory services.MemoryAdapter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
@@ -108,7 +106,7 @@ func ArchiveCompanyHandler(db *gorm.DB) http.HandlerFunc {
 
 		// Notify OpenBrain (async)
 		go func() {
-			_ = adapter.ArchiveNamespace(context.Background(), id)
+			_ = memory.ArchiveNamespace(context.Background(), id)
 		}()
 
 		w.Header().Set("Content-Type", "application/json")

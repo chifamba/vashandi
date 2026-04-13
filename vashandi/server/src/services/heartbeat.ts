@@ -57,6 +57,7 @@ import {
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
+import { openBrainClient } from "./openbrain-client.js";
 import {
   hasSessionCompactionThresholds,
   resolveSessionCompactionPolicy,
@@ -3155,6 +3156,17 @@ export function heartbeatService(db: Db) {
         });
       };
 
+      // Fetch semantic context from OpenBrain if enabled
+      const semanticContext = await openBrainClient.compileContext(
+        agent.companyId,
+        agent.id,
+        "heartbeat_invocation",
+        readNonEmptyString(issueRef?.title) ?? taskKey ?? undefined
+      );
+      if (semanticContext && typeof semanticContext === "object") {
+        context.openBrainMemories = semanticContext;
+      }
+
       const adapter = getServerAdapter(agent.adapterType);
       const authToken = adapter.supportsLocalAgentJwt
         ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
@@ -3298,6 +3310,23 @@ export function heartbeatService(db: Db) {
               billingType: normalizeLedgerBillingType(adapterResult.billingType),
             } as Record<string, unknown>)
           : null;
+
+      // Ingest memory back to OpenBrain on success
+      if (status === "succeeded") {
+        await openBrainClient.createMemory(agent.companyId, {
+          entityType: "run_summary",
+          text: `Run ${run.id} succeeded for agent ${agent.name}.`,
+          title: issueRef?.title ?? taskKey ?? "Heartbeat Run",
+          metadata: {
+            runId: run.id,
+            agentId: agent.id,
+            issueId: issueRef?.id,
+            taskKey,
+            outcome: "succeeded",
+            usage: usageJson,
+          },
+        });
+      }
 
       await setRunStatus(run.id, status, {
         finishedAt: new Date(),
