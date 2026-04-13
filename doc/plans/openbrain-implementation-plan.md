@@ -51,34 +51,34 @@ See also: [Vashandi Implementation Plan](./trackable-implementation-plan.md)
 
 > **⚠ DECISION-01 — Language for OpenBrain (✅ Confirmed):** Go. Aligns with the Vashandi Go migration direction, integrates into the existing `go.work` workspace, produces single-binary deployments, and has excellent concurrency for background maintenance and ingestion jobs.
 
-> **⚠ DECISION-02 — Vector storage:** PostgreSQL + pgvector is recommended. Reuses the existing Postgres instance, supports single-node Docker deployment, and pgvector is sufficient for per-company memory store scale. A dedicated vector database (Qdrant, Weaviate) can be added later as a pluggable backend.
+> **⚠ DECISION-02 — Vector storage (✅ Confirmed):** PostgreSQL + pgvector. Reuses the existing Postgres instance, supports single-node Docker deployment, and pgvector is sufficient for per-company memory store scale. A dedicated vector database (Qdrant, Weaviate) can be added later as a pluggable backend.
 
-> **⚠ DECISION-03 — Graph storage:** Postgres adjacency tables with recursive CTEs for V1 (facts/decisions as nodes, typed relationships as edge rows). Apache AGE or Neo4j can be considered later.
+> **⚠ DECISION-03 — Graph storage (✅ Confirmed):** Postgres adjacency tables with recursive CTEs for V1 (facts/decisions as nodes, typed relationships as edge rows). Apache AGE or Neo4j can be considered later.
 
 > **⚠ DECISION-04 — OpenBrain service topology (✅ Confirmed):** Separate service (not embedded library, not Vashandi plugin process). OpenBrain has its own background jobs (curator agent, proactive delivery triggers, async ingestion), its own data model, and is designed to serve agents and services beyond Vashandi. Runs as a Docker sidecar in local dev and as a standalone service in production.
 
 > **⚠ DECISION-05 — OpenBrain primary API protocol (✅ Overridden: Multi-Protocol):** REST/JSON + gRPC + MCP simultaneously. HTTP/REST for internal monorepo communication and external web clients. gRPC for high-performance bulk ingest and large context compilations. MCP for standardized LLM interactions.
 
-> **⚠ DECISION-06 — Namespace isolation model:** Row-level isolation using `namespace_id` (maps 1:1 to Vashandi `company_id`). All queries include mandatory `namespace_id` predicate enforced at the storage layer. Separate Postgres schemas per company are rejected as operationally expensive.
+> **⚠ DECISION-06 — Namespace isolation model (✅ Confirmed):** Row-level isolation using `namespace_id` (maps 1:1 to Vashandi `company_id`). All queries include mandatory `namespace_id` predicate enforced at the storage layer. Separate Postgres schemas per company are rejected as operationally expensive.
 
-> **⚠ DECISION-07 — Curator proposal routing:** Curator proposals will be reviewed and approved via the OpenBrain Modern Admin Web UI, which includes a dedicated panel for memory proposals and dashboard views.
+> **⚠ DECISION-07 — Curator proposal routing (✅ Confirmed):** Curator proposals will be reviewed and approved via the OpenBrain Modern Admin Web UI, which includes a dedicated panel for memory proposals and dashboard views.
 
-> **⚠ DECISION-08 — Embedding model/dimension:** OpenAI text-embedding-3-small (1536d) as default. Cohere embed-v3 and local Ollama embeddings are future alternatives.
+> **⚠ DECISION-08 — Embedding model/dimension (✅ Confirmed):** Multi-provider interface supporting OpenAI (`text-embedding-3-small`) and local Ollama (`mxbai-embed-large`). Both use 1536-dimensional vectors. The provider is selectable via the `EMBEDDING_PROVIDER` environment variable.
 
-> **⚠ DECISION-09 — OpenBrain auth for external API:** Agent-scoped JWT tokens issued by OpenBrain, validated against `registered_agents`.
+> **⚠ DECISION-09 — OpenBrain auth for external API (✅ Confirmed):** Agent-scoped JWT tokens for external clients. Internal Vashandi↔OpenBrain communication is hardened via **Mutual TLS (mTLS)** with automated certificate rotation.
 
-> **⚠ DECISION-10 — L2→L3 promotion approval flow:** Routes through Vashandi board approval.
+> **⚠ DECISION-10 — L2→L3 promotion approval flow (✅ Overridden: Automated Local Dreaming):** Moves from board-approved to automated internal processing during "daydreaming" cycles. OpenBrain handles its own pruning and promotion logic locally to maintain autonomous intelligence loops.
 
 ### Stack Summary
 
 | Layer | Technology |
 |---|---|
-| Language | Go (DECISION-01) |
+| Language | Go (DECISION-01) ✅ |
 | HTTP framework | chi router (consistent with Vashandi Go port) |
-| Vector storage | PostgreSQL + pgvector (DECISION-02) |
-| Graph/relational storage | PostgreSQL adjacency tables (DECISION-03) |
-| Service topology | Separate service, Docker sidecar for dev (DECISION-04) |
-| Primary API | REST/JSON + gRPC + MCP (DECISION-05) |
+| Vector storage | PostgreSQL + pgvector (DECISION-02) ✅ |
+| Graph/relational storage | PostgreSQL adjacency tables (DECISION-03) ✅ |
+| Service topology | Separate service, Docker sidecar for dev (DECISION-04) ✅ |
+| Primary API | REST/JSON + gRPC + MCP (DECISION-05) ✅ |
 | MCP transport | stdio + HTTP/SSE |
 | Migrations | golang-migrate |
 | CLI | cobra + charmbracelet/huh |
@@ -139,7 +139,7 @@ These items must be completed before starting any other OpenBrain epic work.
 - [x] **OB-1.1: PostgreSQL Setup**
   - [x] GORM AutoMigrate creates all tables on startup
   - [x] Dockerfile and Docker Compose entry for Postgres+OpenBrain
-  - [ ] Docker Compose dev profile: Postgres 16 with pgvector pre-installed (currently uses standard Postgres)
+  - [x] Docker Compose dev profile: Postgres 16 with pgvector pre-installed (currently uses standard Postgres)
   - [x] golang-migrate versioned SQL migration files (`openbrain/db/migrations/000001_initial_schema.up.sql`, `000002_pgvector_indexes.up.sql`; embedded via `embed.FS` in `openbrain/db/migrations.go`; run on startup before GORM)
   - [x] pgxpool connection pool with configurable pool size (`DB_MAX_CONNS`, `DB_MIN_CONNS`, `DB_MAX_CONN_IDLE_SECS`, `DB_MAX_CONN_LIFETIME_SECS`)
   - [x] pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;` (in migration 000001 and AutoMigrate Postgres path)
@@ -159,7 +159,7 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] `POST /api/v1/memories/edges` — create relationship
   - [x] `GET /api/v1/memories/:id/edges` — get related entities
   - [x] `DELETE /api/v1/memories/edges/:edgeId` — delete a relationship edge
-  - [ ] Async embedding generation via OpenAI (currently uses local FNV hash-based embeddings)
+  - [ ] Multi-provider embedding interface: implement `EmbeddingProvider` interface with OpenAI and Ollama drivers (Phase I-1). Currently uses 1536d FNV stub.
 
 ### Phase OB-2 — Multi-Tier Memory Lifecycle
 
@@ -169,7 +169,7 @@ These items must be completed before starting any other OpenBrain epic work.
 - [x] **OB-2.2: Promotion Logic**
   - [x] Background job (every 6h): L0→L1 on 3+ accesses within 24h or manual flag; L1→L2 on 5+ accesses or curator proposal
   - [x] Promotion creates version record with `change_reason = "tier_promotion"`
-  - [ ] L2→L3 requires human approval via Vashandi board (L2→L3 promotion gating not yet wired to Vashandi)
+  - [x] L2→L3 promotion is automated during daydreaming cycles (DECISION-10). Simple frequency-based or heuristic promotion implemented; sophisticated algorithms deferred to research.
 - [x] **OB-2.3: Decay Logic**
   - [x] Daily decay job: L0 auto-delete after TTL; L1 demote to L0 if not accessed within 30 days
   - [x] L2/L3 no automatic decay; demotion proposals via curator
@@ -278,7 +278,8 @@ These items must be completed before starting any other OpenBrain epic work.
   - [x] Memory proposal review via REST (`GET/POST /admin/proposals`, `.../proposals/:id/resolve`)
   - [x] Background jobs running: promotion (6h), decay (24h), health report (7d)
   - [x] Dedicated admin UI panels: Memories browser, Proposals review (approve/reject), Audit Log, Agents list
-  - [ ] L2→L3 promotion approval routing to Vashandi board (DECISION-10)
+  - [ ] L2→L3 promotion approval routing to Vashandi board (CLOSED: Automated Local Dreaming)
+  - [x] Manual Sync with Vashandi: Board/Admin UI tool for recovery/re-registration (Decision OB-7.2)
 
 ---
 
@@ -408,7 +409,7 @@ CREATE INDEX ON memory_entity_versions (namespace_id, entity_id, version);
 | L0 | Ephemeral | Session-only, not indexed for long-term retrieval | 24h | explicit note or repeated access |
 | L1 | Working | Active project context, readily accessible | 30 days | accessed 3+ times or manually promoted |
 | L2 | Reference | Stable project knowledge, indexed | indefinite | curator agent synthesis or manual |
-| L3 | Core | Foundational facts, ADRs, constraints | permanent until explicit forget | human approval required |
+| L3 | Core | Foundational facts, ADRs, constraints | permanent until explicit forget | automated daydreaming |
 
 #### OB-2.2 — Promotion Logic
 
@@ -416,7 +417,7 @@ CREATE INDEX ON memory_entity_versions (namespace_id, entity_id, version);
 - Promotion rules:
   - L0→L1: entity accessed ≥ 3 times within 24h, OR manually flagged
   - L1→L2: entity accessed ≥ 5 times within 30 days, OR curator proposes
-  - L2→L3: **requires human approval** (routed through Vashandi approval gate)
+  - L2→L3: automated during daydreaming cycles (DECISION-10)
 - Promotion creates a version record with `change_reason = "tier_promotion"`
 
 #### OB-2.3 — Decay Logic
@@ -527,7 +528,7 @@ The Curator Agent is a background process within OpenBrain, not a Vashandi agent
 - Synthesize: group related L1 entities into a new L2 entity, propose promotion
 - Conflict detection: identify contradicting entities (via edge type or LLM classification), propose resolution
 - Knowledge gap detection: identify questions frequently asked by agents with empty recall, report as gaps
-- Demotion: propose L2→L1 demotion for entities unused for 60 days
+- Demotion: propose L2→L1 demotion for entities unused 60 days
 
 **Weekly Memory Health Report:**
 - Generated each Monday (UTC)
@@ -823,6 +824,9 @@ type ApprovalType =
 | OB-1.1: No golang-migrate versioned migrations | ✅ SQL migration files in `openbrain/db/migrations/`; embedded with `embed.FS`; run on startup before GORM |
 | OB-1.1: No pgxpool | ✅ pgxpool with configurable env vars; pool reused by both golang-migrate driver and GORM |
 | OB-0.2: No formal integration contract doc | ✅ OpenAPI spec at `openbrain/docs/vashandi-integration-contract.yaml` |
+| D-04: Docker Compose Postgres image lacks pgvector | ✅ Verified: `db` service uses `pgvector/pgvector:pg17` |
+| D-09: Admin React UI deferred | ✅ Verified: Full React+Vite SPA implemented in `openbrain/ui` and served at `/admin/` |
+| D-10: CI not updated for OpenBrain | ✅ Verified: Build and test steps added to `vashandi/.github/workflows/pr.yml` |
 
 ### 10.2 Open Drift Items — Require Resolution
 
@@ -836,8 +840,6 @@ type ApprovalType =
 | D-06 | **GAP-07: Memory costs not tracked in Vashandi.** The plan requires that every `MemoryUsage` event from the OpenBrain adapter flows into Vashandi `cost_events`. This is not implemented in either system. | Medium | No — phase I-2 |
 | D-07 | **GAP-10: Circuit breaker not in Vashandi.** The plan requires Vashandi to degrade gracefully (not fail) when OpenBrain is unavailable. No circuit breaker exists in Vashandi's memory plugin. | Medium | No — phase I-2 |
 | D-08 | **OB-0.2 / GAP-01: Internal API uses plain HTTP with bearer token.** The contract spec says `Authorization: Bearer <service-token>`. In dev Docker Compose both services share a network but there is no mutual TLS or network policy. For production deployments outside Docker Compose, additional hardening (mTLS or service mesh) is required (noted in Assumption #2). | Low | No — phase I-2 security |
-| D-09 | **OB-7: Admin React UI deferred.** The plan specifies a full React-based admin UI. Current implementation is server-rendered HTML at `/admin`. OB-7 items are not planned for the current sprint. | Low | No — OB-7 phase |
-| D-10 | **CI not updated for OpenBrain.** There is no CI step to run `go test ./...` or `go build ./...` for the `openbrain/` module. Any breaking change will be caught only by local runs. | Low | No — operational |
 | D-11 | **L2→L3 approval routing to Vashandi board (DECISION-10).** Curator proposals for L2→L3 promotion must be routed through Vashandi's approval gate as `memory_curator_proposal` approval type. Neither the approval type registration in Vashandi nor the routing logic (in either service) is implemented. | Medium | No — OB-5 / Vashandi V2.3 |
 
 ### 10.3 Implementation Notes — Technical Decisions Made This Session
@@ -850,3 +852,60 @@ type ApprovalType =
 
 4. **pgxpool pool reused by golang-migrate and GORM.** `stdlib.OpenDBFromPool` converts pgxpool to `*sql.DB`, which is passed to both the golang-migrate Postgres driver and GORM's `postgres.Config{Conn: sqlDB}`. A single pool serves both, respecting the configured `DB_MAX_CONNS` limit.
 
+
+---
+
+## 11. Open Questions
+
+1. **Vashandi Board Integration (DECISION-10) — CLOSED**: Decided to keep promotion/pruning local and automated within OpenBrain during "dreaming" states.
+
+2. **Embedding Architecture — CLOSED**: Decided on a Multi-Provider Interface (OpenAI/Ollama) selectable via environment variables.
+
+3. **Vashandi Lifecycle Wiring — CLOSED**: Decided on **Hybrid Auto+Manual** approach. Implement real-time registration calls (Option A) for agent/company creation, and provide a "Manual Sync" tool (Option C) in the Admin UI for recovery/re-registration.
+
+4. **Internal API Security — CLOSED**: Decided on **Option B (mTLS Hardening)**. We will add a dedicated certificate management service (e.g., Step-CA) to the Docker Compose stack to handle trusted certificate issuance and auto-rotation for both Vashandi and OpenBrain.
+
+5. **RESEARCH: Sophisticated Dreaming Algorithms**: Research and develop more advanced algorithms for autonomous memory pruning, synthesis, and L2→L3 promotion during daydreaming states.
+
+---
+
+## 12. Vashandi Integration & mTLS Roadmap
+
+To fulfill the security and integration requirements while maintaining platform stability, we are adopting a **Hybrid Integration Strategy**.
+
+### 12.1 Vashandi Go Port Parity Status (as of 2026-04-12)
+
+The Go backend (`vashandi/backend`) is a **partial port**. Switching the primary `server` in Docker Compose would cause the following regressions:
+
+| System | Go Status | Impact of Switch |
+|---|---|---|
+| **Plugin System** | Not Started | No adapter support, no tool execution, no sandboxing. |
+| **Heartbeat Engine** | Not Started | Agents cannot perform runs or autonomous loops. |
+| **Issue/Task Management**| Models Only | No CRUD for the main project board. |
+| **Realtime (WSS)** | Not Started | UI will not update dynamically; chat will be broken. |
+| **Instance Settings** | Not Started | Cannot configure platform-wide settings. |
+
+### 12.2 Hybrid Strategy Phases
+
+**Phase I-1: mTLS Infrastructure (Current)**
+- **Step-CA**: Deploy as a dedicated service in `docker-compose.yml`.
+- **OpenBrain (Go)**: Implement native ACME rotation (Cloud-Native).
+- **Vashandi (Node.js)**: Wire the Node.js server (primary) to use a sidecar-provided certificate to communicate with OpenBrain.
+- **Shared TLS Library**: Implement the Go `shared/tls` package in `vashandi/backend` to simplify future cutovers.
+
+**Phase I-2: OpenBrain Wiring**
+- Wire Vashandi (Node.js) lifecycle events (company/agent creation) to OpenBrain REST endpoints via mTLS.
+- Implement the "Fat Context" heartbeat mode in Node.js (calling OpenBrain for memory).
+
+**Phase II: Go Parity & Cutover**
+- Port Plugin/Heartbeat logic to Go.
+- Switch `docker-compose.yml` to the Go backend.
+
+### 12.3 Certificate Management Specification
+
+- **Service**: `step-ca` (image: `smallstep/step-ca`).
+- **Provisioner**: ACME (for internal services).
+- **Namespaces**:
+  - `openbrain.internal`
+  - `vashandi-server.internal`
+- **Rotation**: Auto-renewal at 50% of certificate lifetime (managed by ACME client in Go and `step` sidecar for Node.js).

@@ -32,6 +32,7 @@ const (
 	DefaultContextCandidateK = 50
 	Tier0PromotionThreshold  = 3
 	Tier1PromotionThreshold  = 5
+	Tier2PromotionThreshold  = 10
 	Tier0PromotionWindow     = 24 * time.Hour
 	Tier0TTL                 = 24 * time.Hour
 	Tier1DecayWindow         = 30 * 24 * time.Hour
@@ -61,6 +62,7 @@ const (
 
 type Service struct {
 	DB             *gorm.DB
+	Embedding      EmbeddingProvider
 	Now            func() time.Time
 	mu             sync.Mutex
 	repoSyncHashes map[string]string
@@ -195,8 +197,13 @@ type TriggerResponse struct {
 	ProposalIDs []string         `json:"proposalIds,omitempty"`
 }
 
-func NewService(db *gorm.DB) *Service {
-	return &Service{DB: db, Now: time.Now, repoSyncHashes: map[string]string{}}
+func NewService(db *gorm.DB, embedding EmbeddingProvider) *Service {
+	return &Service{
+		DB:             db,
+		Embedding:      embedding,
+		Now:            time.Now,
+		repoSyncHashes: make(map[string]string),
+	}
 }
 
 // isPostgres reports whether the underlying database is PostgreSQL.
@@ -488,7 +495,11 @@ func (s *Service) CreateMemory(ctx context.Context, actor Actor, input MemoryPay
 	if identity["createdVia"] == nil {
 		identity["createdVia"] = firstNonEmpty(actor.Kind, "api")
 	}
-	embedding := encodeEmbedding(generateEmbedding(strings.TrimSpace(input.Title + " " + input.Text)))
+	embeddingVec, err := s.Embedding.GenerateEmbedding(ctx, strings.TrimSpace(input.Title+" "+input.Text))
+	if err != nil {
+		return models.Memory{}, err
+	}
+	embedding := encodeEmbedding(embeddingVec)
 	memory := models.Memory{
 		ID:             input.ID,
 		NamespaceID:    input.NamespaceID,
@@ -576,7 +587,11 @@ func (s *Service) UpdateMemory(ctx context.Context, actor Actor, namespaceID, me
 	}
 	if v, ok := patch["text"].(string); ok && strings.TrimSpace(v) != "" {
 		memory.Text = strings.TrimSpace(v)
-		memory.Embedding = encodeEmbedding(generateEmbedding(memory.Title + " " + memory.Text))
+		embeddingVec, err := s.Embedding.GenerateEmbedding(ctx, memory.Title+" "+memory.Text)
+		if err != nil {
+			return nil, err
+		}
+		memory.Embedding = encodeEmbedding(embeddingVec)
 	}
 	if v, ok := patch["entityType"].(string); ok && v != "" {
 		memory.EntityType = v
@@ -731,7 +746,11 @@ func (s *Service) SearchMemories(ctx context.Context, actor Actor, req SearchReq
 	if err := q.Find(&memories).Error; err != nil {
 		return nil, err
 	}
-	queryEmbedding := generateEmbedding(req.Query)
+	queryVec, err := s.Embedding.GenerateEmbedding(ctx, req.Query)
+	if err != nil {
+		return nil, err
+	}
+	queryEmbedding := queryVec
 	tokens := tokenize(req.Query)
 	results := make([]SearchResult, 0, len(memories))
 	for _, memory := range memories {
@@ -905,66 +924,73 @@ func (s *Service) ResolveProposal(ctx context.Context, actor Actor, namespaceID,
 }
 
 func (s *Service) RunPromotionScan(ctx context.Context, actor Actor) ([]models.Memory, error) {
-	var memories []models.Memory
-	if err := s.DB.WithContext(ctx).Where("is_deleted = ?", false).Find(&memories).Error; err != nil {
-		return nil, err
-	}
 	var promoted []models.Memory
-	for _, memory := range memories {
-		updated, ok, err := s.evaluatePromotion(ctx, actor, memory)
-		if err != nil {
-			return nil, err
+	err := s.DB.WithContext(ctx).Where("is_deleted = ? AND tier < 3", false).FindInBatches(&[]models.Memory{}, 100, func(tx *gorm.DB, batch int) error {
+		var batchMemories []models.Memory
+		if err := tx.Find(&batchMemories).Error; err != nil {
+			return err
 		}
-		if ok {
-			promoted = append(promoted, updated)
+		for _, memory := range batchMemories {
+			updated, ok, err := s.evaluatePromotion(ctx, actor, memory)
+			if err != nil {
+				slog.Error("failed to evaluate promotion for memory", "id", memory.ID, "error", err)
+				continue
+			}
+			if ok {
+				promoted = append(promoted, updated)
+			}
 		}
-	}
-	return promoted, nil
+		return nil
+	}).Error
+	return promoted, err
 }
 
 func (s *Service) RunDecayScan(ctx context.Context, actor Actor) ([]models.Memory, error) {
-	var memories []models.Memory
-	if err := s.DB.WithContext(ctx).Where("is_deleted = ?", false).Find(&memories).Error; err != nil {
-		return nil, err
-	}
 	now := s.Now().UTC()
 	var changed []models.Memory
-	for _, memory := range memories {
-		before := hashMemory(memory)
-		modified := false
-		switch memory.Tier {
-		case 0:
-			if memory.CreatedAt.Before(now.Add(-Tier0TTL)) {
-				memory.IsDeleted = true
-				modified = true
-			}
-		case 1:
-			last := memory.UpdatedAt
-			if memory.LastAccessedAt != nil {
-				last = *memory.LastAccessedAt
-			}
-			if last.Before(now.Add(-Tier1DecayWindow)) {
-				memory.Tier = 0
-				if decayAt := computeDecayAt(0, now); !decayAt.IsZero() {
-					memory.DecayAt = &decayAt
+	err := s.DB.WithContext(ctx).Where("is_deleted = ?", false).FindInBatches(&[]models.Memory{}, 100, func(tx *gorm.DB, batch int) error {
+		var batchMemories []models.Memory
+		if err := tx.Find(&batchMemories).Error; err != nil {
+			return err
+		}
+		for _, memory := range batchMemories {
+			before := hashMemory(memory)
+			modified := false
+			switch memory.Tier {
+			case 0:
+				if memory.CreatedAt.Before(now.Add(-Tier0TTL)) {
+					memory.IsDeleted = true
+					modified = true
 				}
-				modified = true
+			case 1:
+				last := memory.UpdatedAt
+				if memory.LastAccessedAt != nil {
+					last = *memory.LastAccessedAt
+				}
+				if last.Before(now.Add(-Tier1DecayWindow)) {
+					memory.Tier = 0
+					if decayAt := computeDecayAt(0, now); !decayAt.IsZero() {
+						memory.DecayAt = &decayAt
+					}
+					modified = true
+				}
+			}
+			if modified {
+				memory.Version++
+				memory.UpdatedAt = now
+				if err := s.DB.WithContext(ctx).Save(&memory).Error; err != nil {
+					return err
+				}
+				if err := s.saveVersion(ctx, memory, actor, "decay"); err != nil {
+					return err
+				}
+				_ = s.appendAudit(ctx, actor, memory.NamespaceID, "decay", memory.ID, memory.EntityType, before, hashMemory(memory), nil)
+				changed = append(changed, memory)
 			}
 		}
-		if modified {
-			memory.Version++
-			memory.UpdatedAt = now
-			if err := s.DB.WithContext(ctx).Save(&memory).Error; err != nil {
-				return nil, err
-			}
-			if err := s.saveVersion(ctx, memory, actor, "decay"); err != nil {
-				return nil, err
-			}
-			_ = s.appendAudit(ctx, actor, memory.NamespaceID, "decay", memory.ID, memory.EntityType, before, hashMemory(memory), nil)
-			changed = append(changed, memory)
-		}
-	}
-	return changed, nil
+		return nil
+	}).Error
+	return changed, err
 }
 
 func (s *Service) SyncRepositoryDir(ctx context.Context, actor Actor, namespaceID, dir string) ([]models.Memory, error) {
@@ -1204,6 +1230,9 @@ func (s *Service) evaluatePromotion(ctx context.Context, actor Actor, memory mod
 		promoted = true
 	case memory.Tier == 1 && (memory.AccessCount >= Tier1PromotionThreshold || memory.ManualPromote):
 		memory.Tier = 2
+		promoted = true
+	case memory.Tier == 2 && (memory.AccessCount >= Tier2PromotionThreshold || memory.ManualPromote):
+		memory.Tier = 3
 		promoted = true
 	}
 	if !promoted {
@@ -1521,28 +1550,7 @@ func tokenize(text string) []string {
 	return out
 }
 
-func generateEmbedding(text string) []float64 {
-	// 1536-dimensional FNV hash-based embedding stub.
-	// Dimension matches OpenAI text-embedding-3-small (1536d) so the same
-	// vector column and IVFFlat index can be reused when a real embedding
-	// provider is wired in.
-	const dims = 1536
-	vec := make([]float64, dims)
-	for _, token := range tokenize(text) {
-		h := fnv.New64a()
-		_, _ = h.Write([]byte(token))
-		sum := h.Sum64()
-		idx := int(sum % dims)
-		sign := 1.0
-		if sum&1 == 1 {
-			sign = -1.0
-		}
-		vec[idx] += sign
-	}
-	norm := 0.0
-	for _, value := range vec {
-		norm += value * value
-	}
+// generateEmbedding was removed and replaced by s.Embedding.GenerateEmbedding (see internal/brain/embedding.go)
 	if norm == 0 {
 		return vec
 	}
@@ -1581,7 +1589,11 @@ func (s *Service) searchWithPgvector(ctx context.Context, actor Actor, req Searc
 		candidateK = pgvectorMinCandidates
 	}
 
-	queryVec := encodeEmbedding(generateEmbedding(req.Query))
+	queryEmbedding, err := s.Embedding.GenerateEmbedding(ctx, req.Query)
+	if err != nil {
+		return nil, err
+	}
+	queryVec := encodeEmbedding(queryEmbedding)
 
 	// Build WHERE clause type filter. GORM Raw does not support named binds here,
 	// so we build the clause explicitly and pass the slice as an arg when needed.

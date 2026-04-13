@@ -18,8 +18,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
+	"github.com/chifamba/paperclip/backend/shared/tls"
 	"github.com/chifamba/vashandi/openbrain/db/models"
 	"github.com/chifamba/vashandi/openbrain/internal/brain"
 	mcppkg "github.com/chifamba/vashandi/openbrain/internal/mcp"
@@ -85,8 +87,8 @@ func main() {
 }
 
 func runServer() error {
-	db := InitDB()
-	service := brain.NewService(db)
+	embedding := brain.InitEmbeddingProvider()
+	service := brain.NewService(db, embedding)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	service.StartBackgroundJobs(ctx)
@@ -96,12 +98,31 @@ func runServer() error {
 	})}
 
 	router := app.routes()
-	httpPort := envDefault("PORT", "3101")
-	httpServer := &http.Server{Addr: ":" + httpPort, Handler: router, ReadHeaderTimeout: 10 * time.Second}
+	tlsCfg := tls.LoadConfigFromEnv()
+	tlsConfig, err := tls.GetServerConfig(ctx, tlsCfg)
+	if err != nil {
+		slog.Error("failed to load TLS configuration", "error", err)
+		if tlsCfg.Enforced {
+			return err
+		}
+	}
+
+	httpServer := &http.Server{
+		Addr:              ":" + httpPort,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		TLSConfig:         tlsConfig,
+	}
+
 	httpErr := make(chan error, 1)
 	go func() {
-		slog.Info("starting REST server", "port", httpPort)
-		httpErr <- httpServer.ListenAndServe()
+		if tlsConfig != nil {
+			slog.Info("starting HTTPS/mTLS server", "port", httpPort, "enforced", tlsCfg.Enforced)
+			httpErr <- httpServer.ListenAndServeTLS("", "")
+		} else {
+			slog.Info("starting REST server (plain HTTP)", "port", httpPort)
+			httpErr <- httpServer.ListenAndServe()
+		}
 	}()
 
 	grpcPort := envDefault("GRPC_PORT", "50051")
@@ -109,7 +130,11 @@ func runServer() error {
 	if err != nil {
 		return err
 	}
-	grpcServer := grpc.NewServer()
+	var opts []grpc.ServerOption
+	if tlsConfig != nil {
+		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+	grpcServer := grpc.NewServer(opts...)
 	pb.RegisterMemoryServiceServer(grpcServer, &memoryServer{service: service})
 	grpcErr := make(chan error, 1)
 	go func() {

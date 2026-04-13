@@ -28,6 +28,7 @@ import {
   companyMemberships,
   companySkills,
 } from "@paperclipai/db";
+import { openBrainClient } from "./openbrain-client.js";
 import { notFound, unprocessable } from "../errors.js";
 
 export function companyService(db: Db) {
@@ -175,6 +176,7 @@ export function companyService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!row) throw notFound("Company not found after creation");
       const [hydrated] = await hydrateCompanySpend([row], db);
+      await openBrainClient.createNamespace(hydrated.id, hydrated.id);
       return enrichCompany(hydrated);
     },
 
