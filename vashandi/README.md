@@ -76,26 +76,28 @@ Vashandi handles the hard orchestration details correctly.
 
 ## Quickstart
 
-Open source. Self-hosted. No Paperclip account required.
+Open source. Self-hosted. Production Go core.
 
 ```bash
-npx vashandi onboard --yes
+# Start the interactive 4-question interview
+paperclipai onboard
 ```
 
-If you already have Paperclip configured, rerunning `onboard` keeps the existing config in place. Use `vashandi configure` to edit settings.
+If you already have Paperclip configured, rerunning `onboard` keeps the existing config in place. Use `paperclipai doctor` to diagnose your setup.
 
-Or manually:
+Or manually (Production stack):
 
 ```bash
-git clone https://github.com/chifamba/paperclip.git
-cd paperclip
+cd vashandi
+go work sync
+go build ./backend/...
 pnpm install
 pnpm dev
 ```
 
-This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
+This starts the API server (Go) at `http://localhost:3100`.
 
-> **Requirements:** Node.js 20+, pnpm 9.15+
+> **Requirements:** Go 1.25+, Node.js 20+, pnpm 9.15+, PostgreSQL (pgvector)
 
 <br/>
 

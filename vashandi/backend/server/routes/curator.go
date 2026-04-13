@@ -31,7 +31,7 @@ func ListProposalsHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 // ApproveProposalHandler approves or rejects a proposal
-func ApproveProposalHandler(db *gorm.DB) http.HandlerFunc {
+func ApproveProposalHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
 	adapter := services.NewOpenBrainAdapter()
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
@@ -50,6 +50,19 @@ func ApproveProposalHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// Log activity in Vashandi
+		_, _ = activity.Log(r.Context(), services.LogEntry{
+			CompanyID:  companyID,
+			ActorType:  "user",
+			ActorID:    "system", // Ideally we'd have a user ID from session
+			Action:     "resolve_memory_proposal",
+			EntityType: "memory_proposal",
+			EntityID:   proposalID,
+			Details: map[string]interface{}{
+				"action": req.Action,
+			},
+		})
 
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": req.Action})

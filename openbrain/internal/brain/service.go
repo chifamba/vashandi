@@ -895,6 +895,7 @@ func (s *Service) GenerateCuratorProposals(ctx context.Context, namespaceID stri
 	proposals = append(proposals, s.synthesisProposals(ctx, namespaceID, memories)...)
 	proposals = append(proposals, s.demotionProposals(ctx, namespaceID, memories)...)
 	proposals = append(proposals, s.gapProposals(ctx, namespaceID)...)
+	proposals = append(proposals, s.contradictionProposals(ctx, namespaceID, memories)...)
 	_ = s.appendAudit(ctx, actor, namespaceID, "curator_generate", "", "proposal", "", fmt.Sprintf("proposals:%d", len(proposals)), nil)
 	return proposals, nil
 }
@@ -1162,6 +1163,22 @@ func exportAuditSQLite(logs []models.AuditLog) ([]byte, string, error) {
 	return body, "application/vnd.sqlite3", err
 }
 
+func (s *Service) writeBackMemoryToFile(ctx context.Context, actor Actor, memory models.Memory) error {
+	if memory.SyncPath == "" {
+		return nil
+	}
+	// For now, we assume the sync path is accessible on the filesystem.
+	// In a distributed setup, this would be an event-driven sync back to Vashandi workspaces.
+	content := fmt.Sprintf("# %s\n\n%s", memory.Title, memory.Text)
+	err := os.WriteFile(memory.SyncPath, []byte(content), 0644)
+	if err != nil {
+		slog.Error("failed to write back memory to file", "path", memory.SyncPath, "error", err)
+		return err
+	}
+	_ = s.appendAudit(ctx, actor, memory.NamespaceID, "write_back", memory.ID, memory.EntityType, "", hashString(content), map[string]any{"path": memory.SyncPath})
+	return nil
+}
+
 func (s *Service) upsertSyncedMemory(ctx context.Context, actor Actor, namespaceID, path, content, kind string, tier int) (models.Memory, error) {
 	var memories []models.Memory
 	if err := s.DB.WithContext(ctx).Where("namespace_id = ? AND sync_path = ?", namespaceID, path).Find(&memories).Error; err != nil {
@@ -1250,6 +1267,12 @@ func (s *Service) evaluatePromotion(ctx context.Context, actor Actor, memory mod
 		return models.Memory{}, false, err
 	}
 	_ = s.appendAudit(ctx, actor, memory.NamespaceID, "promote", memory.ID, memory.EntityType, beforeHash, hashMemory(memory), map[string]any{"tier": memory.Tier})
+
+	// Task 3.3: Memory Promotion Write-back
+	if memory.Tier >= 2 && memory.SyncPath != "" {
+		_ = s.writeBackMemoryToFile(ctx, actor, memory)
+	}
+
 	return memory, true, nil
 }
 
@@ -1378,6 +1401,49 @@ func (s *Service) gapProposals(ctx context.Context, namespaceID string) []models
 		proposal, err := s.createProposalIfMissing(ctx, models.Proposal{NamespaceID: namespaceID, ProposalType: "gap", MemoryIDs: "[]", Summary: fmt.Sprintf("Knowledge gap detected for query %q", query), SuggestedText: fmt.Sprintf("Agents repeatedly searched for %q but OpenBrain had no relevant memory. Capture guidance, ADRs, or troubleshooting notes for this topic.", query), Status: "pending", Details: mustJSON(map[string]any{"query": query, "occurrences": count}, "{}")})
 		if err == nil {
 			created = append(created, proposal)
+		}
+	}
+	return created
+}
+
+func (s *Service) contradictionProposals(ctx context.Context, namespaceID string, memories []models.Memory) []models.Proposal {
+	var created []models.Proposal
+	seen := map[string]struct{}{}
+	for i := 0; i < len(memories); i++ {
+		for j := i + 1; j < len(memories); j++ {
+			a, b := memories[i], memories[j]
+			if a.EntityType != b.EntityType || a.EntityType == "note" {
+				continue
+			}
+			key := a.ID + ":" + b.ID
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			// Semantic similarity but potential context clash
+			dist := cosine(decodeEmbedding(a.Embedding), decodeEmbedding(b.Embedding))
+			if dist < 0.85 || dist > 0.98 { // Too similar means it's a dedup, too different means it's not related
+				continue
+			}
+
+			// In a real system, we'd send these to an LLM to check for contradiction.
+			// For parity, we'll flag highly similar entity updates.
+			summary := fmt.Sprintf("Potential contradiction: %s vs %s", a.ID, b.ID)
+			proposal, err := s.createProposalIfMissing(ctx, models.Proposal{
+				NamespaceID:  namespaceID,
+				ProposalType: "conflict",
+				MemoryIDs:    mustJSON([]string{a.ID, b.ID}, "[]"),
+				Summary:      summary,
+				SuggestedText: fmt.Sprintf("The system detected two memories with high similarity describing the same entity (%s), but with potentially conflicting details. Please resolve which one is the current source of truth.", a.EntityType),
+				Status:       "pending",
+				Details: mustJSON(map[string]any{
+					"reason":     "semantic_similarity_overlap",
+					"similarity": dist,
+				}, "{}"),
+			})
+			if err == nil {
+				created = append(created, proposal)
+			}
+			seen[key] = struct{}{}
 		}
 	}
 	return created

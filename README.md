@@ -4,20 +4,16 @@ This is the root of the **Vashandi** multi-project monorepo. It contains two ind
 
 | Project | Folder | Description |
 |---------|--------|-------------|
-| [vashandi](./vashandi/) | `vashandi/` | Open-source AI-agent orchestration platform (formerly Paperclip) |
-| [openbrain](./openbrain/) | `openbrain/` | *(Coming soon)* |
+| [vashandi](./vashandi/) | `vashandi/` | Open-source AI-agent orchestration platform (Production Go Backend) |
+| [openbrain](./openbrain/) | `openbrain/` | Multi-tier memory service with autonomous curation |
 
 ---
 
 ## Projects
 
-### vashandi
+Vashandi is a high-performance orchestration platform fueled by a Go backend and a React dashboard. It manages a team of AI agents through a secure control plane with atomic task checkout and hard budget enforcement.
 
-> Open-source orchestration for zero-human companies.
-
-Vashandi is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
-
-- **Stack:** Node.js, TypeScript, React, PostgreSQL (via Drizzle ORM), Go (backend services)
+- **Stack:** Go (Core Backend), Node.js (Admin/UI-Proxy), React, PostgreSQL (pgvector)
 - **Dev quickstart:** see [`vashandi/README.md`](./vashandi/README.md)
 - **Full docs:** [`vashandi/doc/`](./vashandi/doc/)
 
@@ -33,8 +29,8 @@ OpenBrain is a new project in this monorepo. Details and documentation will be a
 
 ```
 vashandi/          # Vashandi project (AI-agent orchestration platform)
-  backend/         # Go backend services (Parity 85% - Phase 5 pending)
-  server/          # Node.js/TypeScript API server (Legacy baseline)
+  backend/         # Go core backend (Production Parity 100% - Hardened)
+  server/          # Node.js legacy baseline and board proxy
   ui/              # React + Vite board UI
   doc/             # Internal developer documentation (Standardized)
   docs/            # Public documentation site (Mintlify)

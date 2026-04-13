@@ -37,6 +37,8 @@ type HeartbeatRun struct {
 	RetryOfRunID          *string        `gorm:"column:retry_of_run_id;type:uuid"`
 	ProcessLossRetryCount int            `gorm:"column:process_loss_retry_count;not null;default:0"`
 	ContextSnapshot       datatypes.JSON `gorm:"column:context_snapshot;type:jsonb"`
+	HandoffMarkdown       *string        `gorm:"column:handoff_markdown"`
+	TaskID                string         `gorm:"column:task_id"`
 	CreatedAt             time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	UpdatedAt             time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
 

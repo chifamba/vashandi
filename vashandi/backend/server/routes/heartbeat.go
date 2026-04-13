@@ -10,10 +10,7 @@ import (
 )
 
 // HeartbeatWakeupHandler triggers an agent run
-func HeartbeatWakeupHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
-	secrets := services.NewSecretService(db)
-	service := services.NewHeartbeatService(db, secrets, activity, nil)
-	
+func HeartbeatWakeupHandler(service *services.HeartbeatService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			CompanyID string                 `json:"companyId"`

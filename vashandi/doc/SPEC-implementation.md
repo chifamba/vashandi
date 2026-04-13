@@ -817,7 +817,25 @@ A release candidate is blocked unless these pass:
 - add company selector and org chart view
 - add approvals and cost pages
 
-## Milestone 6: Hardening and Release
+## Milestone 6: Hardening and Release (Legacy baseline)
+
+---
+
+## Milestone 7: Hardened Go Backend Parity (Current Production State)
+
+The project has reached 100% feature parity with the legacy Node.js backend using a high-performance Go implementation in `vashandi/backend/`.
+
+### Key Hardened Features:
+- **Heartbeat Resilience**: Autonomous reaping of orphaned runs and strict concurrency enforcement.
+- **Advanced Workspaces**: Concurrent agent support via Git worktrees.
+- **Budget Governance**: Real-time project-level hard stops integrated into the heartbeat cycle.
+- **OpenBrain Integration**: Deep bidirectional sync with the OpenBrain memory service, including conflict detection and audit export.
+- **CLI Modernization**: `paperclipai onboard` interactive interview flow for rapid setup.
+
+### Operational Pivot:
+- **Go 1.25+** is the primary runtime for orchestration and business logic.
+- **Node.js** remains active for Board (Web) UI proxying and development middleware.
+- **pgvector** is required for memory-related features.
 
 - full integration/e2e suite
 - seed/demo company templates for local testing

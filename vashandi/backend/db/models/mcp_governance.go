@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/lib/pq"
+)
 
 type MCPToolDefinition struct {
 	ID          string    `gorm:"primaryKey" json:"id"`
@@ -18,8 +22,8 @@ func (MCPToolDefinition) TableName() string { return "mcp_tool_definitions" }
 type MCPEntitlementProfile struct {
 	ID        string    `gorm:"primaryKey" json:"id"`
 	CompanyID string    `gorm:"index;not null" json:"company_id"`
-	Name      string    `gorm:"type:text;not null" json:"name"`
-	ToolIDs   string    `gorm:"type:text[];not null" json:"tool_ids"`
+	Name      string         `gorm:"type:text;not null" json:"name"`
+	ToolIDs   pq.StringArray `gorm:"type:text[];not null" json:"tool_ids"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

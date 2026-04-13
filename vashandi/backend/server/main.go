@@ -16,12 +16,18 @@ import (
 )
 
 type App struct {
-	Router *chi.Mux
-	DB     *gorm.DB
+	Router    *chi.Mux
+	DB        *gorm.DB
+	Heartbeat *services.HeartbeatService
 }
 
 func NewApp(db *gorm.DB) *App {
-	r := SetupRouter(db)
+	activitySvc := services.NewActivityService(db)
+	secretsSvc := services.NewSecretService(db, activitySvc)
+	opsSvc := services.NewWorkspaceOperationService(db)
+	heartbeatSvc := services.NewHeartbeatService(db, secretsSvc, activitySvc, opsSvc, nil, nil)
+
+	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc)
 	
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
@@ -33,8 +39,9 @@ func NewApp(db *gorm.DB) *App {
 	}))
 
 	return &App{
-		Router: r,
-		DB:     db,
+		Router:    r,
+		DB:        db,
+		Heartbeat: heartbeatSvc,
 	}
 }
 
@@ -56,6 +63,15 @@ func Run() {
 	var db *gorm.DB 
 
 	app := NewApp(db)
+
+	// Startup Recovery
+	if app.Heartbeat != nil {
+		slog.Info("Running startup heartbeat recovery")
+		if err := app.Heartbeat.ReapOrphanedRuns(context.Background()); err != nil {
+			slog.Error("Startup recovery failed", "error", err)
+		}
+	}
+
 	if err := app.Start(cfg.Server.Port); err != nil {
 		slog.Error("Server failed", "error", err)
 		os.Exit(1)

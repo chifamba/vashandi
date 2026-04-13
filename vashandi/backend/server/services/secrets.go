@@ -2,7 +2,13 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
@@ -49,13 +55,16 @@ func (s *SecretService) ResolveSecretValue(ctx context.Context, companyID, secre
 func (s *SecretService) ResolveEnvBindings(ctx context.Context, companyID string, envValue map[string]interface{}) (map[string]string, error) {
 	resolved := make(map[string]string)
 	for key, val := range envValue {
-		binding := val.(map[string]interface{})
-		bindingType := binding["type"].(string)
+		binding, ok := val.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		bindingType, _ := binding["type"].(string)
 
 		if bindingType == "plain" {
 			resolved[key] = fmt.Sprintf("%v", binding["value"])
 		} else if bindingType == "secret_ref" {
-			secretID := binding["secretId"].(string)
+			secretID, _ := binding["secretId"].(string)
 			version := binding["version"]
 			decrypted, err := s.ResolveSecretValue(ctx, companyID, secretID, version)
 			if err != nil {
@@ -65,4 +74,76 @@ func (s *SecretService) ResolveEnvBindings(ctx context.Context, companyID string
 		}
 	}
 	return resolved, nil
+}
+
+func (s *SecretService) GenerateOpenBrainToken(namespaceID string, agentID string, trustTier int) (string, error) {
+	signingSecret := os.Getenv("OPENBRAIN_SIGNING_SECRET")
+	if signingSecret == "" {
+		signingSecret = "dev_secret_token"
+	}
+
+	claims := map[string]interface{}{
+		"namespaceId": namespaceID,
+		"agentId":     agentID,
+		"trustTier":   trustTier,
+		"actorKind":   "service",
+	}
+
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+
+	enc := base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, []byte(signingSecret))
+	mac.Write([]byte(enc))
+	sig := hex.EncodeToString(mac.Sum(nil))
+
+	return "openbrain." + enc + "." + sig, nil
+}
+
+// ResolveAdapterConfigForRuntime resolves secret references within an adapter configuration object.
+func (s *SecretService) ResolveAdapterConfigForRuntime(ctx context.Context, companyID string, config map[string]interface{}) (map[string]interface{}, error) {
+	// Recursive resolution for deep configs
+	var resolveDeep func(input interface{}) (interface{}, error)
+	resolveDeep = func(input interface{}) (interface{}, error) {
+		switch v := input.(type) {
+		case map[string]interface{}:
+			// Check if this map is a secret reference itself
+			if bType, ok := v["type"].(string); ok && bType == "secret_ref" {
+				secretID, _ := v["secretId"].(string)
+				version := v["version"]
+				return s.ResolveSecretValue(ctx, companyID, secretID, version)
+			}
+
+			// Otherwise, recurse into children
+			out := make(map[string]interface{})
+			for k, val := range v {
+				resolved, err := resolveDeep(val)
+				if err != nil {
+					return nil, err
+				}
+				out[k] = resolved
+			}
+			return out, nil
+		case []interface{}:
+			out := make([]interface{}, len(v))
+			for i, val := range v {
+				resolved, err := resolveDeep(val)
+				if err != nil {
+					return nil, err
+				}
+				out[i] = resolved
+			}
+			return out, nil
+		default:
+			return v, nil
+		}
+	}
+
+	result, err := resolveDeep(config)
+	if err != nil {
+		return nil, err
+	}
+	return result.(map[string]interface{}), nil
 }

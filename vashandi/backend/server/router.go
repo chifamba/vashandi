@@ -6,14 +6,13 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
+	"github.com/chifamba/vashandi/vashandi/backend/services"
 )
 
 // SetupRouter initializes the chi router with common middleware and routes
-func SetupRouter(db *gorm.DB) *chi.Mux {
+func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc *services.SecretService, heartbeatSvc *services.HeartbeatService) *chi.Mux {
 	r := chi.NewRouter()
 
-	// Initialize services
-	activitySvc := services.NewActivityService(db)
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
 	
 	// A good base middleware stack
@@ -27,14 +26,15 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 
 	// Company Routes
 	r.Get("/companies", routes.ListCompaniesHandler(db))
-	r.Post("/companies", routes.CreateCompanyHandler(db))
+	r.Post("/companies", routes.CreateCompanyHandler(db, secretsSvc))
 	r.Get("/companies/{id}", routes.GetCompanyHandler(db))
+	r.Patch("/companies/{id}/archive", routes.ArchiveCompanyHandler(db))
 
 	// API v1 Routes
 	r.Route("/api/v1", func(api chi.Router) {
 		// Heartbeat Routes
 		api.Route("/heartbeat", func(h chi.Router) {
-			h.Post("/wakeup", routes.HeartbeatWakeupHandler(db, activitySvc))
+			h.Post("/wakeup", routes.HeartbeatWakeupHandler(heartbeatSvc))
 			h.Get("/runs", routes.ListHeartbeatRunsHandler(db))
 		})
 
@@ -46,6 +46,7 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 		api.Post("/companies/{companyId}/issues", issueRoutes.CreateIssueHandler)
 		api.Get("/issues/{id}", issueRoutes.GetIssueHandler)
 		api.Patch("/issues/{id}/status", issueRoutes.TransitionIssueHandler)
+		api.Post("/issues/{id}/handoff", routes.HandoffIssueHandler(db))
 
 		// Activity Routes
 		api.Get("/companies/{companyId}/activity", func(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +74,7 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 		// Memory Service Routes
 		api.Get("/companies/{companyId}/memory/bindings", routes.MemoryBindingsHandler(db))
 		api.Get("/companies/{companyId}/memory/operations", routes.MemoryOperationsHandler(db))
+		api.Get("/companies/{companyId}/memory/audit/export", routes.ExportAuditHandler(db))
 
 		// Teams Routes
 		api.Get("/companies/{companyId}/teams", routes.TeamsHandler(db))
@@ -97,7 +99,7 @@ func SetupRouter(db *gorm.DB) *chi.Mux {
 
 		// Curator Routes
 		api.Get("/companies/{companyId}/curator/proposals", routes.ListProposalsHandler(db))
-		api.Post("/companies/{companyId}/curator/proposals/{proposalId}/approve", routes.ApproveProposalHandler(db))
+		api.Post("/companies/{companyId}/curator/proposals/{proposalId}/approve", routes.ApproveProposalHandler(db, activitySvc))
 
 		// Chat Routes
 		api.Post("/companies/{companyId}/chat", routes.CeoChatIngestionHandler(db))

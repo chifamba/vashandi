@@ -4,8 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
@@ -13,6 +17,15 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+var (
+	ErrProcessLost = errors.New("process lost")
+)
+
+type ProcessHandle struct {
+	RunID string
+	Cmd   *exec.Cmd
+}
 
 // AgentRunner defines the interface for executing an agent run.
 // This abstraction allows for in-process execution (LocalRunner) or
@@ -29,23 +42,35 @@ type HeartbeatService struct {
 	Costs      *CostService
 	Workspaces *WorkspaceService
 	Activity   *ActivityService
+	Ops        *WorkspaceOperationService
+	Memory     MemoryAdapter
+
+	// In-memory process tracking
+	runningProcesses   map[string]*ProcessHandle
+	runningProcessesMu sync.RWMutex
 }
 
-func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *ActivityService, runner AgentRunner) *HeartbeatService {
+func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *ActivityService, ops *WorkspaceOperationService, memory MemoryAdapter, runner AgentRunner) *HeartbeatService {
 	logStore := NewRunLogStore("")
 	costSvc := NewCostService(db)
-	workspaceSvc := NewWorkspaceService()
+	workspaceSvc := NewWorkspaceService(db)
 	if runner == nil {
 		runner = &LocalRunner{Logs: logStore}
 	}
+	if memory == nil {
+		memory = NewOpenBrainAdapter()
+	}
 	return &HeartbeatService{
-		DB:         db,
-		Secrets:    secrets,
-		Runner:     runner,
-		Logs:       logStore,
-		Costs:      costSvc,
-		Workspaces: workspaceSvc,
-		Activity:   activity,
+		DB:               db,
+		Secrets:          secrets,
+		Runner:           runner,
+		Logs:             logStore,
+		Costs:            costSvc,
+		Workspaces:       workspaceSvc,
+		Activity:         activity,
+		Ops:              ops,
+		Memory:           memory,
+		runningProcesses: make(map[string]*ProcessHandle),
 	}
 }
 
@@ -88,23 +113,91 @@ func (s *HeartbeatService) Wakeup(ctx context.Context, companyID, agentID string
 		})
 	}
 
-	// Initialize log handle
-	handle, err := s.Logs.Begin(companyID, agentID, run.ID)
-	if err == nil {
-		run.LogStore = &handle.Store
-		run.LogRef = &handle.LogRef
-		s.DB.WithContext(ctx).Save(run)
-	}
-
-	// Trigger execution (asynchronously for Phase 1)
+	// Trigger execution (asynchronously)
+	// In production, we would check concurrency limits here before starting.
 	go func() {
-		err := s.StartRun(context.Background(), run.ID)
-		if err != nil {
-			fmt.Printf("Run %s failed: %v\n", run.ID, err)
-		}
+		// For now, we resume queued runs for this agent
+		s.ResumeQueuedRuns(context.Background(), agentID)
 	}()
 
 	return run, nil
+}
+
+// ResumeQueuedRuns attempts to start queued runs for an agent, respecting concurrency limits.
+func (s *HeartbeatService) ResumeQueuedRuns(ctx context.Context, agentID string) {
+	var agent models.Agent
+	if err := s.DB.Where("id = ?", agentID).First(&agent).Error; err != nil {
+		return
+	}
+
+	// Simple concurrency check: default 1
+	var runningCount int64
+	s.DB.Model(&models.HeartbeatRun{}).Where("agent_id = ? AND status = ?", agentID, "running").Count(&runningCount)
+
+	if runningCount >= 1 { // In parity, we often start with 1
+		return
+	}
+
+	var nextRun models.HeartbeatRun
+	if err := s.DB.Where("agent_id = ? AND status = ?", agentID, "queued").Order("created_at asc").First(&nextRun).Error; err == nil {
+		_ = s.StartRun(ctx, nextRun.ID)
+	}
+}
+
+// ReapOrphanedRuns cleans up runs that are marked as running but the process is gone.
+func (s *HeartbeatService) ReapOrphanedRuns(ctx context.Context) error {
+	var activeRuns []models.HeartbeatRun
+	if err := s.DB.Where("status = ?", "running").Find(&activeRuns).Error; err != nil {
+		return err
+	}
+
+	for _, run := range activeRuns {
+		s.runningProcessesMu.RLock()
+		_, tracked := s.runningProcesses[run.ID]
+		s.runningProcessesMu.RUnlock()
+
+		if tracked {
+			continue
+		}
+
+		// If not tracked in memory, check if PID is alive (if we have one)
+		isAlive := false
+		if run.ProcessPid != nil && *run.ProcessPid > 0 {
+			proc, err := os.FindProcess(*run.ProcessPid)
+			if err == nil {
+				// On Unix, p.Signal(0) checks if process exists
+				err = proc.Signal(syscall.Signal(0))
+				if err == nil {
+					isAlive = true
+				}
+			}
+		}
+
+		if !isAlive {
+			finishedAt := time.Now()
+			run.Status = "completed"
+			run.FinishedAt = &finishedAt
+			s.DB.Save(&run)
+
+			// notify OpenBrain
+			go func() {
+				summary := fmt.Sprintf("Run %s completed for agent %s on task %s", run.ID, run.AgentID, run.TaskID)
+				_, _ = s.Memory.HandleTrigger(context.Background(), run.CompanyID, "run_complete", TriggerRequest{
+					AgentID:   run.AgentID,
+					TaskQuery: run.TaskID,
+					Summary:   summary,
+					Metadata: map[string]any{
+						"runId":      run.ID,
+						"exitCode":   0,
+						"finishedAt": finishedAt,
+					},
+				})
+			}()
+
+			s.resumeNextRun(run.AgentID)
+		}
+	}
+	return nil
 }
 
 // StartRun handles the setup and execution of a specific run.
@@ -124,6 +217,12 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 	runtimeConfig := make(map[string]interface{})
 	_ = json.Unmarshal(run.Agent.RuntimeConfig, &runtimeConfig)
 	
+	// 1. Resolve secrets in the adapter config itself
+	resolvedConfig, err := s.Secrets.ResolveAdapterConfigForRuntime(ctx, run.CompanyID, runtimeConfig)
+	if err == nil {
+		runtimeConfig = resolvedConfig
+	}
+
 	env := make(map[string]string)
 	if envInput, ok := runtimeConfig["env"].(map[string]interface{}); ok {
 		resolved, err := s.Secrets.ResolveEnvBindings(ctx, run.CompanyID, envInput)
@@ -133,10 +232,14 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 	}
 
 	// 1. Realize Workspace
+	recorder := s.Ops.CreateRecorder(run.CompanyID, &run.ID, nil)
+	phase := "realize_workspace"
+	op, _ := recorder.Begin(ctx, phase, nil)
+
 	var project models.Project
 	repoURL := ""
 	
-	// Extract projectId from contextSnapshot since it's not a column
+	// Extract projectId from contextSnapshot
 	contextData := make(map[string]interface{})
 	_ = json.Unmarshal(run.ContextSnapshot, &contextData)
 	contextProjectID, _ := contextData["projectId"].(string)
@@ -151,31 +254,63 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 		}
 	}
 
-	cwd, workspaceErr := s.Workspaces.RealizeWorkspace(ctx, run.CompanyID, contextProjectID, repoURL)
+	// 1. Budget Check
+	if contextProjectID != "" {
+		blocked, err := CheckProjectBudget(s.DB, contextProjectID)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			run.Status = "failed"
+			errMsg := "Budget exceeded for project"
+			run.Error = &errMsg
+			s.DB.WithContext(ctx).Save(&run)
+			return fmt.Errorf("budget exceeded")
+		}
+	}
+
+	strategy := StrategyPrimary
+	if strategyStr, ok := contextData["workspaceStrategy"].(string); ok && strategyStr == "git_worktree" {
+		strategy = StrategyWorktree
+	}
+
+	cwd, workspaceErr := s.Workspaces.RealizeWorkspace(ctx, run.CompanyID, contextProjectID, repoURL, RealizeOptions{
+		Strategy:   strategy,
+		RunID:      run.ID,
+		BranchName: "",
+	})
+	
 	if workspaceErr != nil {
-		// Log error but attempt to continue if possible, or fail
+		recorder.Finish(ctx, op.ID, 1, workspaceErr)
 		return workspaceErr
 	}
+	recorder.Finish(ctx, op.ID, 0, nil)
 
 	// 2. Execute via runner
 	run.Status = "running"
 	s.DB.WithContext(ctx).Save(&run)
 	
-	// Pass the resolved CWD to the runner env or directly
 	env["PAPERCLIP_CWD"] = cwd
 	
-	err := s.Runner.Execute(ctx, &run, env)
+	return s.executeAndTrack(ctx, &run, env)
+}
+
+func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.HeartbeatRun, env map[string]string) error {
+	err := s.Runner.Execute(ctx, run, env)
 	
+	s.runningProcessesMu.Lock()
+	delete(s.runningProcesses, run.ID)
+	s.runningProcessesMu.Unlock()
+
 	finishedAt := time.Now()
 	run.FinishedAt = &finishedAt
 	if err != nil {
 		run.Status = "failed"
-		errMsg := err.Error()
-		run.Error = &errMsg
+		msg := err.Error()
+		run.Error = &msg
 	} else {
 		run.Status = "completed"
-
-		// Record a placeholder cost event for parity (in production this uses real usage)
+		// Record cost event
 		_, _ = s.Costs.CreateEvent(ctx, run.CompanyID, &models.CostEvent{
 			AgentID:        run.AgentID,
 			HeartbeatRunID: &run.ID,
@@ -185,8 +320,29 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 			OccurredAt:     finishedAt,
 		})
 	}
-	
-	return s.DB.WithContext(ctx).Save(&run).Error
+	s.DB.WithContext(ctx).Save(run)
+
+	// notify OpenBrain
+	go func() {
+		summary := fmt.Sprintf("Run %s completed for agent %s on task %s", run.ID, run.AgentID, run.TaskID)
+		exitCode := 0
+		if err != nil {
+			exitCode = 1
+		}
+		_, _ = s.Memory.HandleTrigger(context.Background(), run.CompanyID, "run_complete", TriggerRequest{
+			AgentID:   run.AgentID,
+			TaskQuery: run.TaskID,
+			Summary:   summary,
+			Metadata: map[string]any{
+				"runId":      run.ID,
+				"exitCode":   exitCode,
+				"finishedAt": finishedAt,
+			},
+		})
+	}()
+
+	s.resumeNextRun(run.AgentID)
+	return err
 }
 
 // --- Local Runner Implementation ---
@@ -242,6 +398,10 @@ func (r *LocalRunner) Execute(ctx context.Context, run *models.HeartbeatRun, env
 	
 	pid = cmd.Process.Pid
 	run.ProcessPid = &pid
+	
+	// In-process runners in Go don't easily have access to the parent service
+	// so we expect the service to handle the tracking.
+	// However, if we move to a microservice model, this wouldn't matter.
 	
 	err := cmd.Wait()
 	

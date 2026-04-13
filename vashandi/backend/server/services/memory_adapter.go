@@ -14,6 +14,28 @@ import (
 type MemoryAdapter interface {
 	IngestMemory(ctx context.Context, namespaceID, text string, metadata map[string]string) error
 	QueryMemory(ctx context.Context, namespaceID, query string, limit int) ([]MemoryResult, error)
+	HandleTrigger(ctx context.Context, namespaceID, triggerType string, req TriggerRequest) (*TriggerResponse, error)
+	ExportAudit(ctx context.Context, namespaceID, format string) ([]byte, string, error)
+	ArchiveNamespace(ctx context.Context, namespaceID string) error
+	DeleteNamespace(ctx context.Context, namespaceID string) error
+}
+
+type TriggerRequest struct {
+	AgentID     string         `json:"agentId,omitempty"`
+	TaskQuery   string         `json:"taskQuery,omitempty"`
+	Intent      string         `json:"intent,omitempty"`
+	TokenBudget int            `json:"tokenBudget,omitempty"`
+	Content     string         `json:"content,omitempty"`
+	Summary     string         `json:"summary,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	ErrorText   string         `json:"errorText,omitempty"`
+}
+
+type TriggerResponse struct {
+	Status      string   `json:"status"`
+	PacketID    string   `json:"packetId,omitempty"`
+	CreatedIDs  []string `json:"createdIds,omitempty"`
+	ProposalIDs []string `json:"proposalIds,omitempty"`
 }
 
 type MemoryResult struct {
@@ -164,6 +186,106 @@ func (o *OpenBrainAdapter) ResolveProposal(ctx context.Context, namespaceID, pro
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+o.authSecret)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("openbrain returned error status: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func (o *OpenBrainAdapter) HandleTrigger(ctx context.Context, namespaceID, triggerType string, triggerReq TriggerRequest) (*TriggerResponse, error) {
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s/triggers/%s", o.baseURL, namespaceID, triggerType)
+
+	bodyBytes, _ := json.Marshal(triggerReq)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+o.authSecret)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("openbrain returned error status: %d", resp.StatusCode)
+	}
+
+	var result TriggerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (o *OpenBrainAdapter) ExportAudit(ctx context.Context, namespaceID, format string) ([]byte, string, error) {
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s/audit/export?format=%s", o.baseURL, namespaceID, format)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+o.authSecret)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, "", fmt.Errorf("openbrain returned error status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return body, resp.Header.Get("Content-Type"), nil
+}
+
+func (o *OpenBrainAdapter) ArchiveNamespace(ctx context.Context, namespaceID string) error {
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s/archive", o.baseURL, namespaceID)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+o.authSecret)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("openbrain returned error status: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func (o *OpenBrainAdapter) DeleteNamespace(ctx context.Context, namespaceID string) error {
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s", o.baseURL, namespaceID)
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Authorization", "Bearer "+o.authSecret)
 
 	resp, err := o.client.Do(req)

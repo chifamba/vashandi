@@ -12,9 +12,10 @@ Current implementation status:
 
 ## Prerequisites
 
+- Go 1.25+ (Primary core backend and CLI)
 - Node.js 20+
 - pnpm 9+
-- Go 1.25+ (for Go backend services in `vashandi/backend/` and `openbrain/`)
+- PostgreSQL + pgvector (for OpenBrain focus)
 
 ## Dependency Lockfile Policy
 
@@ -30,7 +31,7 @@ From repo root:
 
 ```sh
 pnpm install
-pnpm dev
+pnpm dev              # Starts Go backend + UI in watch mode
 ```
 
 This starts:
@@ -321,8 +322,8 @@ curl http://localhost:3100/api/companies
 
 Expected:
 
-- `/api/health` returns `{"status":"ok"}`
-- `/api/companies` returns a JSON array
+- `/api/health` returns `{"status":"ok"}` from the Go service
+- `/api/companies` returns a JSON array from the Go service
 
 ## Reset Local Dev Database
 

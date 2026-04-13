@@ -91,18 +91,18 @@ func AgentMCPToolsHandler(db *gorm.DB) http.HandlerFunc {
 
         var toolIDs []string
         for _, p := range profiles {
-            // Note: Postgres array fetching needs custom logic, assuming tool_ids is comma-sep for simplicity,
-            // but the plan says uuid[]. This is an approximation. We'll fallback to returning all.
-            // A real implementation would parse the string array or use proper pq.StringArray.
-            // This is a minimal implement to fix the code review complaint.
-            toolIDs = append(toolIDs, p.ToolIDs)
+            for _, tid := range p.ToolIDs {
+                toolIDs = append(toolIDs, tid)
+            }
         }
 
 		// 2. Fetch tool definitions based on profile tool IDs
 		var tools []models.MCPToolDefinition
-		if err := db.Where("id IN ?", toolIDs).Find(&tools).Error; err != nil {
-            http.Error(w, err.Error(), http.StatusInternalServerError)
-            return
+        if len(toolIDs) > 0 {
+		    if err := db.Where("id IN ?", toolIDs).Find(&tools).Error; err != nil {
+                http.Error(w, err.Error(), http.StatusInternalServerError)
+                return
+            }
         }
 
 		json.NewEncoder(w).Encode(tools)
