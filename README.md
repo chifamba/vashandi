@@ -33,17 +33,26 @@ OpenBrain is a new project in this monorepo. Details and documentation will be a
 
 ```
 vashandi/          # Vashandi project (AI-agent orchestration platform)
-  backend/         # Go backend services
-  server/          # Node.js/TypeScript API server
-  ui/              # React + Vite frontend
-  packages/        # Shared packages (db, adapters, plugins, etc.)
-  cli/             # CLI tool
-  docs/            # Public documentation site
-  doc/             # Internal developer documentation
-  ...
+  backend/         # Go backend services (Parity 85% - Phase 5 pending)
+  server/          # Node.js/TypeScript API server (Legacy baseline)
+  ui/              # React + Vite board UI
+  doc/             # Internal developer documentation (Standardized)
+  docs/            # Public documentation site (Mintlify)
 
-openbrain/         # OpenBrain project (placeholder)
+openbrain/         # OpenBrain project (Memory & Context service)
+  doc/             # Internal developer documentation
 ```
+
+---
+
+## Documentation Standard
+
+This monorepo follows a systematic documentation layout:
+- **Root README**: High-level overview and cross-project navigation.
+- **Project README**: Quickstart and setup for that specific project.
+- **Project `doc/`**: Canonical home for all internal specifications and plans.
+  - `doc/specs/`: Verified technical specifications.
+  - `doc/plans/`: Dated/versioned implementation roadmaps.
 
 ---
 

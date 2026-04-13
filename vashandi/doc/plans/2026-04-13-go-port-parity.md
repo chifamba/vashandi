@@ -52,7 +52,25 @@ Port the critical logic for tracking costs, capturing logs, and managing Git-bac
 
 ## Open Questions
 -   **Secret Resolution**: How deep should the first pass of `SecretService` go? (Node.js handles complex env-binding).
--   **Logging Parity**: Should Go logs be saved to the same file structure as Node.js, or should we move to the `heartbeat_runs` blob storage immediately?
+-   **Logging Parity**: Should Go logs be saved to the same file structure as Node.js, or should we move to- [x] Standardize Activity Log retrieval and filtering in `ActivityService`.
+
+## Phase 5: Production Hardening & Full Parity (Audit Findings)
+
+Based on a deep-dive audit of the Node.js implementation, the following gaps must be closed for a production-ready Go release:
+
+- [ ] **Heartbeat Resilience**:
+    - Implement `ReapOrphanedRuns` for handling system restarts/crashes.
+    - Implement agent-scoped concurrency limits (`ClaimQueuedRun`).
+- [ ] **Advanced Workspaces**:
+    - Port the `git_worktree` strategy to allow efficient concurrent runs on the same project.
+    - Implement the full `WorkspaceOperationService` for tracking state changes.
+- [ ] **Budget Enforcement**:
+    - Integrate the budget check natively into the heartbeat execution cycle.
+    - Implement the incident reporting system for budget breaches.
+- [ ] **Secret Management**:
+    - Implement the `SecretProvider` registry and `ResolveAdapterConfigForRuntime`.
+- [ ] **Session Compaction**:
+    - Port the logic to summarize and compact run histories into higher-level session summaries.
 
 ## Verification Plan
 
