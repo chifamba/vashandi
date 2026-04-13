@@ -861,18 +861,8 @@ export function AgentDetail() {
       if (urlRunId) {
         crumbs.push({ label: "Runs", href: `/agents/${canonicalAgentRef}/runs` });
         crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
-      } else if (activeView === "instructions") {
-        crumbs.push({ label: "Instructions" });
-      } else if (activeView === "configuration") {
-        crumbs.push({ label: "Configuration" });
-      } else if (activeView === "skills") {
-        crumbs.push({ label: "Skills" });
-      } else if (activeView === "runs") {
-        crumbs.push({ label: "Runs" });
-      } else if (activeView === "budget") {
-        crumbs.push({ label: "Budget" });
       } else {
-        crumbs.push({ label: "Dashboard" });
+        crumbs.push({ label: activeView.charAt(0).toUpperCase() + activeView.slice(1) });
       }
     }
     setBreadcrumbs(crumbs);
