@@ -1,12 +1,12 @@
 services:
   db:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg18-trixie
     environment:
       POSTGRES_USER: paperclip
       POSTGRES_PASSWORD: paperclip
       POSTGRES_DB: paperclip
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      test: [ "CMD-SHELL", "pg_isready -U paperclip -d paperclip" ]
       interval: 2s
       timeout: 5s
       retries: 30
@@ -94,7 +94,7 @@ services:
     volumes:
       - ca-data:/home/step
     healthcheck:
-      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      test: [ "CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt" ]
       interval: 5s
       timeout: 5s
       retries: 5
