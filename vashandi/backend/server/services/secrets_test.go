@@ -186,8 +186,8 @@ func TestGenerateOpenBrainToken_ContainsClaims(t *testing.T) {
 		t.Fatalf("expected 3 parts, got %d: %v", len(parts), parts)
 	}
 
-	import64 := parts[1]
-	decoded, err := decodeBase64URL(import64)
+	payloadB64 := parts[1]
+	decoded, err := decodeBase64URL(payloadB64)
 	if err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestGenerateOpenBrainToken_ContainsClaims(t *testing.T) {
 		t.Errorf("expected namespaceId 'ns-abc', got %v", claims["namespaceId"])
 	}
 	if claims["agentId"] != "agent-xyz" {
-		t.Fatalf("expected agentId 'agent-xyz', got %v", claims["agentId"])
+		t.Errorf("expected agentId 'agent-xyz', got %v", claims["agentId"])
 	}
 }
 
