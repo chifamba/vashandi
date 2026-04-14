@@ -2,6 +2,7 @@ package routes
 
 import (
 "encoding/json"
+"fmt"
 "net/http"
 "time"
 
@@ -309,7 +310,7 @@ func GetWindowSpendHandler(db *gorm.DB) http.HandlerFunc {
 		windowDays := 30
 		var totalCents int64
 		db.WithContext(r.Context()).Model(&models.CostEvent{}).
-			Where("company_id = ? AND occurred_at >= NOW() - INTERVAL '? days'", companyID, windowDays).
+			Where(fmt.Sprintf("company_id = ? AND occurred_at >= NOW() - INTERVAL '%d days'", windowDays), companyID).
 			Select("COALESCE(SUM(cost_cents), 0)").Scan(&totalCents)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{

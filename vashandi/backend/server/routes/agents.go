@@ -780,12 +780,10 @@ func PatchAgentInstructionsBundleHandler(db *gorm.DB) http.HandlerFunc {
 func GetAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		var agent models.Agent
-		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+		if err := db.WithContext(r.Context()).Select("id").Where("id = ?", id).First(&models.Agent{}).Error; err != nil {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
-		_ = agent
 		http.Error(w, "No bundle file configured", http.StatusNotFound)
 	}
 }
@@ -794,12 +792,10 @@ func GetAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
 func PutAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		var agent models.Agent
-		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+		if err := db.WithContext(r.Context()).Select("id").Where("id = ?", id).First(&models.Agent{}).Error; err != nil {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
-		_ = agent
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}
@@ -809,12 +805,10 @@ func PutAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
 func DeleteAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		var agent models.Agent
-		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+		if err := db.WithContext(r.Context()).Select("id").Where("id = ?", id).First(&models.Agent{}).Error; err != nil {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
-		_ = agent
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

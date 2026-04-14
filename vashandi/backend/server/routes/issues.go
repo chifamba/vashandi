@@ -779,7 +779,7 @@ func UploadIssueAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 		}
 		defer file.Close()
 		data, _ := io.ReadAll(file)
-		hash := fmt.Sprintf("%x", sha256sum(data))
+		hash := fmt.Sprintf("%x", sha256hash(data))
 		fname := header.Filename
 		asset := models.Asset{
 			CompanyID:        companyID,
@@ -826,9 +826,7 @@ func GetAttachmentContentHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "Asset not found", http.StatusNotFound)
 			return
 		}
-		w.Header().Set("Content-Type", asset.ContentType)
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+derefStr(asset.OriginalFilename)+"\"")
-		// For local provider, we can't serve the actual file, but return metadata
+		// Return asset metadata; actual file serving requires storage backend integration
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(asset)
 	}
@@ -841,6 +839,3 @@ func derefStr(s *string) string {
 	return *s
 }
 
-func sha256sum(data []byte) [32]byte {
-	return sha256hash(data)
-}

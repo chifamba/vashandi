@@ -164,11 +164,7 @@ func GetAssetContentHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
-		w.Header().Set("Content-Type", asset.ContentType)
-		if asset.OriginalFilename != nil {
-			w.Header().Set("Content-Disposition", "attachment; filename=\""+*asset.OriginalFilename+"\"")
-		}
-		// Return metadata since we store locally without actual file bytes
+		// Return asset metadata; actual file serving requires storage backend integration
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(asset)
 	}
