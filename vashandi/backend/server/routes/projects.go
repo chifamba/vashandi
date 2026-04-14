@@ -70,3 +70,95 @@ w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(project)
 }
 }
+
+func DeleteProjectHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+if err := db.WithContext(r.Context()).Where("id = ?", id).Delete(&models.Project{}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+w.WriteHeader(http.StatusNoContent)
+}
+}
+
+func ListProjectWorkspacesHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+projectID := chi.URLParam(r, "id")
+var workspaces []models.ProjectWorkspace
+db.WithContext(r.Context()).Where("project_id = ?", projectID).Find(&workspaces)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(workspaces)
+}
+}
+
+func CreateProjectWorkspaceHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+projectID := chi.URLParam(r, "id")
+var ws models.ProjectWorkspace
+if err := json.NewDecoder(r.Body).Decode(&ws); err != nil {
+http.Error(w, err.Error(), http.StatusBadRequest)
+return
+}
+ws.ProjectID = projectID
+var project models.Project
+if err := db.WithContext(r.Context()).First(&project, "id = ?", projectID).Error; err != nil {
+http.Error(w, "Project not found", http.StatusNotFound)
+return
+}
+ws.CompanyID = project.CompanyID
+if err := db.WithContext(r.Context()).Create(&ws).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusCreated)
+json.NewEncoder(w).Encode(ws)
+}
+}
+
+func UpdateProjectWorkspaceHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+projectID := chi.URLParam(r, "id")
+workspaceID := chi.URLParam(r, "workspaceId")
+var ws models.ProjectWorkspace
+if err := db.WithContext(r.Context()).First(&ws, "id = ? AND project_id = ?", workspaceID, projectID).Error; err != nil {
+http.Error(w, "Not found", http.StatusNotFound)
+return
+}
+if err := json.NewDecoder(r.Body).Decode(&ws); err != nil {
+http.Error(w, err.Error(), http.StatusBadRequest)
+return
+}
+db.WithContext(r.Context()).Save(&ws)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(ws)
+}
+}
+
+func DeleteProjectWorkspaceHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+projectID := chi.URLParam(r, "id")
+workspaceID := chi.URLParam(r, "workspaceId")
+if err := db.WithContext(r.Context()).
+Where("id = ? AND project_id = ?", workspaceID, projectID).
+Delete(&models.ProjectWorkspace{}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+w.WriteHeader(http.StatusNoContent)
+}
+}
+
+// ProjectWorkspaceRuntimeServicesHandler — POST /projects/:id/workspaces/:workspaceId/runtime-services/:action
+// Stub: real implementation requires a process manager.
+func ProjectWorkspaceRuntimeServicesHandler() http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+action := chi.URLParam(r, "action")
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]string{
+"status": "ok",
+"action": action,
+})
+}
+}

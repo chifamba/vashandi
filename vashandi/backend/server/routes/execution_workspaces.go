@@ -56,3 +56,23 @@ w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(ws)
 }
 }
+
+func GetWorkspaceCloseReadinessHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]interface{}{
+"ready":  true,
+"reason": nil,
+})
+}
+}
+
+func GetWorkspaceWorkspaceOperationsHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+var operations []models.WorkspaceOperation
+db.WithContext(r.Context()).Where("execution_workspace_id = ?", id).Find(&operations)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(operations)
+}
+}

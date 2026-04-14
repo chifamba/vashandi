@@ -2,7 +2,9 @@ package routes
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +17,60 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
+
+// mockMemoryAdapter is a test double for services.MemoryAdapter that routes
+// RegisterAgent / DeregisterAgent calls as HTTP requests to a configurable base URL.
+type mockMemoryAdapter struct {
+	baseURL string
+}
+
+func (m *mockMemoryAdapter) IngestMemory(_ context.Context, _, _ string, _ map[string]string) error {
+	return nil
+}
+func (m *mockMemoryAdapter) CreateMemory(_ context.Context, _ string, _ services.MemoryPayload) error {
+	return nil
+}
+func (m *mockMemoryAdapter) QueryMemory(_ context.Context, _, _ string, _ int) ([]services.MemoryResult, error) {
+	return nil, nil
+}
+func (m *mockMemoryAdapter) CompileContext(_ context.Context, _ services.ContextRequest) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (m *mockMemoryAdapter) RegisterAgent(_ context.Context, namespaceID, agentID, name string) error {
+	body, _ := json.Marshal(map[string]string{"agent_id": agentID, "name": name})
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s/agents", m.baseURL, namespaceID)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body)) //nolint:noctx
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+func (m *mockMemoryAdapter) DeregisterAgent(_ context.Context, namespaceID, agentID string) error {
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s/agents/%s", m.baseURL, namespaceID, agentID)
+	req, _ := http.NewRequest(http.MethodDelete, url, nil)
+	resp, err := http.DefaultClient.Do(req) //nolint:noctx
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+func (m *mockMemoryAdapter) HandleTrigger(_ context.Context, _, _ string, _ services.TriggerRequest) (*services.TriggerResponse, error) {
+	return nil, nil
+}
+func (m *mockMemoryAdapter) ExportAudit(_ context.Context, _, _ string) ([]byte, string, error) {
+	return nil, "", nil
+}
+func (m *mockMemoryAdapter) ArchiveNamespace(_ context.Context, _ string) error { return nil }
+func (m *mockMemoryAdapter) DeleteNamespace(_ context.Context, _ string) error  { return nil }
+func (m *mockMemoryAdapter) ListProposals(_ context.Context, _ string) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (m *mockMemoryAdapter) ResolveProposal(_ context.Context, _, _, _ string) error { return nil }
+
 
 func setupTestDB(t *testing.T) *gorm.DB {
 	// Use unique in-memory db per test
@@ -80,20 +135,8 @@ func TestCreateAgentHandlerWebhook(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	originalTransport := http.DefaultClient.Transport
-	http.DefaultClient.Transport = &roundTripperFunc{
-		fn: func(req *http.Request) (*http.Response, error) {
-			if strings.HasPrefix(req.URL.Host, "openbrain:") {
-				req.URL.Scheme = "http"
-				req.URL.Host = mockServer.Listener.Addr().String()
-			}
-			return http.DefaultTransport.RoundTrip(req)
-		},
-	}
-	defer func() { http.DefaultClient.Transport = originalTransport }()
-
 	router := chi.NewRouter()
-	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db))
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, &mockMemoryAdapter{baseURL: mockServer.URL}))
 
 	agentData := map[string]string{
         "id": "agent-123",
@@ -160,20 +203,8 @@ func TestDeleteAgentHandlerWebhook(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	originalTransport := http.DefaultClient.Transport
-	http.DefaultClient.Transport = &roundTripperFunc{
-		fn: func(req *http.Request) (*http.Response, error) {
-			if strings.HasPrefix(req.URL.Host, "openbrain:") {
-				req.URL.Scheme = "http"
-				req.URL.Host = mockServer.Listener.Addr().String()
-			}
-			return http.DefaultTransport.RoundTrip(req)
-		},
-	}
-	defer func() { http.DefaultClient.Transport = originalTransport }()
-
 	router := chi.NewRouter()
-	router.Delete("/agents/{id}", DeleteAgentHandler(db))
+	router.Delete("/agents/{id}", DeleteAgentHandler(db, &mockMemoryAdapter{baseURL: mockServer.URL}))
 
 	req := httptest.NewRequest("DELETE", "/agents/agent-123", nil)
 	w := httptest.NewRecorder()

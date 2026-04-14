@@ -55,3 +55,31 @@ w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(skill)
 }
 }
+
+func GetCompanySkillHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+companyID := chi.URLParam(r, "companyId")
+skillID := chi.URLParam(r, "skillId")
+var skill models.CompanySkill
+if err := db.WithContext(r.Context()).First(&skill, "id = ? AND company_id = ?", skillID, companyID).Error; err != nil {
+http.Error(w, "Not found", http.StatusNotFound)
+return
+}
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(skill)
+}
+}
+
+func DeleteCompanySkillHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+companyID := chi.URLParam(r, "companyId")
+skillID := chi.URLParam(r, "skillId")
+if err := db.WithContext(r.Context()).
+Where("id = ? AND company_id = ?", skillID, companyID).
+Delete(&models.CompanySkill{}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+w.WriteHeader(http.StatusNoContent)
+}
+}

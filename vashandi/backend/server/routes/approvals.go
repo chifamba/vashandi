@@ -106,3 +106,52 @@ w.WriteHeader(http.StatusCreated)
 json.NewEncoder(w).Encode(comment)
 }
 }
+
+func GetApprovalHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+var approval models.Approval
+if err := db.WithContext(r.Context()).First(&approval, "id = ?", id).Error; err != nil {
+http.Error(w, "Not found", http.StatusNotFound)
+return
+}
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(approval)
+}
+}
+
+func GetApprovalIssuesHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+approvalID := chi.URLParam(r, "id")
+var issueApprovals []models.IssueApproval
+db.WithContext(r.Context()).Where("approval_id = ?", approvalID).Find(&issueApprovals)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(issueApprovals)
+}
+}
+
+func ResubmitApprovalHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+var approval models.Approval
+if err := db.WithContext(r.Context()).First(&approval, "id = ?", id).Error; err != nil {
+http.Error(w, "Not found", http.StatusNotFound)
+return
+}
+approval.Status = "pending"
+approval.DecidedAt = nil
+db.WithContext(r.Context()).Save(&approval)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(approval)
+}
+}
+
+func GetApprovalCommentsHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+approvalID := chi.URLParam(r, "id")
+var comments []models.ApprovalComment
+db.WithContext(r.Context()).Where("approval_id = ?", approvalID).Order("created_at ASC").Find(&comments)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(comments)
+}
+}

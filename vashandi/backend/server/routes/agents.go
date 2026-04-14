@@ -2,10 +2,15 @@ package routes
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
@@ -72,7 +77,9 @@ func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.Handler
 
 		// Fire HTTP POST to OpenBrain webhook for Agent Sync Lifecycle Events (Task 2.3)
 		go func(agentID, agentName, compID string) {
-			_ = memory.RegisterAgent(context.Background(), compID, agentID, agentName)
+			if memory != nil {
+				_ = memory.RegisterAgent(context.Background(), compID, agentID, agentName)
+			}
 		}(agent.ID, agent.Name, companyID)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -103,9 +110,560 @@ func DeleteAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.Handler
 
 		// Fire HTTP DELETE to OpenBrain webhook for Agent Sync Lifecycle Events (Task 2.3)
 		go func(agentID, compID string) {
-			_ = memory.DeregisterAgent(context.Background(), compID, agentID)
+			if memory != nil {
+				_ = memory.DeregisterAgent(context.Background(), compID, agentID)
+			}
 		}(agent.ID, agent.CompanyID)
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// UpdateAgentHandler handles PATCH /agents/:id
+func UpdateAgentHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var agent models.Agent
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Agent not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+var body map[string]interface{}
+if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+http.Error(w, err.Error(), http.StatusBadRequest)
+return
+}
+
+updates := map[string]interface{}{}
+if v, ok := body["name"]; ok {
+updates["name"] = v
+}
+if v, ok := body["reportsToId"]; ok {
+updates["reports_to"] = v
+}
+if v, ok := body["status"]; ok {
+updates["status"] = v
+}
+if v, ok := body["pauseReason"]; ok {
+updates["pause_reason"] = v
+}
+if v, ok := body["runtimeConfig"]; ok {
+var existing map[string]interface{}
+if len(agent.RuntimeConfig) > 0 {
+_ = json.Unmarshal(agent.RuntimeConfig, &existing)
+}
+if existing == nil {
+existing = map[string]interface{}{}
+}
+if incoming, ok := v.(map[string]interface{}); ok {
+for k, val := range incoming {
+existing[k] = val
+}
+}
+merged, _ := json.Marshal(existing)
+updates["runtime_config"] = datatypes.JSON(merged)
+}
+
+if len(updates) > 0 {
+if err := db.Model(&agent).Updates(updates).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+}
+
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(agent)
+}
+}
+
+// PauseAgentHandler handles POST /agents/:id/pause
+func PauseAgentHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var agent models.Agent
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Agent not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+now := time.Now()
+if err := db.Model(&agent).Updates(map[string]interface{}{
+"status":    "paused",
+"paused_at": now,
+}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(agent)
+}
+}
+
+// ResumeAgentHandler handles POST /agents/:id/resume
+func ResumeAgentHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var agent models.Agent
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Agent not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+if err := db.Model(&agent).Updates(map[string]interface{}{
+"status":    "active",
+"paused_at": nil,
+}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(agent)
+}
+}
+
+// TerminateAgentHandler handles POST /agents/:id/terminate
+func TerminateAgentHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var agent models.Agent
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Agent not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+if err := db.Model(&agent).Update("status", "terminated").Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(agent)
+}
+}
+
+// GetAgentRuntimeStateHandler handles GET /agents/:id/runtime-state
+func GetAgentRuntimeStateHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var state models.AgentRuntimeState
+if err := db.First(&state, "agent_id = ?", id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusNotFound)
+w.Write([]byte("{}"))
+return
+}
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(state)
+}
+}
+
+// ResetAgentSessionHandler handles POST /agents/:id/runtime-state/reset-session
+func ResetAgentSessionHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+if err := db.Where("agent_id = ?", id).Delete(&models.AgentTaskSession{}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.WriteHeader(http.StatusNoContent)
+}
+}
+
+// GetAgentTaskSessionsHandler handles GET /agents/:id/task-sessions
+func GetAgentTaskSessionsHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var sessions []models.AgentTaskSession
+if err := db.Where("agent_id = ?", id).Order("created_at DESC").Find(&sessions).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(sessions)
+}
+}
+
+// ListConfigRevisionsHandler handles GET /agents/:id/config-revisions
+func ListConfigRevisionsHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var revisions []models.AgentConfigRevision
+if err := db.Where("agent_id = ?", id).Order("created_at DESC").Limit(50).Find(&revisions).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(revisions)
+}
+}
+
+// GetConfigRevisionHandler handles GET /agents/:id/config-revisions/:revisionId
+func GetConfigRevisionHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+revisionID := chi.URLParam(r, "revisionId")
+
+var revision models.AgentConfigRevision
+if err := db.First(&revision, "id = ? AND agent_id = ?", revisionID, id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Config revision not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(revision)
+}
+}
+
+// RollbackConfigRevisionHandler handles POST /agents/:id/config-revisions/:revisionId/rollback
+func RollbackConfigRevisionHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+revisionID := chi.URLParam(r, "revisionId")
+
+var original models.AgentConfigRevision
+if err := db.First(&original, "id = ? AND agent_id = ?", revisionID, id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Config revision not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+// Use the most recent revision's AfterConfig as the current state (BeforeConfig for the rollback).
+// Fall back to the agent's RuntimeConfig snapshot if no revisions exist.
+var currentBeforeConfig datatypes.JSON
+var latestRevision models.AgentConfigRevision
+if err := db.Where("agent_id = ?", id).Order("created_at DESC").First(&latestRevision).Error; err == nil {
+currentBeforeConfig = latestRevision.AfterConfig
+} else {
+var agentForConfig models.Agent
+if err2 := db.First(&agentForConfig, "id = ?", id).Error; err2 == nil {
+currentBeforeConfig = agentForConfig.RuntimeConfig
+} else {
+currentBeforeConfig = datatypes.JSON("{}")
+}
+}
+
+newRevision := models.AgentConfigRevision{
+CompanyID:                original.CompanyID,
+AgentID:                  original.AgentID,
+Source:                   "rollback",
+RolledBackFromRevisionID: &original.ID,
+ChangedKeys:              original.ChangedKeys,
+BeforeConfig:             currentBeforeConfig,
+AfterConfig:              original.AfterConfig,
+}
+
+if err := db.Create(&newRevision).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusCreated)
+json.NewEncoder(w).Encode(newRevision)
+}
+}
+
+// GetAgentAPIKeysHandler handles GET /agents/:id/keys
+func GetAgentAPIKeysHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var keys []models.AgentAPIKey
+if err := db.Where("agent_id = ? AND revoked_at IS NULL", id).Find(&keys).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+// Strip key_hash before returning
+type safeKey struct {
+ID         string     `json:"id"`
+AgentID    string     `json:"agentId"`
+CompanyID  string     `json:"companyId"`
+Name       string     `json:"name"`
+LastUsedAt *time.Time `json:"lastUsedAt"`
+CreatedAt  time.Time  `json:"createdAt"`
+}
+result := make([]safeKey, len(keys))
+for i, k := range keys {
+result[i] = safeKey{
+ID:         k.ID,
+AgentID:    k.AgentID,
+CompanyID:  k.CompanyID,
+Name:       k.Name,
+LastUsedAt: k.LastUsedAt,
+CreatedAt:  k.CreatedAt,
+}
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(result)
+}
+}
+
+// CreateAgentAPIKeyHandler handles POST /agents/:id/keys
+func CreateAgentAPIKeyHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var agent models.Agent
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Agent not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+var body struct {
+Name string `json:"name"`
+}
+if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+http.Error(w, err.Error(), http.StatusBadRequest)
+return
+}
+
+rawBytes := make([]byte, 24)
+if _, err := rand.Read(rawBytes); err != nil {
+http.Error(w, "failed to generate token", http.StatusInternalServerError)
+return
+}
+token := "pcp_agent_" + hex.EncodeToString(rawBytes)
+
+sum := sha256.Sum256([]byte(token))
+keyHash := hex.EncodeToString(sum[:])
+
+key := models.AgentAPIKey{
+AgentID:   id,
+CompanyID: agent.CompanyID,
+Name:      body.Name,
+KeyHash:   keyHash,
+}
+if err := db.Create(&key).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusCreated)
+json.NewEncoder(w).Encode(map[string]interface{}{
+"id":    key.ID,
+"name":  key.Name,
+"token": token,
+})
+}
+}
+
+// RevokeAgentAPIKeyHandler handles DELETE /agents/:id/keys/:keyId
+func RevokeAgentAPIKeyHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+keyID := chi.URLParam(r, "keyId")
+
+now := time.Now()
+result := db.Model(&models.AgentAPIKey{}).
+Where("id = ? AND agent_id = ?", keyID, id).
+Update("revoked_at", now)
+if result.Error != nil {
+http.Error(w, result.Error.Error(), http.StatusInternalServerError)
+return
+}
+if result.RowsAffected == 0 {
+http.Error(w, "API key not found", http.StatusNotFound)
+return
+}
+
+w.WriteHeader(http.StatusNoContent)
+}
+}
+
+// WakeupAgentHandler handles POST /agents/:id/wakeup
+func WakeupAgentHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+
+var agent models.Agent
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Agent not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+var body struct {
+IssueID *string `json:"issueId"`
+}
+_ = json.NewDecoder(r.Body).Decode(&body)
+
+var payload datatypes.JSON
+if body.IssueID != nil {
+p, _ := json.Marshal(map[string]interface{}{"issueId": *body.IssueID})
+payload = datatypes.JSON(p)
+}
+
+req := models.AgentWakeupRequest{
+CompanyID: agent.CompanyID,
+AgentID:   id,
+Source:    "api",
+Payload:   payload,
+}
+if err := db.Create(&req).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusAccepted)
+json.NewEncoder(w).Encode(req)
+}
+}
+
+// ListCompanyHeartbeatRunsHandler handles GET /companies/:companyId/heartbeat-runs
+func ListCompanyHeartbeatRunsHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+companyID := chi.URLParam(r, "companyId")
+
+var runs []models.HeartbeatRun
+if err := db.Where("company_id = ?", companyID).Order("created_at DESC").Limit(100).Find(&runs).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(runs)
+}
+}
+
+// GetHeartbeatRunHandler handles GET /heartbeat-runs/:runId
+func GetHeartbeatRunHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+runID := chi.URLParam(r, "runId")
+
+var run models.HeartbeatRun
+if err := db.First(&run, "id = ?", runID).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Heartbeat run not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(run)
+}
+}
+
+// CancelHeartbeatRunHandler handles POST /heartbeat-runs/:runId/cancel
+func CancelHeartbeatRunHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+runID := chi.URLParam(r, "runId")
+
+var run models.HeartbeatRun
+if err := db.First(&run, "id = ?", runID).Error; err != nil {
+if err == gorm.ErrRecordNotFound {
+http.Error(w, "Heartbeat run not found", http.StatusNotFound)
+} else {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+return
+}
+
+now := time.Now()
+if err := db.Model(&run).Updates(map[string]interface{}{
+"status":      "cancelled",
+"finished_at": now,
+}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+if err := db.First(&run, "id = ?", runID).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(run)
+}
+}
+
+// GetHeartbeatRunWorkspaceOperationsHandler handles GET /heartbeat-runs/:runId/workspace-operations
+func GetHeartbeatRunWorkspaceOperationsHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+runID := chi.URLParam(r, "runId")
+
+var ops []models.WorkspaceOperation
+if err := db.Where("heartbeat_run_id = ?", runID).Find(&ops).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(ops)
+}
 }

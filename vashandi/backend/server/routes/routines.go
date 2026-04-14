@@ -3,6 +3,7 @@ package routes
 import (
 "encoding/json"
 "net/http"
+"time"
 
 "github.com/chifamba/vashandi/vashandi/backend/db/models"
 "github.com/go-chi/chi/v5"
@@ -78,5 +79,39 @@ Where("trigger_detail = ?", routineID).
 Order("created_at DESC").Find(&runs)
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(runs)
+}
+}
+
+func DeleteRoutineHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+if err := db.WithContext(r.Context()).Where("id = ?", id).Delete(&models.Routine{}).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+w.WriteHeader(http.StatusNoContent)
+}
+}
+
+func CreateRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusNotImplemented)
+json.NewEncoder(w).Encode(map[string]string{"error": "not implemented"})
+}
+}
+
+func RunRoutineNowHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+id := chi.URLParam(r, "id")
+var routine models.Routine
+if err := db.WithContext(r.Context()).First(&routine, "id = ?", id).Error; err != nil {
+http.Error(w, "Not found", http.StatusNotFound)
+return
+}
+now := time.Now()
+routine.LastTriggeredAt = &now
+db.WithContext(r.Context()).Save(&routine)
+w.WriteHeader(http.StatusAccepted)
 }
 }

@@ -220,3 +220,489 @@ Updates(body.Update)
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(map[string]int64{"updated": result.RowsAffected})
 }
+
+// ReleaseIssueHandler clears the checkout lock fields on an issue.
+func (ir *IssueRoutes) ReleaseIssueHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if err := ir.db.WithContext(r.Context()).Model(&issue).Updates(map[string]interface{}{
+		"checkout_run_id":     nil,
+		"execution_locked_at": nil,
+	}).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(issue)
+}
+
+// ListIssueLabelsHandler returns all labels for a company.
+func ListIssueLabelsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var labels []models.Label
+		if err := db.WithContext(r.Context()).Where("company_id = ?", companyID).Find(&labels).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(labels)
+	}
+}
+
+// CreateLabelHandler creates a new label for a company.
+func CreateLabelHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var body struct {
+			Name  string `json:"name"`
+			Color string `json:"color"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		label := models.Label{
+			CompanyID: companyID,
+			Name:      body.Name,
+			Color:     body.Color,
+		}
+		if err := db.WithContext(r.Context()).Create(&label).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(label)
+	}
+}
+
+// DeleteLabelHandler deletes a label by ID.
+func DeleteLabelHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		labelID := chi.URLParam(r, "labelId")
+		if err := db.WithContext(r.Context()).Delete(&models.Label{}, "id = ?", labelID).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// actorUserID returns the user ID from the actor context, or "anonymous" as fallback.
+func actorUserID(r *http.Request) string {
+	actor := GetActorInfo(r)
+	if actor.UserID != "" {
+		return actor.UserID
+	}
+	return "anonymous"
+}
+
+// MarkIssueReadHandler upserts an issue_read_state for the current user.
+func (ir *IssueRoutes) MarkIssueReadHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	userID := actorUserID(r)
+	state := models.IssueReadState{
+		CompanyID:  issue.CompanyID,
+		IssueID:    id,
+		UserID:     userID,
+		LastReadAt: time.Now(),
+	}
+	if err := ir.db.WithContext(r.Context()).
+		Where("company_id = ? AND issue_id = ? AND user_id = ?", issue.CompanyID, id, userID).
+		Assign(models.IssueReadState{LastReadAt: state.LastReadAt}).
+		FirstOrCreate(&state).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(state)
+}
+
+// UnmarkIssueReadHandler deletes an issue_read_state for the current user.
+func (ir *IssueRoutes) UnmarkIssueReadHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userID := actorUserID(r)
+	if err := ir.db.WithContext(r.Context()).
+		Where("issue_id = ? AND user_id = ?", id, userID).
+		Delete(&models.IssueReadState{}).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ArchiveIssueInboxHandler upserts an issue_inbox_archive for the current user.
+func (ir *IssueRoutes) ArchiveIssueInboxHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	userID := actorUserID(r)
+	archive := models.IssueInboxArchive{
+		CompanyID:  issue.CompanyID,
+		IssueID:    id,
+		UserID:     userID,
+		ArchivedAt: time.Now(),
+	}
+	if err := ir.db.WithContext(r.Context()).
+		Where("company_id = ? AND issue_id = ? AND user_id = ?", issue.CompanyID, id, userID).
+		FirstOrCreate(&archive).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(archive)
+}
+
+// UnarchiveIssueInboxHandler deletes an issue_inbox_archive for the current user.
+func (ir *IssueRoutes) UnarchiveIssueInboxHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userID := actorUserID(r)
+	if err := ir.db.WithContext(r.Context()).
+		Where("issue_id = ? AND user_id = ?", id, userID).
+		Delete(&models.IssueInboxArchive{}).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListIssueApprovalsHandler returns all approvals linked to an issue.
+func (ir *IssueRoutes) ListIssueApprovalsHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var approvals []models.IssueApproval
+	if err := ir.db.WithContext(r.Context()).Preload("Approval").Where("issue_id = ?", id).Find(&approvals).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(approvals)
+}
+
+// LinkIssueApprovalHandler links an approval to an issue.
+func (ir *IssueRoutes) LinkIssueApprovalHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		ApprovalID string `json:"approvalId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	actor := GetActorInfo(r)
+	link := models.IssueApproval{
+		CompanyID:  issue.CompanyID,
+		IssueID:    id,
+		ApprovalID: body.ApprovalID,
+	}
+	if actor.UserID != "" {
+		link.LinkedByUserID = &actor.UserID
+	}
+	if err := ir.db.WithContext(r.Context()).Create(&link).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(link)
+}
+
+// UnlinkIssueApprovalHandler removes an approval link from an issue.
+func (ir *IssueRoutes) UnlinkIssueApprovalHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	approvalID := chi.URLParam(r, "approvalId")
+	if err := ir.db.WithContext(r.Context()).
+		Where("issue_id = ? AND approval_id = ?", id, approvalID).
+		Delete(&models.IssueApproval{}).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListIssueAttachmentsHandler returns all attachments for an issue.
+func (ir *IssueRoutes) ListIssueAttachmentsHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var attachments []models.IssueAttachment
+	if err := ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Find(&attachments).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(attachments)
+}
+
+// DeleteAttachmentHandler deletes an issue attachment by ID.
+func DeleteAttachmentHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		attachmentID := chi.URLParam(r, "attachmentId")
+		if err := db.WithContext(r.Context()).Delete(&models.IssueAttachment{}, "id = ?", attachmentID).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// ListIssueFeedbackVotesHandler returns all feedback votes for an issue.
+func (ir *IssueRoutes) ListIssueFeedbackVotesHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var votes []models.FeedbackVote
+	if err := ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Find(&votes).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(votes)
+}
+
+// UpsertIssueFeedbackVoteHandler creates or updates a feedback vote for an issue.
+func (ir *IssueRoutes) UpsertIssueFeedbackVoteHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		TargetType string  `json:"targetType"`
+		TargetID   string  `json:"targetId"`
+		Vote       string  `json:"vote"`
+		Reason     *string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	userID := actorUserID(r)
+	vote := models.FeedbackVote{
+		CompanyID:    issue.CompanyID,
+		IssueID:      id,
+		TargetType:   body.TargetType,
+		TargetID:     body.TargetID,
+		AuthorUserID: userID,
+		Vote:         body.Vote,
+		Reason:       body.Reason,
+	}
+	if err := ir.db.WithContext(r.Context()).
+		Where("company_id = ? AND issue_id = ? AND target_type = ? AND target_id = ? AND author_user_id = ?",
+			issue.CompanyID, id, body.TargetType, body.TargetID, userID).
+		Assign(models.FeedbackVote{Vote: body.Vote, Reason: body.Reason}).
+		FirstOrCreate(&vote).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(vote)
+}
+
+// ListIssueDocumentsHandler returns all documents linked to an issue.
+func (ir *IssueRoutes) ListIssueDocumentsHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var docs []models.IssueDocument
+	if err := ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("updated_at DESC").Find(&docs).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Enrich with document data where available.
+	type docEntry struct {
+		models.IssueDocument
+		Document *models.Document `json:"document,omitempty"`
+	}
+	result := make([]docEntry, 0, len(docs))
+	for _, d := range docs {
+		entry := docEntry{IssueDocument: d}
+		var document models.Document
+		if err := ir.db.WithContext(r.Context()).First(&document, "id = ?", d.DocumentID).Error; err == nil {
+			entry.Document = &document
+		}
+		result = append(result, entry)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// GetIssueDocumentHandler returns a single document linked to an issue by key.
+func (ir *IssueRoutes) GetIssueDocumentHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key := chi.URLParam(r, "key")
+	var issueDoc models.IssueDocument
+	if err := ir.db.WithContext(r.Context()).
+		Where("issue_id = ? AND key = ?", id, key).
+		First(&issueDoc).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var document models.Document
+	if err := ir.db.WithContext(r.Context()).First(&document, "id = ?", issueDoc.DocumentID).Error; err != nil {
+		http.Error(w, "Document not found", http.StatusNotFound)
+		return
+	}
+	type response struct {
+		models.IssueDocument
+		Document models.Document `json:"document"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{IssueDocument: issueDoc, Document: document})
+}
+
+// UpsertIssueDocumentHandler creates or updates a document linked to an issue.
+func (ir *IssueRoutes) UpsertIssueDocumentHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key := chi.URLParam(r, "key")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Title  *string `json:"title"`
+		Body   string  `json:"body"`
+		Format string  `json:"format"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Format == "" {
+		body.Format = "markdown"
+	}
+
+	// Look up existing link.
+	var issueDoc models.IssueDocument
+	isNew := false
+	if err := ir.db.WithContext(r.Context()).
+		Where("issue_id = ? AND key = ?", id, key).
+		First(&issueDoc).Error; err != nil {
+		isNew = true
+	}
+
+	actor := GetActorInfo(r)
+	if isNew {
+		doc := models.Document{
+			CompanyID:  issue.CompanyID,
+			Title:      body.Title,
+			Format:     body.Format,
+			LatestBody: body.Body,
+		}
+		if actor.UserID != "" {
+			doc.CreatedByUserID = &actor.UserID
+			doc.UpdatedByUserID = &actor.UserID
+		}
+		if err := ir.db.WithContext(r.Context()).Create(&doc).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		issueDoc = models.IssueDocument{
+			CompanyID:  issue.CompanyID,
+			IssueID:    id,
+			DocumentID: doc.ID,
+			Key:        key,
+		}
+		if err := ir.db.WithContext(r.Context()).Create(&issueDoc).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(issueDoc)
+		return
+	}
+
+	// Update existing document.
+	updates := map[string]interface{}{
+		"latest_body": body.Body,
+		"format":      body.Format,
+		"title":       body.Title,
+	}
+	if actor.UserID != "" {
+		updates["updated_by_user_id"] = actor.UserID
+	}
+	if err := ir.db.WithContext(r.Context()).Model(&models.Document{}).
+		Where("id = ?", issueDoc.DocumentID).Updates(updates).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(issueDoc)
+}
+
+// DeleteIssueDocumentHandler removes a document link from an issue.
+func (ir *IssueRoutes) DeleteIssueDocumentHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key := chi.URLParam(r, "key")
+	if err := ir.db.WithContext(r.Context()).
+		Where("issue_id = ? AND key = ?", id, key).
+		Delete(&models.IssueDocument{}).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateWorkProductHandler applies partial updates to an IssueWorkProduct.
+func UpdateWorkProductHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		wpID := chi.URLParam(r, "id")
+		var wp models.IssueWorkProduct
+		if err := db.WithContext(r.Context()).First(&wp, "id = ?", wpID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		var updates map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := db.WithContext(r.Context()).Model(&wp).Updates(updates).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(wp)
+	}
+}
+
+// DeleteWorkProductHandler deletes an IssueWorkProduct by ID.
+func DeleteWorkProductHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		wpID := chi.URLParam(r, "id")
+		if err := db.WithContext(r.Context()).Delete(&models.IssueWorkProduct{}, "id = ?", wpID).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// GetIssueCommentHandler returns a single comment by ID for an issue.
+func (ir *IssueRoutes) GetIssueCommentHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	commentID := chi.URLParam(r, "commentId")
+	var comment models.IssueComment
+	if err := ir.db.WithContext(r.Context()).
+		Where("id = ? AND issue_id = ?", commentID, id).
+		First(&comment).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comment)
+}

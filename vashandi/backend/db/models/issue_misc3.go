@@ -50,7 +50,7 @@ type IssueWorkProduct struct {
 	Project *Project `gorm:"foreignKey:ProjectID"`
 	Issue   Issue    `gorm:"foreignKey:IssueID;constraint:OnDelete:CASCADE"`
 	// ExecutionWorkspace *ExecutionWorkspace `gorm:"foreignKey:ExecutionWorkspaceID"` // Ported shortly
-	// RuntimeService *WorkspaceRuntimeService `gorm:"foreignKey:RuntimeServiceID"` // Ported shortly
+	RuntimeService *WorkspaceRuntimeService `gorm:"foreignKey:RuntimeServiceID;constraint:OnDelete:SET NULL"`
 	CreatedByRun *HeartbeatRun `gorm:"foreignKey:CreatedByRunID;constraint:OnDelete:SET NULL"`
 }
 
