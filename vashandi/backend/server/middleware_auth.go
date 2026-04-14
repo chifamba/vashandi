@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -49,13 +51,19 @@ func ActorMiddleware(db *gorm.DB) func(http.Handler) http.Handler {
 				switch {
 				case strings.HasPrefix(token, "pcp_board_") && db != nil:
 					var key models.BoardAPIKey
-					if err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error; err == nil {
+					err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error
+					if err == nil {
 						actor = ActorInfo{UserID: key.UserID, IsAgent: false}
+					} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+						log.Printf("auth: board key lookup error: %v", err)
 					}
 				case strings.HasPrefix(token, "pcp_agent_") && db != nil:
 					var key models.AgentAPIKey
-					if err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error; err == nil {
+					err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error
+					if err == nil {
 						actor = ActorInfo{AgentID: key.AgentID, CompanyID: key.CompanyID, IsAgent: true}
+					} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+						log.Printf("auth: agent key lookup error: %v", err)
 					}
 				}
 			}
