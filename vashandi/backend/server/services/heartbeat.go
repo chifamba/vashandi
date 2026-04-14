@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
-	"github.com/chifamba/vashandi/vashandi/backend/shared"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -72,6 +71,13 @@ func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *Activity
 		Memory:           memory,
 		runningProcesses: make(map[string]*ProcessHandle),
 	}
+}
+
+// WakeupOptions configures an agent wakeup invocation.
+type WakeupOptions struct {
+	Source        string
+	TriggerDetail string
+	Context       map[string]interface{}
 }
 
 // Wakeup triggers an agent run.
@@ -381,6 +387,21 @@ func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.Hear
 
 	s.resumeNextRun(run.AgentID)
 	return err
+}
+
+// resumeNextRun picks up the next queued run for the agent and starts it.
+func (s *HeartbeatService) resumeNextRun(agentID string) {
+	var next models.HeartbeatRun
+	err := s.DB.
+		Where("agent_id = ? AND status = ?", agentID, "queued").
+		Order("created_at ASC").
+		First(&next).Error
+	if err != nil {
+		return // no queued runs
+	}
+	go func() {
+		_ = s.StartRun(context.Background(), next.ID)
+	}()
 }
 
 // --- Local Runner Implementation ---

@@ -1,12 +1,15 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
-	"github.com/chifamba/vashandi/vashandi/backend/services"
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
 
 // SetupRouter initializes the chi router with common middleware and routes

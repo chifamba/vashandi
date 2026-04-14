@@ -88,7 +88,7 @@ func (s *WorkspaceService) RealizeWorkspace(ctx context.Context, companyID, proj
 		// Usually we want to create a unique branch for the work or just checkout an existing one.
 		cmd := exec.CommandContext(ctx, "git", "worktree", "add", worktreeDir, branch)
 		cmd.Dir = primaryCwd
-		if output, err := cmd.CombinedOutput(); err != nil {
+		if _, err := cmd.CombinedOutput(); err != nil {
 			// If it fails, maybe the branch doesn't exist? Try -b
 			cmdRetry := exec.CommandContext(ctx, "git", "worktree", "add", "-b", fmt.Sprintf("run-%s", opts.RunID), worktreeDir)
 			cmdRetry.Dir = primaryCwd

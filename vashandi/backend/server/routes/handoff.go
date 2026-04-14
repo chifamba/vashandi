@@ -34,14 +34,14 @@ func HandoffIssueHandler(db *gorm.DB) http.HandlerFunc {
 
 		// 2. Fetch Latest Run to attach handoff markdown
 		var latestRun models.HeartbeatRun
-		if err := db.Where("agent_id = ? AND task_id = ?", issue.AssigneeID, issueID).
+		if err := db.Where("agent_id = ? AND task_id = ?", issue.AssigneeAgentID, issueID).
 			Order("created_at desc").First(&latestRun).Error; err == nil {
 			latestRun.HandoffMarkdown = &req.HandoffMarkdown
 			db.Save(&latestRun)
 		}
 
 		// 3. Update Issue Assignee
-		issue.AssigneeID = &req.TargetAgentID
+		issue.AssigneeAgentID = &req.TargetAgentID
 		if err := db.Save(&issue).Error; err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
