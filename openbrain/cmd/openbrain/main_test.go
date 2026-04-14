@@ -17,7 +17,7 @@ func setupService(t *testing.T) *brain.Service {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	service := brain.NewService(db)
+	service := brain.NewService(db, brain.NewStubProvider(1536))
 	require.NoError(t, service.AutoMigrate())
 	return service
 }
