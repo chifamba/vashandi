@@ -150,7 +150,7 @@ describe("issue-execution-policy", () => {
 
     it("preserves IDs of existing participants and mode", () => {
       const existingPolicy: IssueExecutionPolicy = {
-        mode: "strict",
+        mode: "normal",
         commentRequired: true,
         stages: [
           {

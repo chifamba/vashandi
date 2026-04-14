@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - /System/Volumes/Data/storage/postgres/vashandi:/var/lib/postgresql/data
+      - /System/Volumes/Data/storage/postgres/vashandi:/var/lib/postgresql
 
   redis:
     image: redis:8-alpine
@@ -36,7 +36,7 @@ services:
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
       # mTLS Configuration (Node.js sidecar)
       OPENBRAIN_MTLS_ENABLED: "true"
-      OPENBRAIN_CA_CERT: "/certs/root_ca.crt"
+      OPENBRAIN_CA_CERT: "/home/step/certs/root_ca.crt"
       OPENBRAIN_CLIENT_CERT: "/certs/vashandi.crt"
       OPENBRAIN_CLIENT_KEY: "/certs/vashandi.key"
       OPENBRAIN_REST_URL: "https://openbrain:3101"
@@ -84,15 +84,11 @@ services:
     command: >
       sh -c "if [ ! -f /home/step/config/ca.json ]; then
                echo \"$$DOCKER_STEPCA_INIT_PASSWORD\" > /tmp/password &&
-               /usr/local/bin/step ca init --name \"Paperclip Internal CA\" --dns ca --address :9000 --provisioner admin@paperclip.local --password-file /tmp/password --provisioner-password-file /tmp/password --acme &&
+               /usr/local/bin/step ca init --name \"Vashandi Internal CA\" --dns ca,robertsacstudio,robertsacstudio.local,localhost,127.0.0.1 --address :9000 --provisioner admin@vashandi.local --password-file /tmp/password --provisioner-password-file /tmp/password --acme &&
                mkdir -p /home/step/secrets && mv /tmp/password /home/step/secrets/password;
              fi;
+             chmod a+rx /home/step/certs && chmod a+r /home/step/certs/root_ca.crt;
              exec /usr/local/bin/step-ca /home/step/config/ca.json --password-file /home/step/secrets/password"
-
-
-
-
-
 
     ports:
       - "9000:9000"
@@ -111,7 +107,7 @@ services:
     command: >
       sh -c "step ca bootstrap --ca-url https://ca:9000 --fingerprint $STEP_CA_FINGERPRINT &&
              while true; do
-               step ca certificate vashandi-server /certs/vashandi.crt /certs/vashandi.key --provisioner admin@paperclip.local --provisioner-password ${STEP_CA_PASSWORD:-dev_password} --san vashandi --san localhost --not-after 24h --force &&
+               step ca certificate vashandi-server /certs/vashandi.crt /certs/vashandi.key --provisioner admin@vashandi.local --provisioner-password ${STEP_CA_PASSWORD:-dev_password} --san vashandi --san localhost --not-after 24h --force &&
                sleep 12h;
              done"
     environment:

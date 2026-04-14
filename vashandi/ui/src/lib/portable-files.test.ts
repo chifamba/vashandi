@@ -14,7 +14,7 @@ describe("portable-files", () => {
     });
 
     it("returns null if entry is an object", () => {
-      expect(getPortableFileText({ data: "data" })).toBeNull();
+      expect(getPortableFileText({ encoding: "base64", data: "data" })).toBeNull();
     });
 
     it("returns null if entry is null or undefined", () => {
@@ -25,12 +25,12 @@ describe("portable-files", () => {
 
   describe("getPortableFileContentType", () => {
     it("returns contentType from object entry if present", () => {
-      const entry: CompanyPortabilityFileEntry = { data: "base64", contentType: "image/png" };
+      const entry: CompanyPortabilityFileEntry = { encoding: "base64", data: "base64", contentType: "image/png" };
       expect(getPortableFileContentType("file.jpg", entry)).toBe("image/png");
     });
 
     it("returns contentType based on file extension if not present in object", () => {
-      const entry: CompanyPortabilityFileEntry = { data: "base64" };
+      const entry: CompanyPortabilityFileEntry = { encoding: "base64", data: "base64" };
       expect(getPortableFileContentType("file.png", entry)).toBe("image/png");
     });
 
@@ -66,17 +66,17 @@ describe("portable-files", () => {
     });
 
     it("returns data url with default content type if not inferrable", () => {
-      const entry: CompanyPortabilityFileEntry = { data: "SGVsbG8=" };
+      const entry: CompanyPortabilityFileEntry = { encoding: "base64", data: "SGVsbG8=" };
       expect(getPortableFileDataUrl("file.unknown", entry)).toBe("data:application/octet-stream;base64,SGVsbG8=");
     });
 
     it("returns data url with inferred content type", () => {
-      const entry: CompanyPortabilityFileEntry = { data: "SGVsbG8=" };
+      const entry: CompanyPortabilityFileEntry = { encoding: "base64", data: "SGVsbG8=" };
       expect(getPortableFileDataUrl("file.png", entry)).toBe("data:image/png;base64,SGVsbG8=");
     });
 
     it("returns data url with provided content type", () => {
-      const entry: CompanyPortabilityFileEntry = { data: "SGVsbG8=", contentType: "image/svg+xml" };
+      const entry: CompanyPortabilityFileEntry = { encoding: "base64", data: "SGVsbG8=", contentType: "image/svg+xml" };
       expect(getPortableFileDataUrl("file.png", entry)).toBe("data:image/svg+xml;base64,SGVsbG8=");
     });
   });
@@ -97,12 +97,12 @@ describe("portable-files", () => {
     });
 
     it("returns true if entry has image content type", () => {
-      const entry: CompanyPortabilityFileEntry = { data: "base64", contentType: "image/bmp" };
+      const entry: CompanyPortabilityFileEntry = { encoding: "base64", data: "base64", contentType: "image/bmp" };
       expect(isPortableImageFile("file.unknown", entry)).toBe(true);
     });
 
     it("returns false if entry has non-image content type", () => {
-      const entry: CompanyPortabilityFileEntry = { data: "base64", contentType: "text/plain" };
+      const entry: CompanyPortabilityFileEntry = { encoding: "base64", data: "base64", contentType: "text/plain" };
       expect(isPortableImageFile("image.png", entry)).toBe(false);
     });
 

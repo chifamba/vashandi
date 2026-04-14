@@ -73,7 +73,7 @@ describe("issue-filters", () => {
     it("filters out routine_execution when enableRoutineVisibilityFilter is true and showRoutineExecutions is false", () => {
       const issues = [
         createIssue({ id: "1", originKind: "routine_execution" }),
-        createIssue({ id: "2", originKind: "user" }),
+        createIssue({ id: "2", originKind: "manual" }),
       ];
       const result = applyIssueFilters(issues, defaultIssueFilterState, null, true);
       expect(result).toHaveLength(1);
@@ -83,7 +83,7 @@ describe("issue-filters", () => {
     it("includes routine_execution when enableRoutineVisibilityFilter is true and showRoutineExecutions is true", () => {
       const issues = [
         createIssue({ id: "1", originKind: "routine_execution" }),
-        createIssue({ id: "2", originKind: "user" }),
+        createIssue({ id: "2", originKind: "manual" }),
       ];
       const result = applyIssueFilters(
         issues,
