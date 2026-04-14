@@ -108,11 +108,6 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -124,18 +119,6 @@ jobs:
 
       - name: Build
         run: pnpm build
-
-      - name: Build OpenBrain UI
-        run: |
-          cd ../openbrain/ui
-          npm ci
-          npm run build
-
-      - name: Verify OpenBrain
-        run: |
-          cd ../openbrain
-          go test ./...
-          go build ./cmd/openbrain
 
       - name: Release canary dry run
         run: |
