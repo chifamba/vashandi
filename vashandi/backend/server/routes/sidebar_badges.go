@@ -10,6 +10,8 @@ import (
 "gorm.io/gorm"
 )
 
+const failedRunsLookbackHours = 24
+
 func SidebarBadgesHandler(db *gorm.DB) http.HandlerFunc {
 return func(w http.ResponseWriter, r *http.Request) {
 companyID := chi.URLParam(r, "companyId")
@@ -24,7 +26,7 @@ db.WithContext(r.Context()).Model(&models.JoinRequest{}).
 Where("company_id = ? AND status = ?", companyID, "pending_approval").
 Count(&pendingJoinRequests)
 
-cutoff := time.Now().Add(-24 * time.Hour)
+cutoff := time.Now().Add(-failedRunsLookbackHours * time.Hour)
 db.WithContext(r.Context()).Model(&models.HeartbeatRun{}).
 Where("company_id = ? AND status = ? AND created_at > ?", companyID, "failed", cutoff).
 Count(&failedRuns)

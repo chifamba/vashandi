@@ -27,8 +27,11 @@ companyID = cfg.DefaultCompany
 if companyID == "" {
 return fmt.Errorf("--company is required (or set defaultCompany in config)")
 }
-apiKey := os.Getenv("PAPERCLIP_AGENT_JWT_SECRET")
 cfg := loadConfig()
+apiKey := cfg.APIKey
+if apiKey == "" {
+apiKey = os.Getenv("PAPERCLIP_AGENT_JWT_SECRET")
+}
 baseURL := cfg.ServerURL
 c := client.NewClient(baseURL, apiKey)
 var result interface{}

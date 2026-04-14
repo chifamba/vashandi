@@ -56,10 +56,15 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 if body.Value != "" {
+material, err := json.Marshal(map[string]string{"value": body.Value})
+if err != nil {
+http.Error(w, "failed to encode secret material", http.StatusInternalServerError)
+return
+}
 version := models.CompanySecretVersion{
 SecretID: secret.ID,
 Version:  1,
-Material: datatypes.JSON(`{"value":"` + body.Value + `"}`),
+Material: datatypes.JSON(material),
 }
 db.WithContext(r.Context()).Create(&version)
 }
@@ -84,11 +89,16 @@ if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 http.Error(w, err.Error(), http.StatusBadRequest)
 return
 }
+material, err := json.Marshal(map[string]string{"value": body.Value})
+if err != nil {
+http.Error(w, "failed to encode secret material", http.StatusInternalServerError)
+return
+}
 newVersion := secret.LatestVersion + 1
 version := models.CompanySecretVersion{
 SecretID: secret.ID,
 Version:  newVersion,
-Material: datatypes.JSON(`{"value":"` + body.Value + `"}`),
+Material: datatypes.JSON(material),
 }
 db.WithContext(r.Context()).Create(&version)
 secret.LatestVersion = newVersion
@@ -106,7 +116,10 @@ if err := db.WithContext(r.Context()).First(&secret, "id = ?", id).Error; err !=
 http.Error(w, "Not found", http.StatusNotFound)
 return
 }
-json.NewDecoder(r.Body).Decode(&secret)
+if err := json.NewDecoder(r.Body).Decode(&secret); err != nil {
+http.Error(w, err.Error(), http.StatusBadRequest)
+return
+}
 db.WithContext(r.Context()).Save(&secret)
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(secret)

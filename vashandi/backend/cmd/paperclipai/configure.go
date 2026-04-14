@@ -2,9 +2,11 @@ package main
 
 import (
 "encoding/json"
+"bufio"
 "fmt"
 "os"
 "path/filepath"
+"strings"
 
 "github.com/spf13/cobra"
 )
@@ -50,14 +52,15 @@ RunE: func(cmd *cobra.Command, args []string) error {
 section, _ := cmd.Flags().GetString("section")
 cfg := loadConfig()
 
+reader := bufio.NewReader(os.Stdin)
 prompt := func(label, current string) string {
 if current != "" {
 fmt.Printf("%s [%s]: ", label, current)
 } else {
 fmt.Printf("%s: ", label)
 }
-var val string
-fmt.Scan(&val)
+val, _ := reader.ReadString('\n')
+val = strings.TrimSpace(val)
 if val == "" {
 return current
 }

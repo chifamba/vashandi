@@ -32,7 +32,14 @@ http.Error(w, "Plugin has no UI package path", http.StatusNotFound)
 return
 }
 
-fullPath := filepath.Join(*plugin.PackagePath, "ui", "dist", filepath.Clean(filePath))
+baseDir := filepath.Join(*plugin.PackagePath, "ui", "dist")
+cleaned := filepath.Join(baseDir, filepath.Clean("/"+filePath))
+rel, err := filepath.Rel(baseDir, cleaned)
+if err != nil || rel == ".." || len(rel) >= 2 && rel[:3] == "../" {
+http.Error(w, "Forbidden", http.StatusForbidden)
+return
+}
+fullPath := cleaned
 f, err := os.Open(fullPath)
 if err != nil {
 http.Error(w, "File not found", http.StatusNotFound)
