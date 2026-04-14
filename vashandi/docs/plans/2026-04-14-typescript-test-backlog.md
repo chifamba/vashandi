@@ -1,0 +1,518 @@
+# TypeScript Test Cases Backlog
+
+Status: Active  
+Owner: Engineering  
+Date: 2026-04-14
+
+## Summary
+
+Inventory of existing Node/TypeScript tests across the monorepo and prioritised backlog of missing test cases. Tests live under Vitest and are run via `pnpm test:run` from the `vashandi/` root.
+
+**Current test counts (as of 2026-04-14)**
+
+| Area | Files |
+|------|------:|
+| `server/src/__tests__/` | 125 |
+| `ui/src/` | 74 |
+| `cli/src/__tests__/` | 21 |
+| `packages/db/src/` | 4 |
+| `packages/adapters/` | 9 |
+| **Total** | **233** |
+
+---
+
+## Existing Test Coverage Inventory
+
+### Server — Adapters
+
+| File | What it covers |
+|------|----------------|
+| `claude-local-adapter.test.ts` | Max-turn detection, UI stdout parser, CLI formatter |
+| `claude-local-adapter-environment.test.ts` | Environment variable resolution for Claude runs |
+| `claude-local-execute.test.ts` | `--append-system-prompt-file`, session resume vs fresh, HOME/CONFIG_DIR logging |
+| `claude-local-skill-sync.test.ts` | Skill sync for Claude local adapter |
+| `codex-local-adapter.test.ts` | Parser, stale session detection, UI stdout parser, CLI formatter |
+| `codex-local-skill-sync.test.ts` | Skill sync for Codex local adapter |
+| `cursor-local-adapter.test.ts` | Parser, stale session, UI stdout parser, CLI formatter |
+| `cursor-local-adapter-environment.test.ts` | Environment resolution for Cursor runs |
+| `cursor-local-execute.test.ts` | Execute path |
+| `cursor-local-skill-sync.test.ts` | Skill sync for Cursor local adapter |
+| `cursor-local-skill-injection.test.ts` | Symlinking missing skills into Cursor skills home |
+| `gemini-local-adapter.test.ts` | Parser, stale session, UI stdout parser, CLI formatter |
+| `gemini-local-skill-sync.test.ts` | Skill sync for Gemini local adapter |
+| `opencode-local-adapter.test.ts` | Parser, stale session, UI stdout parser, CLI formatter |
+| `opencode-local-skill-sync.test.ts` | Skill sync for OpenCode local adapter |
+| `openclaw-gateway-adapter.test.ts` | Gateway UI parser, execute flow, auto-approve pairing, test environment |
+| `pi-local-execute.test.ts` | Pi exhausted-retry handling |
+| `pi-local-skill-sync.test.ts` | Skill sync for Pi local adapter |
+| `adapter-models.test.ts` | Model listing helpers |
+| `adapter-session-codecs.test.ts` | Session encode/decode round-trips |
+| `adapter-session-codecs.test.ts` | Session encode/decode round-trips |
+| `agent-skill-contract.test.ts` | Skill contract shape validation |
+
+### Server — Auth & Access
+
+| File | What it covers |
+|------|----------------|
+| `agent-auth-jwt.test.ts` | JWT creation, verification, expiry, missing secret |
+| `express5-auth-wildcard.test.ts` | Wildcard route auth in Express 5 |
+| `cli-auth-routes.test.ts` | CLI auth challenge create/describe/approve/cancel |
+| `invite-accept-gateway-defaults.test.ts` | Default fields on gateway invite accept |
+| `invite-accept-replay.test.ts` | OpenClaw gateway invite replay eligibility, payload merging |
+| `invite-join-grants.test.ts` | Permission grant assignment during join |
+| `invite-join-manager.test.ts` | CEO resolution for join request assignment |
+| `invite-onboarding-text.test.ts` | Onboarding message copy per adapter type |
+| `openclaw-invite-prompt-route.test.ts` | CEO/board permission gating, invite summary |
+| `board-auth` (CLI) | CLI board auth store CRUD |
+
+### Server — Routes
+
+| File | What it covers |
+|------|----------------|
+| `activity-routes.test.ts` | Activity list, issue activity, run activity |
+| `agent-instructions-routes.test.ts` | Read/write/delete agent instruction files |
+| `agent-skills-routes.test.ts` | Skill list/sync permissions per agent |
+| `approval-routes-idempotency.test.ts` | Idempotent approve/reject |
+| `company-branding-route.test.ts` | Branding update, logo asset |
+| `company-portability-routes.test.ts` | Export preview, import preview, apply bundle |
+| `company-skills-routes.test.ts` | Skill import, delete, permission gating |
+| `instance-settings-routes.test.ts` | Admin vs non-admin access, guarded settings |
+| `issue-activity-events-routes.test.ts` | Activity event creation on issue update |
+| `issue-attachment-routes.test.ts` | Upload, download, cross-company block |
+| `issue-comment-reopen-routes.test.ts` | Reopen via comment, interrupt active run |
+| `issue-closed-workspace-routes.test.ts` | Reject comments/checkout for closed workspaces |
+| `issue-dependency-wakeups-routes.test.ts` | Wake dependents on blocker completion, parent on children done |
+| `issue-feedback-routes.test.ts` | Vote flush, board-only access, company scoping |
+| `issue-telemetry-routes.test.ts` | Task-completed telemetry emission |
+| `issue-update-comment-wakeup-routes.test.ts` | Comment-triggered heartbeat wakeup |
+| `issues-checkout-wakeup.test.ts` | Self-checkout skip, cross-agent wake |
+| `issues-goal-context-routes.test.ts` | Goal context surfacing, blocker summaries |
+| `openclaw-invite-prompt-route.test.ts` | (see Auth section above) |
+| `project-goal-telemetry-routes.test.ts` | Project/goal creation telemetry |
+| `project-routes-env.test.ts` | Env binding normalisation on create/update |
+| `routines-routes.test.ts` | CRUD, agent/board permission gating |
+| `routines-e2e.test.ts` | Full routine trigger → issue run cycle with embedded Postgres |
+
+### Server — Services
+
+| File | What it covers |
+|------|----------------|
+| `budgets-service.test.ts` | Policy upsert, spend checking |
+| `company-skills.test.ts` | Skill source parsing, directory discovery |
+| `costs-service.test.ts` | Cost event creation, spend summary, quota integration |
+| `execution-workspace-policy.test.ts` | Policy derivation, settings inheritance, legacy compat |
+| `feedback-service.test.ts` | Vote storage, consent flow, trace bundles, artifact capture |
+| `feedback-share-client.test.ts` | Shared bundle serialisation |
+| `hire-hook.test.ts` | onHireApproved lifecycle, error tolerance |
+| `issue-execution-policy.test.ts` | Policy normalisation, stage transitions, participant dedup |
+| `issues-service.test.ts` | List filtering, create workspace inheritance, blockers, dependency wakeups |
+| `issues-user-context.test.ts` | Read/unread derivation, timestamp fallbacks |
+| `monthly-spend-service.test.ts` | Re-computation from current UTC month |
+| `plugin-dev-watcher.test.ts` | Watch target resolution |
+| `plugin-telemetry-bridge.test.ts` | Event prefixing, capability gating |
+| `plugin-worker-manager.test.ts` | Stderr failure context |
+| `quota-windows.test.ts` | toPercent, Claude/Codex token reading, quota parsing |
+| `quota-windows-service.test.ts` | Timeout/race between slow adapters |
+| `routines-service.test.ts` | Live-execution coalescing, trigger run lifecycle |
+| `work-products.test.ts` | Primary work-product create with transaction |
+| `workspace-runtime.test.ts` | Env sanitisation, symlink check, worktree creation |
+
+### Server — Infrastructure
+
+| File | What it covers |
+|------|----------------|
+| `app-hmr-port.test.ts` | HMR port resolution |
+| `assets.test.ts` | Static asset serving |
+| `attachment-types.test.ts` | Allowed MIME type gating |
+| `dev-runner-output.test.ts` | Dev runner stdout/stderr formatting |
+| `dev-runner-paths.test.ts` | Dev runner path resolution |
+| `dev-server-status.test.ts` | Dev server health polling |
+| `dev-watch-ignore.test.ts` | Glob ignore patterns for watch mode |
+| `error-handler.test.ts` | Express error handler shape |
+| `forbidden-tokens.test.ts` | Username token derivation and matching |
+| `heartbeat-comment-wake-batching.test.ts` | Batch wakeup on comment activity (embedded Postgres) |
+| `heartbeat-process-recovery.test.ts` | Orphaned process detection and recovery |
+| `heartbeat-project-env.test.ts` | Project env overlay on adapter config |
+| `log-redaction.test.ts` | Home-dir path and username redaction |
+| `logger-tz.test.ts` | Logger timezone handling |
+| `normalize-agent-mention-token.test.ts` | Agent mention token normalisation |
+| `paperclip-env.test.ts` | Env var resolution order |
+| `paperclip-skill-utils.test.ts` | Skill utility helpers |
+| `private-hostname-guard.test.ts` | Private IP/hostname blocking |
+| `redaction.test.ts` | Sensitive key and JWT redaction |
+| `routine-run-telemetry.test.ts` | Routine run telemetry emission |
+| `server-startup-feedback-export.test.ts` | Feedback export on startup |
+| `storage-local-provider.test.ts` | Round-trip bytes, cross-company block |
+| `telemetry-client-flush.test.ts` | Telemetry flush on shutdown |
+| `ui-branding.test.ts` | UI branding asset injection |
+| `worktree-config.test.ts` | Worktree configuration helpers |
+
+### UI
+
+| File | What it covers |
+|------|----------------|
+| `api/issues.test.ts` | `issuesApi.list` parentId parameter |
+| `adapters/registry.test.ts` | Adapter registry lookup |
+| `adapters/metadata.test.ts` | Adapter metadata helpers |
+| `adapters/transcript.test.ts` | Transcript parsing helpers |
+| `hooks/useKeyboardShortcuts.test.tsx` | Keyboard shortcut registration |
+| `hooks/useCompanyPageMemory.test.ts` | Page memory persistence |
+| `context/LiveUpdatesProvider.test.ts` | SSE connection lifecycle |
+| `lib/activity-format.test.ts` | Activity event label formatting |
+| `lib/agent-order.test.ts` | Agent list ordering |
+| `lib/agent-skills-state.test.ts` | Agent skills state derivation |
+| `lib/assignees.test.ts` | Assignee list helpers |
+| `lib/comment-submit-draft.test.ts` | Comment draft persistence |
+| `lib/company-export-selection.test.ts` | Export bundle selection logic |
+| `lib/company-page-memory.test.ts` | Company page state memory |
+| `lib/company-portability-sidebar.test.ts` | Portability sidebar state |
+| `lib/company-routes.test.ts` | Company route path helpers |
+| `lib/company-selection.test.ts` | Company selection helpers |
+| `lib/document-revisions.test.ts` | Revision state derivation |
+| `lib/groupBy.test.ts` | Generic groupBy utility |
+| `lib/inbox.test.ts` | Inbox badge count, dismissal, unread/read, approvals, join requests |
+| `lib/instance-settings.test.ts` | Instance settings helpers |
+| `lib/issue-chat-messages.test.ts` | Chat message helpers |
+| `lib/issue-execution-policy.test.ts` | UI-side policy helpers |
+| `lib/issue-filters.test.ts` | Filter label, toggle, apply, count |
+| `lib/issue-timeline-events.test.ts` | Timeline event derivation |
+| `lib/issue-tree.test.ts` | Hierarchy building, orphan promotion |
+| `lib/issueChatTranscriptRuns.test.ts` | Chat transcript run mapping |
+| `lib/issueDetailBreadcrumb.test.ts` | Breadcrumb generation |
+| `lib/keyboardShortcuts.test.ts` | Shortcut config |
+| `lib/legacy-agent-config.test.ts` | Legacy config migration |
+| `lib/main-content-focus.test.ts` | Focus management helpers |
+| `lib/markdownPaste.test.ts` | Markdown paste handler |
+| `lib/mention-aware-link-node.test.ts` | Mention link node |
+| `lib/mention-deletion.test.ts` | Mention deletion in editor |
+| `lib/model-utils.test.ts` | Model display name helpers |
+| `lib/navigation-scroll.test.ts` | Scroll-restoration helpers |
+| `lib/new-agent-runtime-config.test.ts` | New agent runtime config defaults |
+| `lib/normalize-markdown.test.ts` | Markdown normalisation |
+| `lib/onboarding-goal.test.ts` | Onboarding goal helpers |
+| `lib/onboarding-launch.test.ts` | Onboarding launch gating |
+| `lib/onboarding-route.test.ts` | Onboarding route resolution |
+| `lib/optimistic-issue-comments.test.ts` | Optimistic comment updates |
+| `lib/optimistic-issue-runs.test.ts` | Optimistic run upsert/remove |
+| `lib/portable-files.test.ts` | Portable file helpers |
+| `lib/project-order.test.ts` | Project ordering |
+| `lib/project-workspaces-tab.test.ts` | Project workspaces tab state |
+| `lib/recent-assignees.test.ts` | Recent assignee tracking |
+| `lib/routine-trigger-patch.test.ts` | Routine trigger patch helpers |
+| `lib/status-colors.test.ts` | Status colour mapping |
+| `lib/timeAgo.test.ts` | Time-ago formatting |
+| `lib/transcriptPresentation.test.ts` | Transcript rendering helpers |
+| `lib/utils.test.ts` | Shared utility functions |
+| `lib/worktree-branding.test.ts` | Worktree branding helpers |
+| `lib/zip.test.ts` | Zip import/export helpers |
+| `pages/GoalDetail.test.tsx` | Goal detail page render |
+| `pages/Inbox.test.tsx` | Inbox page render |
+| `pages/Routines.test.tsx` | Routines page render |
+| `components/ApprovalPayload.test.tsx` | Approval payload display |
+| `components/CommentThread.test.tsx` | Comment thread render |
+| `components/InlineEditor.test.tsx` | Inline editor interactions |
+| `components/IssueChatThread.test.tsx` | Issue chat thread render |
+| `components/IssueDocumentsSection.test.tsx` | Issue documents section |
+| `components/IssueProperties.test.tsx` | Issue properties panel |
+| `components/IssueRow.test.tsx` | Issue row display |
+| `components/IssuesList.test.tsx` | Issues list with filters |
+| `components/IssueWorkspaceCard.test.tsx` | Workspace card display |
+| `components/MarkdownBody.test.tsx` | Markdown body render |
+| `components/MarkdownEditor.test.tsx` | Markdown editor interactions |
+| `components/NewIssueDialog.test.tsx` | New issue dialog form |
+| `components/RoutineRunVariablesDialog.test.tsx` | Routine run variables dialog |
+| `components/RunInvocationCard.test.tsx` | Run invocation card |
+| `components/SwipeToArchive.test.tsx` | Swipe-to-archive gesture |
+| `components/transcript/RunTranscriptView.test.tsx` | Run transcript rendering |
+| `components/transcript/useLiveRunTranscripts.test.tsx` | Live transcript streaming hook |
+
+### CLI
+
+| File | What it covers |
+|------|----------------|
+| `agent-jwt-env.test.ts` | Agent JWT environment variable injection |
+| `allowed-hostname.test.ts` | Allowed hostname validation |
+| `auth-command-registration.test.ts` | Auth command registration |
+| `board-auth.test.ts` | Board auth store CRUD |
+| `common.test.ts` | Common CLI helpers |
+| `company.test.ts` | Company import routing, confirmation modes, dashboard URL, preview render |
+| `company-delete.test.ts` | Company delete flow |
+| `company-import-export-e2e.test.ts` | Export then import round-trip |
+| `company-import-url.test.ts` | Import from URL resolution |
+| `company-import-zip.test.ts` | Import from ZIP |
+| `context.test.ts` | Client context store upsert/read/defaults |
+| `data-dir.test.ts` | Data directory path resolution |
+| `doctor.test.ts` | Doctor command checks |
+| `feedback.test.ts` | Feedback command |
+| `home-paths.test.ts` | Home directory path helpers |
+| `http.test.ts` | HTTP client helpers |
+| `onboard.test.ts` | Onboarding flow |
+| `routines.test.ts` | `disableAllRoutinesInConfig` (embedded Postgres) |
+| `telemetry.test.ts` | CLI telemetry emission |
+| `worktree.test.ts` | Worktree path sanitisation, git args, seeding, branding |
+| `worktree-merge-history.test.ts` | Merge history helpers |
+
+### `packages/db`
+
+| File | What it covers |
+|------|----------------|
+| `client.test.ts` | `applyPendingMigrations` with embedded Postgres |
+| `embedded-postgres-error.test.ts` | Error formatting, log collection |
+| `runtime-config.test.ts` | `resolveDatabaseTarget` precedence order |
+| `backup-lib.test.ts` | Buffered text file writer, `runDatabaseBackup` (embedded Postgres) |
+
+### `packages/adapters`
+
+| File | What it covers |
+|------|----------------|
+| `codex-local/parse-stdout.test.ts` | Codex stdout parsing |
+| `codex-local/quota-spawn-error.test.ts` | Quota spawn error detection |
+| `codex-local/parse.test.ts` | Codex output parser |
+| `openclaw-gateway/execute.test.ts` | Gateway execute flow |
+
+---
+
+## Backlog — Missing Tests
+
+Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice to have.
+
+---
+
+### Server — Missing Route Tests
+
+#### P0
+
+- [ ] **`agents` routes** (`server/src/routes/agents.ts`)
+  - CRUD (create, list, get, update, archive)
+  - Company scoping enforcement
+  - Permission gating: board admin vs non-admin vs agent callers
+  - `reportsTo` hierarchy validation
+  - Role uniqueness (CEO singleton)
+  - `GET /agents/:id/models` — model list delegation to adapter
+
+- [ ] **`secrets` routes** (`server/src/routes/secrets.ts`)
+  - Create/update/delete company-level and agent-level secrets
+  - `local_encrypted` storage: verify ciphertext is stored, plaintext is not exposed
+  - `inline` secret key vs value scoping
+  - Permission gating: admin vs non-admin
+
+- [ ] **`projects` routes** (`server/src/routes/projects.ts`)
+  - CRUD (create, list, get, update, archive)
+  - Project member add/remove
+  - Company scoping on all reads/writes
+
+#### P1
+
+- [ ] **`goals` routes** (`server/src/routes/goals.ts`)
+  - CRUD (create, list, get, update, complete)
+  - Scoping to project and company
+
+- [ ] **`authz` routes** (`server/src/routes/authz.ts`)
+  - Grant/revoke permissions for principals
+  - Board admin vs non-admin access
+  - Agent-scope permission reads
+
+- [ ] **`approvals` routes** (broader coverage beyond idempotency)
+  - List approvals for a company
+  - Comment thread on approvals
+  - `requestRevision` and `resubmit` flows
+  - Agent-only vs board-only approval actions
+
+- [ ] **`execution-workspaces` routes** (`server/src/routes/execution-workspaces.ts`)
+  - List and get workspace records
+  - Close workspace and linked issue rejection
+
+- [ ] **`inbox-dismissals` routes**
+  - Dismiss a run or alert
+  - Re-surface after new activity
+
+#### P2
+
+- [ ] **`dashboard` routes** — summary/stats endpoint shape
+- [ ] **`plugins` routes** — install, uninstall, settings update, capability query
+- [ ] **`adapters` routes** — adapter listing, model introspection
+- [ ] **`llms` routes** — model list by adapter type
+- [ ] **`sidebar-badges` route** — badge count aggregation
+- [ ] **`health` route** — 200 OK and database connectivity check
+- [ ] **`org-chart-svg` route** — SVG generation from agent hierarchy
+
+---
+
+### Server — Missing Service Tests
+
+#### P0
+
+- [ ] **`secrets` service** (`server/src/services/secrets.ts`)
+  - `local_encrypted` encrypt/decrypt round-trip using `ENCRYPTION_SECRET`
+  - `resolveAdapterConfigForRuntime` merges secret values into config
+  - `normalizeAdapterConfigForPersistence` strips plaintext values before storage
+  - Secret version rotation
+
+- [ ] **`access` service** (`server/src/services/access.ts`)
+  - `canUser` permission evaluation
+  - `hasPermission` with explicit grants
+  - `ensureMembership` throws on non-members
+  - Company-scoped membership lookup
+  - Instance admin bypass
+
+- [ ] **`agents` service** (`server/src/services/agents.ts`)
+  - Create with automatic membership grant
+  - `resolveByReference` — by id, by name, by shortname
+  - Deduplication of agent names within a company
+  - Archive/unarchive
+  - Monthly spend re-computation (mirrors company service)
+
+#### P1
+
+- [ ] **`goals` service** — CRUD, completion transitions, project linkage
+- [ ] **`projects` service** — CRUD, archived project filtering, workspace defaults
+- [ ] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
+- [ ] **`issue-approvals` service** — linking approvals to issues, listing issues pending approval
+- [ ] **`issue-assignment-wakeup` service** — wakeup logic when an assignee changes
+- [ ] **`workspace-operations` service** — operation log writes, idempotency
+- [ ] **`workspace-runtime-read-model` service** — derived workspace status from events
+- [ ] **`run-log-store` service** — append and list run log entries
+- [ ] **`cron` service** — nextRunAt computation, routine trigger firing cadence
+
+#### P2
+
+- [ ] **`live-events` service** — SSE fan-out per company, client subscribe/unsubscribe
+- [ ] **`openbrain-client` service** — context compile request, token budget handling, graceful fallback when OpenBrain is unavailable
+- [ ] **`dashboard` service** — stats aggregation
+- [ ] **`plugin-lifecycle` service** — install/uninstall state machine
+- [ ] **`plugin-manifest-validator` service** — schema validation, capability allow-list
+- [ ] **`plugin-config-validator` service** — config schema enforcement
+- [ ] **`plugin-capability-validator` service** — capability intersection checks
+- [ ] **`plugin-host-services` service** — tool dispatch, job scheduling delegation
+- [ ] **`plugin-job-coordinator` service** — job queue ordering and concurrency
+- [ ] **`plugin-registry` service** — installed plugin lookup
+- [ ] **`plugin-loader` service** — dynamic module loading, sandbox setup
+- [ ] **`activity-log` service** — `logActivity` deduplication, payload shape, company scoping
+- [ ] **`feedback-redaction` service** — PII stripping from feedback bundles
+- [ ] **`github-fetch` service** — authenticated GitHub API calls, rate-limit handling
+- [ ] **`default-agent-instructions` service** — template expansion
+
+---
+
+### UI — Missing Page Tests
+
+#### P1
+
+- [ ] **`IssueDetail` page** — renders title, description, assignee, status; comment submit; run start/stop
+- [ ] **`AgentDetail` page** — renders agent properties, skills list, instructions view
+- [ ] **`Approvals` page** — lists pending approvals; approve/reject actions
+- [ ] **`CompanySettings` page** — renders settings tabs; branding update
+- [ ] **`Issues` / `MyIssues` pages** — filtering, search, empty state
+
+#### P2
+
+- [ ] **`Goals` page** — goal tree render, create goal dialog
+- [ ] **`Projects` page** — project list, create project dialog
+- [ ] **`Agents` page** — agent list, invite agent flow
+- [ ] **`Costs` page** — spend charts render
+- [ ] **`PluginManager` page** — plugin list, install/uninstall button
+- [ ] **`Org` / `OrgChart` page** — hierarchy SVG render
+- [ ] **`Dashboard` page** — summary stats render
+- [ ] **`CliAuth` page** — challenge approve flow
+- [ ] **`Auth` / `InviteLanding` pages** — login form, invite acceptance
+- [ ] **`CompanySkills` page** — skill list, import form
+- [ ] **`InstanceSettings` pages** — admin-only gating in the UI
+
+---
+
+### UI — Missing Component Tests
+
+#### P1
+
+- [ ] **`CommandPalette`** — keyboard open/close, fuzzy search results, action dispatch
+- [ ] **`FilterBar`** — filter chip render, add/remove filter, clear all
+- [ ] **`AgentConfigForm`** — form validation, adapter type switching, secret fields masked
+- [ ] **`EnvVarEditor`** — add/edit/delete env rows, key uniqueness validation
+- [ ] **`CommentThread`** (extended) — reply nesting, markdown render, optimistic insert
+- [ ] **`ApprovalCard`** — approve/reject/revision buttons, status badge
+
+#### P2
+
+- [ ] **`BudgetPolicyCard`** — displays limits, shows over-budget warning
+- [ ] **`ActiveAgentsPanel`** — live agent count, per-agent run status
+- [ ] **`GoalTree`** — tree expand/collapse, create child goal
+- [ ] **`CompanySwitcher`** — company list, switch action
+- [ ] **`AgentActionButtons`** — start/stop/cancel run actions
+- [ ] **`ExecutionWorkspaceCloseDialog`** — confirmation modal flow
+- [ ] **`ImageGalleryModal`** — image navigation, zoom
+- [ ] **`DocumentDiffModal`** — diff rendering
+
+---
+
+### UI — Missing Lib Tests
+
+#### P1
+
+- [ ] **`lib/goals.ts`** (if exists) — goal state derivation
+- [ ] **`lib/approval-utils.ts`** (if exists) — approval status helpers
+- [ ] **`lib/execution-workspace-utils.ts`** (if exists) — workspace mode helpers
+
+#### P2
+
+- [ ] Additional edge cases in `lib/issue-filters.test.ts` — multi-value filter combinations
+- [ ] Additional edge cases in `lib/inbox.test.ts` — join request badge interaction with dismissals
+
+---
+
+### CLI — Missing Tests
+
+#### P1
+
+- [ ] **`issues` command** — create, list, get, comment edge cases
+- [ ] **`agent` command** — invite agent, list agents
+- [ ] **Secret** command coverage — create/update/delete secret with masking
+
+#### P2
+
+- [ ] **Profile switching** edge cases in `context.test.ts` — invalid profile names
+- [ ] **`http.test.ts`** — retry on 5xx, timeout handling
+- [ ] **`doctor.test.ts`** — more environment checks (missing tools, wrong Node version)
+
+---
+
+### `packages/db` — Missing Tests
+
+#### P1
+
+- [ ] **Schema export completeness** — verify all schema tables are exported from `packages/db/src/schema/index.ts`
+- [ ] **Migration idempotency** — running `applyPendingMigrations` twice is a no-op
+
+#### P2
+
+- [ ] **`createDb` connection options** — SSL mode, pool size from env
+- [ ] **`ensurePostgresDatabase` helper** — creates database when absent
+
+---
+
+### `packages/adapters` — Missing Tests
+
+#### P1
+
+- [ ] **`claude-local` package tests** (unit, not server-level)
+  - `parseClaudeCliUsageText` edge cases
+  - `readClaudeToken` file-not-found handling
+
+- [ ] **`codex-local` extended**
+  - `readCodexAuthInfo` with missing config file
+  - `mapCodexRpcQuota` unusual shapes
+
+#### P2
+
+- [ ] **`cursor-local` package tests** — `parseCursorStdout` edge cases
+- [ ] **`opencode-local` package tests** — session file parsing edge cases
+- [ ] **`adapter-utils` package** — shared utilities that are currently untested
+
+---
+
+## Progress Tracking
+
+Use the checkboxes above. When a test file is created:
+1. Check the box in this document.
+2. Reference the PR that added the tests in a comment.
+
+Suggest reviewing this backlog quarterly and re-prioritising based on incident history and code churn in untested areas.
