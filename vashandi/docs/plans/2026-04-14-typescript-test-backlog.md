@@ -348,7 +348,15 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Content-Type checks ✓
 - [x] **`sidebar-badges` route** — badge count aggregation — Go: `backend/server/routes/sidebar_badges_test.go`
 - [x] **`health` route** — 200 OK and database connectivity check — Go: `backend/server/routes/health_test.go`
-- [ ] **`org-chart-svg` route** — SVG generation from agent hierarchy
+- [x] **`org-chart-svg` route** — SVG generation from agent hierarchy — Go: `backend/server/routes/org_chart_svg_test.go`
+  - Empty company ✓
+  - Single agent rendering ✓
+  - Hierarchy with edges ✓
+  - Company scoping ✓
+  - Nebula style variant ✓
+  - Long name truncation ✓
+  - PNG fallback to SVG ✓
+  - htmlEscape helper ✓
 - [x] **`companies` routes** — Go: `backend/server/routes/companies_test.go`
   - CRUD (list, get, update, delete) ✓
   - Branding update ✓
@@ -456,6 +464,8 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Finish success/error ✓ (⚠ 2 skipped on SQLite due to UUID PK generation — will pass on PostgreSQL)
   - Multiple sequential operations ✓
 - [ ] **`workspace-runtime-read-model` service** — derived workspace status from events
+- [x] **`workspaces` service** — workspace directory resolution — Go: `backend/server/services/workspaces_test.go`
+  - deriveRepoNameFromURL: https with/without .git, ssh, bare name, empty, nested path ✓
 - [x] **`run-log-store` service** — append and list run log entries — Go: `backend/server/services/run_log_store_test.go`
   - Begin creates file ✓
   - Append and read round-trip ✓
@@ -469,6 +479,10 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 
 - [ ] **`live-events` service** — SSE fan-out per company, client subscribe/unsubscribe
 - [ ] **`openbrain-client` service** — context compile request, token budget handling, graceful fallback when OpenBrain is unavailable
+- [x] **`memory-adapter` service** — InjectContextIntoPrompt, xmlEscape, stringMapToAny — Go: `backend/server/services/memory_adapter_test.go`
+  - InjectContextIntoPrompt: empty XML passthrough, XML injection with agent_memory wrapper ✓
+  - xmlEscape: ampersand, angle brackets, quotes, empty ✓
+  - stringMapToAny: populated map, empty map ✓
 - [ ] **`dashboard` service** — stats aggregation
 - [ ] **`plugin-lifecycle` service** — install/uninstall state machine
 - [ ] **`plugin-manifest-validator` service** — schema validation, capability allow-list
@@ -488,6 +502,45 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [ ] **`feedback-redaction` service** — PII stripping from feedback bundles
 - [ ] **`github-fetch` service** — authenticated GitHub API calls, rate-limit handling
 - [ ] **`default-agent-instructions` service** — template expansion
+
+---
+
+### Shared / Infrastructure — Golang Port
+
+- [x] **`home_paths`** — path resolution helpers — Go: `backend/shared/home_paths_test.go`
+  - ResolvePaperclipHomeDir: default, env override, tilde expansion ✓
+  - ResolvePaperclipInstanceID: default, env override ✓
+  - ResolvePaperclipInstanceRoot: combined resolution ✓
+  - SanitizeFriendlyPathSegment: normal, spaces, special chars, empty, all-special, dots, underscores ✓
+  - ResolveManagedProjectWorkspaceDir: path structure ✓
+  - ResolveDefaultAgentWorkspaceDir: path structure ✓
+  - PathSegmentRegex: valid and invalid patterns ✓
+  - expandHomePrefix: tilde, tilde-slash, no tilde, empty ✓
+- [x] **`crypto`** — encryption helpers — Go: `backend/shared/crypto_test.go` (previously completed)
+  - DecryptLocalSecret round-trip, missing env var, wrong key size, invalid JSON, invalid base64 IV, tampered ciphertext ✓
+
+### Routes — Additional Golang Port (2026-04-14)
+
+- [x] **`company-skills` routes** — Go: `backend/server/routes/company_skills_test.go`
+  - ListCompanySkills: company scoping, empty ✓
+  - CreateCompanySkill: success, bad body ✓
+  - GetCompanySkill: found, not-found, cross-company block ✓
+  - DeleteCompanySkill ✓
+  - GetCompanySkillUpdateStatus ✓
+  - GetCompanySkillFiles ✓
+  - InstallUpdateCompanySkill ✓
+- [x] **`mcp-governance` routes** — Go: `backend/server/routes/mcp_governance_test.go`
+  - MCPToolsHandler: company scoping, empty, missing companyId ✓
+  - MCPProfilesHandler: company scoping, content type ✓
+  - AgentMCPToolsHandler: no entitlements, missing agentId ✓
+- [x] **`heartbeat` routes** — Go: `backend/server/routes/heartbeat_test.go`
+  - ListHeartbeatRuns: company scoping, missing companyId, content type, descending order, empty ✓
+- [x] **`issues-checkout-wakeup` routes** — Go: `backend/server/routes/issues_checkout_wakeup_test.go`
+  - ShouldWakeAssigneeOnCheckout: nil issue, no assignee, same agent, different agent, not in progress, empty actor ✓
+- [x] **`context` routes** — Go: `backend/server/routes/context_test.go`
+  - RegisterContextRoutes: run_start, run_complete, checkout triggers ✓
+  - PreRunHydrationHandler ✓
+  - PostRunCaptureHandler ✓
 
 ---
 
@@ -634,6 +687,15 @@ The following Go test files were created as equivalents to the TypeScript backlo
 | `backend/server/services/budgets_test.go` | CheckProjectBudget (no policy, within budget, exceeds, exactly at budget, inactive policy) |
 | `backend/server/services/costs_test.go` | CreateEvent (basic, updates agent spend, updates company spend, defaults OccurredAt) |
 | `backend/server/services/plugins_test.go` | ListPlugins (empty, installed-only), GetPluginManifest (found, not-found, invalid JSON), UpdatePluginStatus (status change, activity logging) |
+| `backend/server/routes/org_chart_svg_test.go` | OrgChartSVG (empty company, single agent, hierarchy with edges, company scoping, nebula style, long name truncation, PNG fallback, htmlEscape) |
+| `backend/server/routes/company_skills_test.go` | ListCompanySkills (company scoping, empty), CreateCompanySkill (success, bad body), GetCompanySkill (found, not-found, cross-company block), DeleteCompanySkill, GetCompanySkillUpdateStatus, GetCompanySkillFiles, InstallUpdateCompanySkill |
+| `backend/server/routes/mcp_governance_test.go` | MCPTools (company scoping, empty, missing companyId), MCPProfiles (company scoping, content type), AgentMCPTools (no entitlements, missing agentId) |
+| `backend/server/routes/heartbeat_test.go` | ListHeartbeatRuns (company scoping, missing companyId, content type, descending order, empty) |
+| `backend/server/routes/issues_checkout_wakeup_test.go` | ShouldWakeAssigneeOnCheckout (nil issue, no assignee, same agent, different agent, not in progress, empty actor) |
+| `backend/server/routes/context_test.go` | RegisterContextRoutes (run_start, run_complete, checkout triggers), PreRunHydrationHandler, PostRunCaptureHandler |
+| `backend/server/services/workspaces_test.go` | deriveRepoNameFromURL (https with/without .git, ssh, bare name, empty, nested path) |
+| `backend/server/services/memory_adapter_test.go` | InjectContextIntoPrompt (empty XML, with XML), xmlEscape (all entity types), stringMapToAny (populated, empty) |
+| `backend/shared/home_paths_test.go` | ResolvePaperclipHomeDir (default, env override, tilde expansion), ResolvePaperclipInstanceID (default, env), ResolvePaperclipInstanceRoot, SanitizeFriendlyPathSegment (normal, spaces, special chars, empty, all-special, dots, underscores), ResolveManagedProjectWorkspaceDir, ResolveDefaultAgentWorkspaceDir, PathSegmentRegex, expandHomePrefix |
 
 **Bug fix applied:**
 
