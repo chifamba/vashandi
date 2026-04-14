@@ -1,91 +1,170 @@
-# Porting Paperclip to Go 1.24+
+# Master Porting Plan: Paperclip to Go 1.24+
 
-This document outlines a detailed assessment and execution plan for porting the Paperclip monorepo (originally Node.js/TypeScript) to Go 1.24+.
+This document is the consolidated master tracker outlining the complete execution strategy, progress state, and the exhaustive 100% completion parity roadmap for porting the Vashandi/Paperclip monorepo (originally Node.js/TypeScript) natively to Go 1.24+.
 
-## 1. Executive Summary
-
-Paperclip is currently an orchestrator for AI agents, implemented as a Node.js server with an embedded PostgreSQL database (via `embedded-postgres`), Drizzle ORM, WebSockets, a CLI, various agent adapters, and a React frontend. The goal is to port the entire backend (Server, Database Migrations, CLI, Adapters) to Go 1.24+, while preserving the React frontend and its build pipeline.
-
-Go is an excellent fit due to its concurrency primitives, compiled native binaries, strong standard library, and excellent performance characteristics—all of which are beneficial for agent orchestration, CLI tools, and long-running services.
-
-## 2. Architecture Assessment & Technology Mapping
-
-### Current Stack (TypeScript) vs Proposed Stack (Go 1.24+)
+## 1. Architecture Assessment & Technology Mapping
 
 | Component                 | Current TypeScript Stack                                | Proposed Go 1.24+ Stack                                                  |
 | ------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
 | **Monorepo Management**   | pnpm workspaces (`pnpm-workspace.yaml`)                 | Go Workspaces (`go.work`) alongside `pnpm` for UI                        |
 | **Core Server / Routing** | Express.js + `tsx`                                      | Standard Library `net/http` (enhanced routing in Go 1.22+) or `go-chi/chi` |
-| **Database & ORM**        | Drizzle ORM + PostgreSQL (`embedded-postgres`)          | `pgx` + `sqlc` (type-safe SQL generation) or `ent`                       |
+| **Database & ORM**        | Drizzle ORM + PostgreSQL (`embedded-postgres`)          | `GORM` / raw `pgx`                                                       |
 | **Migrations**            | Drizzle Kit                                             | `golang-migrate/migrate` or `goose`                                      |
 | **Validation**            | Zod                                                     | `go-playground/validator/v10`                                            |
-| **WebSockets (Realtime)** | `ws` package                                            | `gorilla/websocket` or `nhooyr.io/websocket`                             |
 | **CLI Framework**         | Commander.js + `@clack/prompts`                         | `spf13/cobra` + `charmbracelet/huh` or `survey`                          |
-| **Dependency Injection**  | Manual / Ad-hoc                                         | `uber-go/fx` (optional) or Manual                                        |
-| **Frontend Setup**        | React, Vite, TanStack Query                             | Kept as-is, served via Go static file server or external reverse proxy   |
-| **Testing**               | Vitest                                                  | Standard `testing` package + `stretchr/testify`                          |
 
-### Key Challenges
-1. **Embedded Postgres:** The Node.js implementation relies heavily on `embedded-postgres` for local testing/deployment without dependencies. A Go equivalent like `fergusstrange/embedded-postgres` or lightweight SQLite (for local) vs Postgres (for prod) may be considered, or relying on Docker for local testing.
-2. **Adapters and Plugins System:** The current adapters heavily use dynamic module loading or shared TypeScript interfaces. Go requires statically defined interfaces or RPC-based plugin systems (e.g., `hashicorp/go-plugin` for true extensibility) to support "bring your own agent".
-3. **Complex Type Sharing:** `@paperclipai/shared` contains interfaces shared across server and UI. Generating TypeScript types from Go structs (e.g., via `tygo` or custom generator) will be necessary to keep UI and Server in sync.
+---
 
-## 3. Phased Execution Plan
+## 2. Global Progress Tracker
 
-The porting will be broken down into discrete phases to ensure incremental stability. The strategy involves building the Go backend alongside the Node.js backend until feature parity is reached, then switching over.
+| Phase | Description | Status |
+|---|---|---|
+| 1 | Go Workspace Initialization and Shared Models | Complete |
+| 2 | Database Layer and GORM Migrations | Complete |
+| 3 | Core Server Implementation (HTTP) | In Progress (Router initialized; Health, Dashboard, Activity, Goals routes ported. Large deficit remains, see below) |
+| 4 | WebSockets and Realtime Functionality | Not Started |
+| 5 | Adapters and Plugins Architecture (Heartbeat Runner) | In Progress (Anthropic native SDK base mapped, needs full LLM binding parity) |
+| 6 | CLI Porting (Cobra Mapping) | Pending Internal Implementation (Commands are structurally registered but lack REST connections) |
+| 7 | Testing, CI/CD, and Docker | Not Started |
 
-### Phase 1: Go Workspace Initialization and Shared Models
-- **Objective:** Establish the foundation and types.
-- Initialize `go.work` at the root directory.
-- Create a `shared` Go module (`go mod init github.com/chifamba/paperclip/shared`).
-- Translate the TypeScript Zod/Drizzle models from `packages/shared` and `packages/db` into Go structs with JSON validation tags.
-- Set up a tool to automatically generate TypeScript definitions from Go structs (e.g., using `tkrajina/typescriptify-golang-structs` or `tygo`) so the UI continues receiving accurate types.
+---
 
-### Phase 2: Database Layer and Migrations
-- **Objective:** Port Drizzle schemas to SQL and set up Go DB access.
-- Create a `db` module.
-- Extract the raw SQL migrations generated by Drizzle.
-- Set up `golang-migrate/migrate` to run these migrations.
-- Rewrite Drizzle schemas into raw SQL queries (for `sqlc`) or `ent` schemas. `sqlc` is recommended for high performance and generated type-safety.
-- Ensure the Go application can spin up a connection pool using `pgxpool`.
-- Address the `embedded-postgres` requirement (evaluate Go embedded postgres libraries or transition local dev to a Docker Compose workflow).
+## 3. 100% Parity Go Port Checklist
 
-### Phase 3: Core Server Implementation (HTTP)
-- **Objective:** Port the Express server and REST APIs.
-- Create a `server` module.
-- Set up the main server utilizing Go 1.24 enhanced `net/http` multiplexer (or `go-chi/chi`).
-- Reimplement core middleware: Auth, Logging (using `slog`), Error handling, CORS.
-- Implement REST API routes (`routes/` translated to Go handlers).
-- Set up static file serving for the React `ui-dist` folder.
+The following is the authoritative, exhaustive checklist for porting the final elements required to completely strip Node.js from the backend. 
 
-### Phase 4: WebSockets and Realtime Functionality
-- **Objective:** Port real-time agent coordination.
-- Reimplement the `ws` logic using `gorilla/websocket`.
-- Create the Pub/Sub or Connection Manager pattern in Go to handle heartbeat ticks, ticket updates, and streaming output from agents.
+### Part A: Server API Routes
 
-### Phase 5: Adapters and Plugins Architecture
-- **Objective:** Translate the AI agent adapters (Claude, Codex, OpenClaw, etc.).
-- Define strict Go interfaces for Adapters (e.g., `AgentAdapter`, `SkillPlugin`).
-- Port local adapter logic (HTTP requests to LLM APIs, handling SSE/Streaming responses).
-- Reimplement the "Bring Your Own Agent" interface. If dynamic plugins are required, explore `hashicorp/go-plugin` over gRPC. Otherwise, compile adapters statically into the server binary.
+[ ] Node.js Route Migration: access.go
+{Description: "Rebuild user and organization RBAC access controls mapping to access.ts",
+TestCase: "Verify standard users cannot mutate company settings; verify workspace invites operate correctly",
+Additional: "Porting logic from vashandi/server/src/routes/access.ts (94KB equivalent)"}
 
-### Phase 6: CLI Porting
-- **Objective:** Port the Node.js Commander CLI to Go `cobra`.
-- Create a `cmd/paperclipai` module.
-- Port commands (`onboard`, `dev`, etc.).
-- Utilize `charmbracelet/huh` for rich interactive prompts (replacing `@clack/prompts`).
-- Integrate the Go Database and Go Server modules into the CLI build so that `paperclipai` acts as a single static binary containing everything.
+[ ] Node.js Route Migration: adapters.go
+{Description: "Rewrite endpoint logic exposing adapter configuration and connection test states",
+TestCase: "Verify GET request retrieves status for Anthropic and OpenAI adapter health",
+Additional: "Porting logic from adapters.ts"}
 
-### Phase 7: Testing, CI/CD, and Docker
-- **Objective:** Ensure reliability and update automation.
-- Write unit tests using the standard `testing` package for models, database queries, and routing.
-- Port integration tests (Playwright UI tests can remain untouched, pointing to the Go server instead of the Node server).
-- Update GitHub Actions / CI workflows to build Go binaries instead of Node.js builds.
-- Update `Dockerfile` to use multistage Go builds (resulting in drastically smaller container images).
-- Clean up the `pnpm-workspace.yaml` and Node dependencies, keeping only what is required for the `ui` and end-to-end tests.
+[ ] Node.js Route Migration: approvals.go
+{Description: "Handle AI task state transition requirements for human-in-the-loop interventions",
+TestCase: "Trigger a required approval state on an Issue and verify the human PATCH response resumes the agent",
+Additional: "Porting logic from approvals.ts"}
 
-## 4. Immediate Next Steps
+[ ] Node.js Route Migration: assets.go
+{Description: "Handle file upload, S3 bucket storage initialization, and presigned URLs",
+TestCase: "Upload a file locally via REST and read the asset payload back",
+Additional: "Porting logic from assets.ts"}
 
-1. Create the `go.work` file.
-2. Initialize the first module for `shared` definitions.
-3. Review the `packages/db` migrations to export the baseline schema.
+[ ] Node.js Route Migration: authz.go
+{Description: "Map Better-Auth primitives directly to Vashandi session management",
+TestCase: "Validate JWT Bearer token across instance boundaries",
+Additional: "Porting logic from authz.ts"}
+
+[ ] Node.js Route Migration: company_skills.go
+{Description: "Translate custom skill assignments functionality into the Go data layer",
+TestCase: "Assign a new CLI skill constraint to a Company and fetch assigned skill list",
+Additional: "Porting logic from company-skills.ts"}
+
+[ ] Node.js Route Migration: costs.go
+{Description: "Store event telemetry and process budget deduction tracking from LLM responses",
+TestCase: "Verify cost accumulation accurately caps issue allocation limits",
+Additional: "Porting logic from costs.ts"}
+
+[ ] Node.js Route Migration: execution_workspaces.go
+{Description: "Translate execution workspace temporary filesystem creation and tear-down logic",
+TestCase: "Verify worktree creation generates local /tmp folder constraints appropriately",
+Additional: "Porting logic from execution-workspaces.ts"}
+
+[ ] Node.js Route Migration: inbox_dismissals.go
+{Description: "Manage notification reads and dismissal states for the Operator UI",
+TestCase: "Check off notification ID and verify status changes to read=true",
+Additional: "Porting logic from inbox-dismissals.ts"}
+
+[ ] Node.js Route Migration: instance_settings.go
+{Description: "Translate dynamic API configurations to mutate config.json state at runtime",
+TestCase: "Update allowed DB retention days and review system config sync",
+Additional: "Porting logic from instance-settings.ts"}
+
+[ ] Node.js Route Migration: issues_checkout_wakeup.go
+{Description: "Rebuild atomic issue locking and multi-scheduler wakeup operations",
+TestCase: "Trigger multiple issue checkouts guaranteeing singular assignment locks",
+Additional: "Porting logic from issues-checkout-wakeup.ts"}
+
+[ ] Node.js Route Migration: llms.go
+{Description: "Manage gateway connection routing tests and LLM fallback handling",
+TestCase: "Ping OpenAI fallback path when primary is down",
+Additional: "Porting logic from llms.ts"}
+
+[ ] Node.js Route Migration: org_chart_svg.go
+{Description: "Render dynamic SVG visualizations representing Company architecture topologies",
+TestCase: "GET the SVG endpoint and verify valid DOM tree representing root Company users",
+Additional: "Porting logic from org-chart-svg.ts (heavy 40KB+ generator)"}
+
+[ ] Node.js Route Migration: plugin_ui_static.go
+{Description: "Re-implement static proxy layers mounting Plugin UI injection bundles",
+TestCase: "Access plugin IFRAME context and verify CORS mappings",
+Additional: "Porting logic from plugin-ui-static.ts"}
+
+[ ] Node.js Route Migration: projects.go
+{Description: "Write project boundary enforcement, settings, and workspace isolation variables",
+TestCase: "Create new Project namespace and restrict agent access to it natively locally",
+Additional: "Porting logic from projects.ts"}
+
+[ ] Node.js Route Migration: routines.go
+{Description: "Implement tracking endpoint for automated time-polled task executions",
+TestCase: "Verify 30s recurrent routine schedules update task records",
+Additional: "Porting logic from routines.ts"}
+
+[ ] Node.js Route Migration: secrets.go
+{Description: "Port AES Key abstraction mapping and external keyfile bindings",
+TestCase: "Encrypt a test string with local hardware path key and successfully decrypt payload",
+Additional: "Porting logic from secrets.ts"}
+
+[ ] Node.js Route Migration: sidebar_badges.go
+{Description: "Count aggregates and notification state for Sidebar React components",
+TestCase: "Load initial UI render and verify correct inbox count payload",
+Additional: "Porting logic from sidebar-badges.ts"}
+
+[ ] Complete Logic Mapping: issues.go Expansion
+{Description: "Expand existing 3KB Go issues route to reach complete 93KB parity with Node structure",
+TestCase: "Exhaustive suite checking validation limits, cascading task deletions, and issue relations",
+Additional: "issues.go exists but needs vast logic expansion to match real-world complexity"}
+
+### Part B: CLI Tooling & Workspaces
+
+[ ] Go CLI Parity: Internal Worktree parsing algorithms
+{Description: "Port worktree-merge-history-lib.ts AST parsers into Go's worktree.go handler",
+TestCase: "CLI worktree command successfully merges mock AST modification locally against target project repo",
+Additional: "Vital for agent system interaction allowing safe code rollbacks"}
+
+[ ] Go CLI Parity: Configuration TUI mutation
+{Description: "Add interactive TUI forms to config and allowed-hostname Go CLI endpoints",
+TestCase: "CLI dynamically inputs user values mapping them permanently into config.json",
+Additional: "Uses Cobra selection prompts"}
+
+[ ] Go CLI Parity: Full Agent Client SDK Proxies
+{Description: "Populate Go HTTP proxy methods inside client_commands.go for agent, approval, activity, dashboard, plugin, and context namespaces",
+TestCase: "Execute 'paperclipai context list' via the CLI resulting in a successful GET retrieval from Go API",
+Additional: "Requires matching backend Go Server API readiness integration"}
+
+### Part C: Heartbeat & OpenBrain Adapter Mappings
+
+[ ] Heartbeat Runner: Fully Implemented Anthropic Native Execution
+{Description: "Bridge LLM tool parsing, payload streaming chunk management, and JSON validations using anthropic-sdk-go",
+TestCase: "Execute an end-to-end conversation with standard Tool Use integration triggering activity.Log() successfully",
+Additional: "Totally bypasses and replaces the previous Claude Code exec() shell wrapping methodology"}
+
+[ ] Heartbeat Runner: OpenAI Native Execution Adapter
+{Description: "Instantiate official github.com/openai/openai-go hooks mapped cleanly into the AgentRunner interfaces",
+TestCase: "Codex provider initializes and passes 10 standard tool payload configurations correctly formatted to the REST backend",
+Additional: "Parity matching for the existing TS codex-local adapter"}
+
+[ ] Heartbeat Runner: Gemini Native Execution Adapter
+{Description: "Instantiate google.golang.org/genai integration specifically tuned for GenAI system prompt formatting limitations",
+TestCase: "Gemini provider executes context constraints payload yielding identical JSON to TS versions",
+Additional: "Parity matching for the existing TS gemini-local adapter"}
+
+[ ] OpenBrain Integration: Fat Context injection
+{Description: "Generate strict memory XML bindings directly injecting semantic vector search results into LLM boundary variables before execution",
+TestCase: "Perform Agent Heartbeat invocation specifying an active TaskID and validating the Memory String hits the final LLM Context prompt securely via mTLS",
+Additional: "Ensures Go agents do not lose temporal context limits previously guaranteed by OpenBrain."}
