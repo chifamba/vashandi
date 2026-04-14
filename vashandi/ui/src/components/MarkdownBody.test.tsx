@@ -1,12 +1,24 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { buildAgentMentionHref, buildProjectMentionHref, buildSkillMentionHref } from "@paperclipai/shared";
 import { ThemeProvider } from "../context/ThemeContext";
 import { MarkdownBody } from "./MarkdownBody";
 
+vi.mock("dompurify", () => {
+  return {
+    default: {
+      sanitize: vi.fn((html) => html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")),
+    },
+  };
+});
+
 describe("MarkdownBody", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders markdown images without a resolver", () => {
     const html = renderToStaticMarkup(
       <ThemeProvider>

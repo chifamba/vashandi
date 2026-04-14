@@ -61,3 +61,7 @@ const adaptersByType = new Map<string, CLIAdapterModule>(
 export function getCLIAdapter(type: string): CLIAdapterModule {
   return adaptersByType.get(type) ?? processCLIAdapter;
 }
+
+export function getAvailableCLIAdapters(): CLIAdapterModule[] {
+  return Array.from(adaptersByType.values());
+}

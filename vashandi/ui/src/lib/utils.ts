@@ -185,3 +185,32 @@ export function projectWorkspaceUrl(
 ): string {
   return `${projectUrl(project)}/workspaces/${workspaceId}`;
 }
+
+/** Decode HTML entities safely. */
+export function decodeEntities(text: string): string {
+  if (!text) return "";
+  // We use a regex to find and decode HTML entities individually.
+  // This approach preserves HTML-like tags (e.g., <String>) and other non-entity content,
+  // matching the original behavior while avoiding the XSS risks of innerHTML.
+  return text.replace(/&[a-zA-Z0-9#]+;/g, (entity) => {
+    if (typeof DOMParser === "undefined") {
+      // Basic fallback for environments without DOMParser (e.g., some test environments)
+      const basicEntities: Record<string, string> = {
+        "&amp;": "&",
+        "&lt;": "<",
+        "&gt;": ">",
+        "&quot;": '"',
+        "&apos;": "'",
+        "&#39;": "'",
+      };
+      return basicEntities[entity] || entity;
+    }
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(entity, "text/html");
+      return doc.documentElement.textContent || entity;
+    } catch {
+      return entity;
+    }
+  });
+}

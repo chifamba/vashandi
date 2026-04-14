@@ -258,7 +258,7 @@ export async function createApp(
     ];
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {
-      const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
+      const indexHtml = applyUiBranding(await fs.promises.readFile(path.join(uiDist, "index.html"), "utf-8"));
       app.use(express.static(uiDist));
       app.get(/.*/, (_req, res) => {
         res.status(200).set("Content-Type", "text/html").end(indexHtml);
@@ -290,7 +290,7 @@ export async function createApp(
     app.get(/.*/, async (req, res, next) => {
       try {
         const templatePath = path.resolve(uiRoot, "index.html");
-        const template = fs.readFileSync(templatePath, "utf-8");
+        const template = await fs.promises.readFile(templatePath, "utf-8");
         const html = applyUiBranding(await vite.transformIndexHtml(req.originalUrl, template));
         res.status(200).set({ "Content-Type": "text/html" }).end(html);
       } catch (err) {
