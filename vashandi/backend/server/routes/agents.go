@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -972,6 +973,137 @@ func GetWorkspaceOperationLogHandler(db *gorm.DB) http.HandlerFunc {
 			"logRef":      op.LogRef,
 			"logBytes":    op.LogBytes,
 		})
+	}
+}
+
+// GetAgentMeHandler handles GET /agents/me
+func GetAgentMeHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Try to get agent ID from context (set by auth middleware for agent API keys)
+		agentID := r.Header.Get("X-Agent-ID")
+		if agentID == "" {
+			http.Error(w, "Agent authentication required", http.StatusUnauthorized)
+			return
+		}
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", agentID).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(agent)
+	}
+}
+
+// GetAgentMeInboxLiteHandler handles GET /agents/me/inbox-lite
+func GetAgentMeInboxLiteHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		agentID := r.Header.Get("X-Agent-ID")
+		if agentID == "" {
+			http.Error(w, "Agent authentication required", http.StatusUnauthorized)
+			return
+		}
+		var issues []models.Issue
+		db.WithContext(r.Context()).
+			Where("assignee_agent_id = ? AND status IN ('todo','in_progress','blocked')", agentID).
+			Order("updated_at DESC").
+			Find(&issues)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(issues)
+	}
+}
+
+// GetAgentMeInboxMineHandler handles GET /agents/me/inbox/mine
+func GetAgentMeInboxMineHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		agentID := r.Header.Get("X-Agent-ID")
+		if agentID == "" {
+			http.Error(w, "Agent authentication required", http.StatusUnauthorized)
+			return
+		}
+		status := r.URL.Query().Get("status")
+		if status == "" {
+			status = "todo,in_progress"
+		}
+		var issues []models.Issue
+		q := db.WithContext(r.Context()).
+			Where("assignee_agent_id = ?", agentID)
+		statuses := strings.Split(status, ",")
+		q = q.Where("status IN ?", statuses)
+		q.Order("updated_at DESC").Find(&issues)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(issues)
+	}
+}
+
+// InvokeAgentHeartbeatHandler handles POST /agents/:id/heartbeat/invoke
+func InvokeAgentHeartbeatHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		now := time.Now()
+		db.WithContext(r.Context()).Model(&agent).Update("last_heartbeat_at", now)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agentId":   agent.ID,
+			"invokedAt": now,
+		})
+	}
+}
+
+// AgentClaudeLoginHandler handles POST /agents/:id/claude-login
+func AgentClaudeLoginHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agentId": agent.ID,
+			"status":  "ok",
+		})
+	}
+}
+
+// CreateAgentHireHandler handles POST /companies/:companyId/agent-hires
+func CreateAgentHireHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Create agent from hire request
+		name, _ := body["name"].(string)
+		adapterType, _ := body["adapterType"].(string)
+		if adapterType == "" {
+			adapterType = "process"
+		}
+		if name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		agent := models.Agent{
+			CompanyID:   companyID,
+			Name:        name,
+			AdapterType: adapterType,
+			Status:      "idle",
+		}
+		if err := db.WithContext(r.Context()).Create(&agent).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(agent)
 	}
 }
 

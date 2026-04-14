@@ -32,6 +32,18 @@ func NewIssueRoutes(db *gorm.DB, activity *services.ActivityService) *IssueRoute
 	}
 }
 
+// ListAllIssuesHandler returns issues across all companies (admin)
+func (ir *IssueRoutes) ListAllIssuesHandler(w http.ResponseWriter, r *http.Request) {
+	var issues []models.Issue
+	q := ir.db.WithContext(r.Context()).Order("created_at DESC").Limit(100)
+	if status := r.URL.Query().Get("status"); status != "" {
+		q = q.Where("status = ?", status)
+	}
+	q.Find(&issues)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(issues)
+}
+
 // ListIssuesHandler returns a list of issues
 func (ir *IssueRoutes) ListIssuesHandler(w http.ResponseWriter, r *http.Request) {
 	companyID := chi.URLParam(r, "companyId")

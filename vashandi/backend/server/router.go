@@ -54,6 +54,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/plugins", routes.ListPluginsHandler(db, activitySvc))
 
 		// Issue Routes
+		api.Get("/issues", issueRoutes.ListAllIssuesHandler)
 		api.Get("/companies/{companyId}/issues", issueRoutes.ListIssuesHandler)
 		api.Post("/companies/{companyId}/issues", issueRoutes.CreateIssueHandler)
 		api.Post("/companies/{companyId}/issues/bulk", issueRoutes.BulkUpdateIssuesHandler)
@@ -118,6 +119,10 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		// Agent Routes
 		api.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
 		api.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db, heartbeatSvc.Memory))
+		api.Post("/companies/{companyId}/agent-hires", routes.CreateAgentHireHandler(db))
+		api.Get("/agents/me", routes.GetAgentMeHandler(db))
+		api.Get("/agents/me/inbox-lite", routes.GetAgentMeInboxLiteHandler(db))
+		api.Get("/agents/me/inbox/mine", routes.GetAgentMeInboxMineHandler(db))
 		api.Get("/agents/{id}", routes.GetAgentHandler(db))
 		api.Patch("/agents/{id}", routes.UpdateAgentHandler(db))
 		api.Delete("/agents/{id}", routes.DeleteAgentHandler(db, heartbeatSvc.Memory))
@@ -125,6 +130,8 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/agents/{id}/resume", routes.ResumeAgentHandler(db))
 		api.Post("/agents/{id}/terminate", routes.TerminateAgentHandler(db))
 		api.Post("/agents/{id}/wakeup", routes.WakeupAgentHandler(db))
+		api.Post("/agents/{id}/heartbeat/invoke", routes.InvokeAgentHeartbeatHandler(db))
+		api.Post("/agents/{id}/claude-login", routes.AgentClaudeLoginHandler(db))
 		api.Get("/agents/{id}/runtime-state", routes.GetAgentRuntimeStateHandler(db))
 		api.Post("/agents/{id}/runtime-state/reset-session", routes.ResetAgentSessionHandler(db))
 		api.Get("/agents/{id}/task-sessions", routes.GetAgentTaskSessionsHandler(db))
@@ -201,10 +208,13 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/invites/accept", routes.InviteAcceptHandler(db))
 		api.Get("/invites/{token}", routes.GetInviteHandler(db))
 		api.Get("/invites/{token}/onboarding", routes.GetInviteOnboardingHandler(db))
+		api.Get("/invites/{token}/test-resolution", routes.GetInviteTestResolutionHandler(db))
 		api.Post("/invites/{inviteId}/revoke", routes.RevokeInviteHandler(db))
 		api.Post("/cli-auth/challenge", routes.CLIAuthChallengeHandler(db))
+		api.Get("/cli-auth/challenges/{id}", routes.GetCLIAuthChallengeStatusHandler(db))
 		api.Get("/cli-auth/resolve/{token}", routes.ResolveCLIAuthHandler(db))
 		api.Get("/cli-auth/me", routes.GetCLIAuthMeHandler(db))
+		api.Post("/cli-auth/revoke-current", routes.RevokeCLIAuthCurrentHandler(db))
 		api.Get("/companies/{companyId}/join-requests", routes.ListJoinRequestsHandler(db))
 		api.Post("/join-requests/{id}/claim", routes.ClaimJoinRequestHandler(db))
 		api.Patch("/member-roles/{id}", routes.UpdateMemberPermissionsHandler(db))
@@ -214,6 +224,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/llms/skills.txt", routes.ListSkillsHandler())
 		api.Get("/skills/available", routes.ListSkillsHandler())
 		api.Get("/skills/index", routes.ListSkillsHandler())
+		api.Get("/skills/{skillName}", routes.GetSkillByNameHandler())
 
 		// Board-claim Routes
 		api.Get("/board-claim/{token}", routes.BoardClaimTokenHandler(db))

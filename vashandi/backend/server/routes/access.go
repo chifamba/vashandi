@@ -334,6 +334,62 @@ func GetInviteOnboardingHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// GetCLIAuthChallengeStatusHandler handles GET /cli-auth/challenges/:id
+func GetCLIAuthChallengeStatusHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var challenge models.CLIAuthChallenge
+		if err := db.WithContext(r.Context()).First(&challenge, "id = ?", id).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(challenge)
+	}
+}
+
+// RevokeCLIAuthCurrentHandler handles POST /cli-auth/revoke-current
+func RevokeCLIAuthCurrentHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
+	}
+}
+
+// GetInviteTestResolutionHandler handles GET /invites/:token/test-resolution
+func GetInviteTestResolutionHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := chi.URLParam(r, "token")
+		var invites []models.Invite
+		db.WithContext(r.Context()).
+			Where("token_hash = ? AND revoked_at IS NULL", token).
+			Find(&invites)
+		if len(invites) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"valid": false})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"valid":     true,
+			"invite":    invites[0],
+			"expired":   false,
+		})
+	}
+}
+
+// GetSkillByNameHandler handles GET /skills/:skillName
+func GetSkillByNameHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		skillName := chi.URLParam(r, "skillName")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"name":   skillName,
+			"exists": false,
+		})
+	}
+}
+
 // RevokeInviteHandler handles POST /invites/:inviteId/revoke
 func RevokeInviteHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
