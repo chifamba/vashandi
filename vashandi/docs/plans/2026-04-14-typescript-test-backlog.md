@@ -541,6 +541,35 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - RegisterContextRoutes: run_start, run_complete, checkout triggers ✓
   - PreRunHydrationHandler ✓
   - PostRunCaptureHandler ✓
+- [x] **`issues` routes** (`server/src/routes/issues.ts`) — Go: `backend/server/routes/issues_test.go`
+  - ListIssuesHandler (company scoping, status filter) ✓
+  - ListAllIssuesHandler (all companies, status filter) ✓
+  - GetIssueHandler (found, not-found) ✓
+  - CreateIssueHandler (success with company scoping, bad body) ✓
+  - UpdateIssueHandler (success, not-found) ✓
+  - DeleteIssueHandler (soft-delete via hidden_at, not-found) ✓
+  - TransitionIssueHandler (success, bad body) ✓
+  - AddIssueCommentHandler & ListIssueCommentsHandler (create + list round-trip, issue not-found) ✓
+  - CreateWorkProductHandler & ListWorkProductsHandler (create + list round-trip) ✓
+  - BulkUpdateIssuesHandler (multiple updates with company scoping, empty IDs) ✓
+  - ReleaseIssueHandler (success, not-found) ✓
+  - ListIssueLabelsHandler (company scoping) ✓
+  - CreateLabelHandler, DeleteLabelHandler ✓
+  - Content-Type checks ✓
+- [x] **`memory` routes** — Go: `backend/server/routes/memory_test.go`
+  - MemoryBindingsHandler (returns empty array, content type) ✓
+  - MemoryOperationsHandler (returns empty array, content type) ✓
+- [x] **`chat` routes** — Go: `backend/server/routes/chat_test.go`
+  - CeoChatIngestionHandler (bad body, returns ingested status) ✓
+  - RegisterChatRoutes (route registration) ✓
+- [x] **`handoff` routes** — Go: `backend/server/routes/handoff_test.go`
+  - HandoffIssueHandler (success with assignee update, issue not-found, bad body) ✓
+  - Handoff markdown stored on original run ✓
+- [x] **`assets` routes** — Go: `backend/server/routes/assets_test.go`
+  - GetAssetHandler (found, not-found) ✓
+  - GetAssetContentHandler (found, not-found) ✓
+  - GetAttachmentContentHandler (found, not-found) ✓
+  - DeleteAttachmentHandler ✓
 
 ---
 
@@ -696,6 +725,11 @@ The following Go test files were created as equivalents to the TypeScript backlo
 | `backend/server/services/workspaces_test.go` | deriveRepoNameFromURL (https with/without .git, ssh, bare name, empty, nested path) |
 | `backend/server/services/memory_adapter_test.go` | InjectContextIntoPrompt (empty XML, with XML), xmlEscape (all entity types), stringMapToAny (populated, empty) |
 | `backend/shared/home_paths_test.go` | ResolvePaperclipHomeDir (default, env override, tilde expansion), ResolvePaperclipInstanceID (default, env), ResolvePaperclipInstanceRoot, SanitizeFriendlyPathSegment (normal, spaces, special chars, empty, all-special, dots, underscores), ResolveManagedProjectWorkspaceDir, ResolveDefaultAgentWorkspaceDir, PathSegmentRegex, expandHomePrefix |
+| `backend/server/routes/issues_test.go` | ListIssuesHandler (company scoping, status filter), ListAllIssuesHandler (all companies, status filter), GetIssueHandler (found/not-found), CreateIssueHandler (success/bad body), UpdateIssueHandler (success/not-found), DeleteIssueHandler (soft-delete/not-found), TransitionIssueHandler (success/bad body), Comments (add/list/not-found), WorkProducts (create/list), BulkUpdate (multi/empty), ReleaseIssue (success/not-found), Labels (list/create/delete), Content-Type |
+| `backend/server/routes/memory_test.go` | MemoryBindingsHandler (empty array, content type), MemoryOperationsHandler (empty array, content type) |
+| `backend/server/routes/chat_test.go` | CeoChatIngestionHandler (bad body, ingested status), RegisterChatRoutes |
+| `backend/server/routes/handoff_test.go` | HandoffIssueHandler (success with assignee update, not-found, bad body, handoff markdown stored) |
+| `backend/server/routes/assets_test.go` | GetAssetHandler (found/not-found), GetAssetContentHandler (found/not-found), GetAttachmentContentHandler (found/not-found), DeleteAttachmentHandler |
 
 **Bug fix applied:**
 
