@@ -78,9 +78,29 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Agent Routes
 		api.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
-		api.Get("/agents/{id}", routes.GetAgentHandler(db))
 		api.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db, heartbeatSvc.Memory))
+		api.Get("/agents/{id}", routes.GetAgentHandler(db))
+		api.Patch("/agents/{id}", routes.UpdateAgentHandler(db))
 		api.Delete("/agents/{id}", routes.DeleteAgentHandler(db, heartbeatSvc.Memory))
+		api.Post("/agents/{id}/pause", routes.PauseAgentHandler(db))
+		api.Post("/agents/{id}/resume", routes.ResumeAgentHandler(db))
+		api.Post("/agents/{id}/terminate", routes.TerminateAgentHandler(db))
+		api.Post("/agents/{id}/wakeup", routes.WakeupAgentHandler(db))
+		api.Get("/agents/{id}/runtime-state", routes.GetAgentRuntimeStateHandler(db))
+		api.Post("/agents/{id}/runtime-state/reset-session", routes.ResetAgentSessionHandler(db))
+		api.Get("/agents/{id}/task-sessions", routes.GetAgentTaskSessionsHandler(db))
+		api.Get("/agents/{id}/config-revisions", routes.ListConfigRevisionsHandler(db))
+		api.Get("/agents/{id}/config-revisions/{revisionId}", routes.GetConfigRevisionHandler(db))
+		api.Post("/agents/{id}/config-revisions/{revisionId}/rollback", routes.RollbackConfigRevisionHandler(db))
+		api.Get("/agents/{id}/keys", routes.GetAgentAPIKeysHandler(db))
+		api.Post("/agents/{id}/keys", routes.CreateAgentAPIKeyHandler(db))
+		api.Delete("/agents/{id}/keys/{keyId}", routes.RevokeAgentAPIKeyHandler(db))
+
+		// Heartbeat Run Routes
+		api.Get("/companies/{companyId}/heartbeat-runs", routes.ListCompanyHeartbeatRunsHandler(db))
+		api.Get("/heartbeat-runs/{runId}", routes.GetHeartbeatRunHandler(db))
+		api.Post("/heartbeat-runs/{runId}/cancel", routes.CancelHeartbeatRunHandler(db))
+		api.Get("/heartbeat-runs/{runId}/workspace-operations", routes.GetHeartbeatRunWorkspaceOperationsHandler(db))
 
 		// MCP Governance Routes
 		api.Get("/companies/{companyId}/mcp/tools", routes.MCPToolsHandler(db))
