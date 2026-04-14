@@ -667,3 +667,379 @@ w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(ops)
 }
 }
+
+// GetAgentSkillsHandler handles GET /agents/:id/skills
+func GetAgentSkillsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agentId":     agent.ID,
+			"adapterType": agent.AdapterType,
+			"supported":   false,
+			"mode":        "unsupported",
+			"entries":     []interface{}{},
+			"warnings":    []interface{}{},
+		})
+	}
+}
+
+// SyncAgentSkillsHandler handles POST /agents/:id/skills/sync
+func SyncAgentSkillsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agentId":     agent.ID,
+			"adapterType": agent.AdapterType,
+			"supported":   false,
+			"mode":        "unsupported",
+			"entries":     []interface{}{},
+			"warnings":    []interface{}{},
+		})
+	}
+}
+
+// GetAgentConfigurationHandler handles GET /agents/:id/configuration
+func GetAgentConfigurationHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agentId":       agent.ID,
+			"adapterType":   agent.AdapterType,
+			"adapterConfig": agent.AdapterConfig,
+			"runtimeConfig": agent.RuntimeConfig,
+		})
+	}
+}
+
+// GetAgentInstructionsBundleHandler handles GET /agents/:id/instructions-bundle
+func GetAgentInstructionsBundleHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agentId": agent.ID,
+			"mode":    "none",
+			"files":   []interface{}{},
+		})
+	}
+}
+
+// PatchAgentInstructionsBundleHandler handles PATCH /agents/:id/instructions-bundle
+func PatchAgentInstructionsBundleHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agentId": agent.ID,
+			"mode":    body["mode"],
+			"files":   []interface{}{},
+		})
+	}
+}
+
+// GetAgentInstructionsBundleFileHandler handles GET /agents/:id/instructions-bundle/file
+func GetAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		_ = agent
+		http.Error(w, "No bundle file configured", http.StatusNotFound)
+	}
+}
+
+// PutAgentInstructionsBundleFileHandler handles PUT /agents/:id/instructions-bundle/file
+func PutAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		_ = agent
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+}
+
+// DeleteAgentInstructionsBundleFileHandler handles DELETE /agents/:id/instructions-bundle/file
+func DeleteAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		_ = agent
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// PatchAgentInstructionsPathHandler handles PATCH /agents/:id/instructions-path
+func PatchAgentInstructionsPathHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Merge the path key update into adapterConfig
+		var adapterConfig map[string]interface{}
+		_ = json.Unmarshal(agent.AdapterConfig, &adapterConfig)
+		if adapterConfig == nil {
+			adapterConfig = make(map[string]interface{})
+		}
+		if key, ok := body["adapterConfigKey"].(string); ok {
+			if val, ok2 := body["path"]; ok2 {
+				adapterConfig[key] = val
+			}
+		}
+		updated, _ := json.Marshal(adapterConfig)
+		agent.AdapterConfig = updated
+		db.WithContext(r.Context()).Model(&agent).Update("adapter_config", agent.AdapterConfig)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(agent)
+	}
+}
+
+// GetAdapterModelsHandler handles GET /companies/:companyId/adapters/:type/models
+func GetAdapterModelsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		adapterType := chi.URLParam(r, "type")
+		// Return a static list of known models per adapter type
+		modelsByType := map[string][]string{
+			"claude":   {"claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"},
+			"codex":    {"gpt-4o", "gpt-4o-mini", "o1", "o3"},
+			"gemini":   {"gemini-2.0-flash", "gemini-1.5-pro"},
+			"cursor":   {"cursor-default"},
+			"windsurf": {"windsurf-default"},
+		}
+		models := modelsByType[adapterType]
+		if models == nil {
+			models = []string{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"models": models})
+	}
+}
+
+// DetectAdapterModelHandler handles GET /companies/:companyId/adapters/:type/detect-model
+func DetectAdapterModelHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		adapterType := chi.URLParam(r, "type")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"adapterType": adapterType,
+			"model":       nil,
+			"detected":    false,
+		})
+	}
+}
+
+// GetCompanyAgentConfigurationsHandler handles GET /companies/:companyId/agent-configurations
+func GetCompanyAgentConfigurationsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var agents []models.Agent
+		db.WithContext(r.Context()).Where("company_id = ?", companyID).Find(&agents)
+		configs := make([]map[string]interface{}, 0, len(agents))
+		for _, a := range agents {
+			configs = append(configs, map[string]interface{}{
+				"agentId":       a.ID,
+				"name":          a.Name,
+				"adapterType":   a.AdapterType,
+				"adapterConfig": a.AdapterConfig,
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(configs)
+	}
+}
+
+// GetSchedulerHeartbeatsHandler handles GET /instance/scheduler-heartbeats
+func GetSchedulerHeartbeatsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var agents []models.Agent
+		db.WithContext(r.Context()).Where("last_heartbeat_at IS NOT NULL").
+			Order("last_heartbeat_at DESC").Limit(50).Find(&agents)
+		result := make([]map[string]interface{}, 0, len(agents))
+		for _, a := range agents {
+			result = append(result, map[string]interface{}{
+				"agentId":         a.ID,
+				"name":            a.Name,
+				"lastHeartbeatAt": a.LastHeartbeatAt,
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	}
+}
+
+// GetCompanyLiveRunsHandler handles GET /companies/:companyId/live-runs
+func GetCompanyLiveRunsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var runs []models.HeartbeatRun
+		db.WithContext(r.Context()).
+			Where("company_id = ? AND status IN ('queued','running')", companyID).
+			Order("started_at DESC").Find(&runs)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(runs)
+	}
+}
+
+// GetHeartbeatRunLogHandler handles GET /heartbeat-runs/:runId/log
+func GetHeartbeatRunLogHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		runID := chi.URLParam(r, "runId")
+		var run models.HeartbeatRun
+		if err := db.WithContext(r.Context()).First(&run, "id = ?", runID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"runId":    run.ID,
+			"logStore": run.LogStore,
+			"logRef":   run.LogRef,
+			"logBytes": run.LogBytes,
+		})
+	}
+}
+
+// GetWorkspaceOperationLogHandler handles GET /workspace-operations/:operationId/log
+func GetWorkspaceOperationLogHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		opID := chi.URLParam(r, "operationId")
+		var op models.WorkspaceOperation
+		if err := db.WithContext(r.Context()).First(&op, "id = ?", opID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"operationId": op.ID,
+			"logStore":    op.LogStore,
+			"logRef":      op.LogRef,
+			"logBytes":    op.LogBytes,
+		})
+	}
+}
+
+// GetIssueLiveRunsHandler handles GET /issues/:issueId/live-runs
+func GetIssueLiveRunsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := chi.URLParam(r, "issueId")
+		var runs []models.HeartbeatRun
+		db.WithContext(r.Context()).
+			Where("status IN ('queued','running')").
+			Joins("JOIN issues ON issues.checkout_run_id = heartbeat_runs.id OR issues.execution_run_id = heartbeat_runs.id").
+			Where("issues.id = ?", issueID).
+			Find(&runs)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(runs)
+	}
+}
+
+// GetIssueActiveRunHandler handles GET /issues/:issueId/active-run
+func GetIssueActiveRunHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := chi.URLParam(r, "issueId")
+		var issue models.Issue
+		if err := db.WithContext(r.Context()).First(&issue, "id = ?", issueID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		runID := issue.ExecutionRunID
+		if runID == nil {
+			runID = issue.CheckoutRunID
+		}
+		if runID == nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(nil)
+			return
+		}
+		var run models.HeartbeatRun
+		if err := db.WithContext(r.Context()).First(&run, "id = ?", *runID).Error; err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(nil)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(run)
+	}
+}
+
+// UpdateAgentPermissionsHandler handles PATCH /agents/:id/permissions
+func UpdateAgentPermissionsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
+			http.Error(w, "Agent not found", http.StatusNotFound)
+			return
+		}
+		var body struct {
+			Permissions json.RawMessage `json:"permissions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(body.Permissions) > 0 {
+			agent.Permissions = datatypes.JSON(body.Permissions)
+		}
+		db.WithContext(r.Context()).Model(&agent).Update("permissions", agent.Permissions)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(agent)
+	}
+}

@@ -83,3 +83,59 @@ return
 w.WriteHeader(http.StatusNoContent)
 }
 }
+
+// GetCompanySkillUpdateStatusHandler handles GET /companies/:companyId/skills/:skillId/update-status
+func GetCompanySkillUpdateStatusHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		skillID := chi.URLParam(r, "skillId")
+		var skill models.CompanySkill
+		if err := db.WithContext(r.Context()).First(&skill, "id = ? AND company_id = ?", skillID, companyID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"skillId":       skill.ID,
+			"hasUpdate":     false,
+			"compatibility": skill.Compatibility,
+			"sourceType":    skill.SourceType,
+		})
+	}
+}
+
+// GetCompanySkillFilesHandler handles GET /companies/:companyId/skills/:skillId/files
+func GetCompanySkillFilesHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		skillID := chi.URLParam(r, "skillId")
+		var skill models.CompanySkill
+		if err := db.WithContext(r.Context()).First(&skill, "id = ? AND company_id = ?", skillID, companyID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"skillId":   skill.ID,
+			"inventory": skill.FileInventory,
+		})
+	}
+}
+
+// InstallUpdateCompanySkillHandler handles POST /companies/:companyId/skills/:skillId/install-update
+func InstallUpdateCompanySkillHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		skillID := chi.URLParam(r, "skillId")
+		var skill models.CompanySkill
+		if err := db.WithContext(r.Context()).First(&skill, "id = ? AND company_id = ?", skillID, companyID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"skillId": skill.ID,
+			"status":  "no_update_available",
+		})
+	}
+}

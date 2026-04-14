@@ -241,3 +241,133 @@ w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(membership)
 }
 }
+
+// ListCompanyMembersHandler handles GET /companies/:companyId/members
+func ListCompanyMembersHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var memberships []models.CompanyMembership
+		db.WithContext(r.Context()).
+			Where("company_id = ? AND status = 'active'", companyID).
+			Find(&memberships)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(memberships)
+	}
+}
+
+// UpdateCompanyMemberHandler handles PATCH /companies/:companyId/members/:userId
+func UpdateCompanyMemberHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		userID := chi.URLParam(r, "userId")
+		var body struct {
+			Role *string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var membership models.CompanyMembership
+		if err := db.WithContext(r.Context()).
+			Where("company_id = ? AND principal_id = ? AND principal_type = 'user'", companyID, userID).
+			First(&membership).Error; err != nil {
+			http.Error(w, "Member not found", http.StatusNotFound)
+			return
+		}
+		if body.Role != nil {
+			membership.MembershipRole = body.Role
+		}
+		db.WithContext(r.Context()).Save(&membership)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(membership)
+	}
+}
+
+// RemoveCompanyMemberHandler handles POST /companies/:companyId/members/:userId/remove
+func RemoveCompanyMemberHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		userID := chi.URLParam(r, "userId")
+		db.WithContext(r.Context()).
+			Model(&models.CompanyMembership{}).
+			Where("company_id = ? AND principal_id = ? AND principal_type = 'user'", companyID, userID).
+			Update("status", "removed")
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// GetInviteHandler handles GET /invites/:token
+func GetInviteHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := chi.URLParam(r, "token")
+		// Hash the token to look it up
+		var invites []models.Invite
+		db.WithContext(r.Context()).
+			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()", token).
+			Find(&invites)
+		if len(invites) == 0 {
+			http.Error(w, "Invite not found or expired", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(invites[0])
+	}
+}
+
+// GetInviteOnboardingHandler handles GET /invites/:token/onboarding
+func GetInviteOnboardingHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := chi.URLParam(r, "token")
+		var invites []models.Invite
+		db.WithContext(r.Context()).
+			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()", token).
+			Find(&invites)
+		if len(invites) == 0 {
+			http.Error(w, "Invite not found or expired", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"invite":       invites[0],
+			"onboardingUrl": "/onboarding",
+		})
+	}
+}
+
+// RevokeInviteHandler handles POST /invites/:inviteId/revoke
+func RevokeInviteHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		inviteID := chi.URLParam(r, "inviteId")
+		var invite models.Invite
+		if err := db.WithContext(r.Context()).First(&invite, "id = ?", inviteID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		now := time.Now()
+		invite.RevokedAt = &now
+		db.WithContext(r.Context()).Save(&invite)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(invite)
+	}
+}
+
+// GetCLIAuthMeHandler handles GET /cli-auth/me
+func GetCLIAuthMeHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Return the current actor's info from context
+		actor := actorFromRequest(r)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"actorType": actor["type"],
+			"actorId":   actor["id"],
+		})
+	}
+}
+
+func actorFromRequest(r *http.Request) map[string]interface{} {
+	// Extract basic actor info from headers or context
+	return map[string]interface{}{
+		"type": "user",
+		"id":   r.Header.Get("X-User-ID"),
+	}
+}

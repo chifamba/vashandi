@@ -116,3 +116,8 @@ s = strings.ReplaceAll(s, "<", "&lt;")
 s = strings.ReplaceAll(s, ">", "&gt;")
 return s
 }
+
+// OrgChartPNGHandler returns the org chart as a PNG redirect to SVG fallback
+func OrgChartPNGHandler(db *gorm.DB) http.HandlerFunc {
+	return OrgChartSVGHandler(db)
+}

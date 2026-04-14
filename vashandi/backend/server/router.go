@@ -70,6 +70,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Issue extended routes
 		api.Post("/issues/{id}/release", issueRoutes.ReleaseIssueHandler)
+		api.Get("/issues/{id}/heartbeat-context", issueRoutes.GetIssueHeartbeatContextHandler)
 		api.Get("/companies/{companyId}/labels", routes.ListIssueLabelsHandler(db))
 		api.Post("/companies/{companyId}/labels", routes.CreateLabelHandler(db))
 		api.Delete("/labels/{labelId}", routes.DeleteLabelHandler(db))
@@ -81,11 +82,14 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/issues/{id}/approvals", issueRoutes.LinkIssueApprovalHandler)
 		api.Delete("/issues/{id}/approvals/{approvalId}", issueRoutes.UnlinkIssueApprovalHandler)
 		api.Get("/issues/{id}/attachments", issueRoutes.ListIssueAttachmentsHandler)
+		api.Post("/companies/{companyId}/issues/{issueId}/attachments", routes.UploadIssueAttachmentHandler(db))
+		api.Get("/attachments/{attachmentId}/content", routes.GetAttachmentContentHandler(db))
 		api.Delete("/attachments/{attachmentId}", routes.DeleteAttachmentHandler(db))
 		api.Get("/issues/{id}/feedback-votes", issueRoutes.ListIssueFeedbackVotesHandler)
 		api.Post("/issues/{id}/feedback-votes", issueRoutes.UpsertIssueFeedbackVoteHandler)
 		api.Get("/issues/{id}/documents", issueRoutes.ListIssueDocumentsHandler)
 		api.Get("/issues/{id}/documents/{key}", issueRoutes.GetIssueDocumentHandler)
+		api.Get("/issues/{id}/documents/{key}/revisions", issueRoutes.ListIssueDocumentRevisionsHandler)
 		api.Put("/issues/{id}/documents/{key}", issueRoutes.UpsertIssueDocumentHandler)
 		api.Delete("/issues/{id}/documents/{key}", issueRoutes.DeleteIssueDocumentHandler)
 		api.Patch("/work-products/{id}", routes.UpdateWorkProductHandler(db))
@@ -95,6 +99,8 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		// Issue Activity & Run Routes
 		api.Get("/issues/{id}/activity", routes.ListIssueActivityHandler(db))
 		api.Get("/issues/{id}/runs", routes.ListIssueRunsHandler(db))
+		api.Get("/issues/{issueId}/live-runs", routes.GetIssueLiveRunsHandler(db))
+		api.Get("/issues/{issueId}/active-run", routes.GetIssueActiveRunHandler(db))
 
 		// Activity Routes
 		api.Get("/companies/{companyId}/activity", func(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +113,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(list)
 		})
+		api.Post("/companies/{companyId}/activity", routes.CreateActivityHandler(db))
 
 		// Agent Routes
 		api.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
@@ -127,12 +134,30 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/agents/{id}/keys", routes.GetAgentAPIKeysHandler(db))
 		api.Post("/agents/{id}/keys", routes.CreateAgentAPIKeyHandler(db))
 		api.Delete("/agents/{id}/keys/{keyId}", routes.RevokeAgentAPIKeyHandler(db))
+		api.Get("/agents/{id}/skills", routes.GetAgentSkillsHandler(db))
+		api.Post("/agents/{id}/skills/sync", routes.SyncAgentSkillsHandler(db))
+		api.Get("/agents/{id}/configuration", routes.GetAgentConfigurationHandler(db))
+		api.Get("/agents/{id}/instructions-bundle", routes.GetAgentInstructionsBundleHandler(db))
+		api.Patch("/agents/{id}/instructions-bundle", routes.PatchAgentInstructionsBundleHandler(db))
+		api.Get("/agents/{id}/instructions-bundle/file", routes.GetAgentInstructionsBundleFileHandler(db))
+		api.Put("/agents/{id}/instructions-bundle/file", routes.PutAgentInstructionsBundleFileHandler(db))
+		api.Delete("/agents/{id}/instructions-bundle/file", routes.DeleteAgentInstructionsBundleFileHandler(db))
+		api.Patch("/agents/{id}/instructions-path", routes.PatchAgentInstructionsPathHandler(db))
+		api.Patch("/agents/{id}/permissions", routes.UpdateAgentPermissionsHandler(db))
+		api.Get("/companies/{companyId}/adapters/{type}/models", routes.GetAdapterModelsHandler(db))
+		api.Get("/companies/{companyId}/adapters/{type}/detect-model", routes.DetectAdapterModelHandler(db))
+		api.Get("/companies/{companyId}/agent-configurations", routes.GetCompanyAgentConfigurationsHandler(db))
+		api.Get("/instance/scheduler-heartbeats", routes.GetSchedulerHeartbeatsHandler(db))
 
 		// Heartbeat Run Routes
 		api.Get("/companies/{companyId}/heartbeat-runs", routes.ListCompanyHeartbeatRunsHandler(db))
+		api.Get("/companies/{companyId}/live-runs", routes.GetCompanyLiveRunsHandler(db))
 		api.Get("/heartbeat-runs/{runId}", routes.GetHeartbeatRunHandler(db))
 		api.Post("/heartbeat-runs/{runId}/cancel", routes.CancelHeartbeatRunHandler(db))
 		api.Get("/heartbeat-runs/{runId}/workspace-operations", routes.GetHeartbeatRunWorkspaceOperationsHandler(db))
+		api.Get("/heartbeat-runs/{runId}/log", routes.GetHeartbeatRunLogHandler(db))
+		api.Get("/heartbeat-runs/{runId}/issues", routes.ListHeartbeatRunIssuesHandler(db))
+		api.Get("/workspace-operations/{operationId}/log", routes.GetWorkspaceOperationLogHandler(db))
 
 		// MCP Governance Routes
 		api.Get("/companies/{companyId}/mcp/tools", routes.MCPToolsHandler(db))
@@ -174,12 +199,21 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Access/Auth Routes
 		api.Post("/invites/accept", routes.InviteAcceptHandler(db))
+		api.Get("/invites/{token}", routes.GetInviteHandler(db))
+		api.Get("/invites/{token}/onboarding", routes.GetInviteOnboardingHandler(db))
+		api.Post("/invites/{inviteId}/revoke", routes.RevokeInviteHandler(db))
 		api.Post("/cli-auth/challenge", routes.CLIAuthChallengeHandler(db))
 		api.Get("/cli-auth/resolve/{token}", routes.ResolveCLIAuthHandler(db))
+		api.Get("/cli-auth/me", routes.GetCLIAuthMeHandler(db))
 		api.Get("/companies/{companyId}/join-requests", routes.ListJoinRequestsHandler(db))
 		api.Post("/join-requests/{id}/claim", routes.ClaimJoinRequestHandler(db))
 		api.Patch("/member-roles/{id}", routes.UpdateMemberPermissionsHandler(db))
+		api.Get("/companies/{companyId}/members", routes.ListCompanyMembersHandler(db))
+		api.Patch("/companies/{companyId}/members/{userId}", routes.UpdateCompanyMemberHandler(db))
+		api.Post("/companies/{companyId}/members/{userId}/remove", routes.RemoveCompanyMemberHandler(db))
 		api.Get("/llms/skills.txt", routes.ListSkillsHandler())
+		api.Get("/skills/available", routes.ListSkillsHandler())
+		api.Get("/skills/index", routes.ListSkillsHandler())
 
 		// Board-claim Routes
 		api.Get("/board-claim/{token}", routes.BoardClaimTokenHandler(db))
@@ -191,8 +225,13 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Adapter Routes
 		api.Get("/adapters", routes.ListAdaptersHandler(db))
+		api.Post("/adapters/install", routes.InstallAdapterHandler(db))
 		api.Post("/adapters/{adapterType}/pause", routes.PauseAdapterHandler())
+		api.Post("/adapters/{type}/reload", routes.ReloadAdapterHandler(db))
+		api.Post("/adapters/{type}/reinstall", routes.ReinstallAdapterHandler(db))
+		api.Get("/adapters/{type}/config-schema", routes.GetAdapterConfigSchemaHandler(db))
 		api.Patch("/adapters/{type}", routes.UpdateAdapterHandler(db))
+		api.Patch("/adapters/{type}/override", routes.OverrideAdapterHandler(db))
 		api.Delete("/adapters/{type}", routes.DeleteAdapterHandler(db))
 
 		// Approval Routes
@@ -208,12 +247,18 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Asset Routes
 		api.Post("/companies/{companyId}/assets", routes.UploadAssetHandler(db))
+		api.Post("/companies/{companyId}/assets/images", routes.UploadImageAssetHandler(db))
+		api.Post("/companies/{companyId}/logo", routes.UploadCompanyLogoHandler(db))
 		api.Get("/assets/{id}", routes.GetAssetHandler(db))
+		api.Get("/assets/{assetId}/content", routes.GetAssetContentHandler(db))
 
 		// Company Skills Routes
 		api.Get("/companies/{companyId}/skills", routes.ListCompanySkillsHandler(db))
 		api.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}", routes.GetCompanySkillHandler(db))
+		api.Get("/companies/{companyId}/skills/{skillId}/update-status", routes.GetCompanySkillUpdateStatusHandler(db))
+		api.Get("/companies/{companyId}/skills/{skillId}/files", routes.GetCompanySkillFilesHandler(db))
+		api.Post("/companies/{companyId}/skills/{skillId}/install-update", routes.InstallUpdateCompanySkillHandler(db))
 		api.Delete("/companies/{companyId}/skills/{skillId}", routes.DeleteCompanySkillHandler(db))
 		api.Patch("/skills/{id}", routes.UpdateCompanySkillHandler(db))
 
@@ -222,9 +267,18 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/companies/{companyId}/finance-events", routes.CreateFinanceEventHandler(db))
 		api.Get("/companies/{companyId}/costs/summary", routes.GetCostSummaryHandler(db))
 		api.Get("/companies/{companyId}/costs/by-agent", routes.GetCostsByAgentHandler(db))
+		api.Get("/companies/{companyId}/costs/by-agent-model", routes.GetCostsByAgentModelHandler(db))
 		api.Get("/companies/{companyId}/costs/by-provider", routes.GetCostsByProviderHandler(db))
 		api.Get("/companies/{companyId}/costs/by-biller", routes.GetCostsByBillerHandler(db))
+		api.Get("/companies/{companyId}/costs/by-project", routes.GetCostsByProjectHandler(db))
+		api.Get("/companies/{companyId}/costs/finance-summary", routes.GetFinanceSummaryHandler(db))
+		api.Get("/companies/{companyId}/costs/finance-by-biller", routes.GetFinanceByBillerHandler(db))
+		api.Get("/companies/{companyId}/costs/finance-by-kind", routes.GetFinanceByKindHandler(db))
+		api.Get("/companies/{companyId}/costs/finance-events", routes.GetFinanceEventsHandler(db))
+		api.Get("/companies/{companyId}/costs/window-spend", routes.GetWindowSpendHandler(db))
+		api.Get("/companies/{companyId}/costs/quota-windows", routes.GetQuotaWindowsHandler(db))
 		api.Get("/companies/{companyId}/budgets/overview", routes.GetBudgetOverviewHandler(db))
+		api.Patch("/companies/{companyId}/budgets", routes.PatchCompanyBudgetsHandler(db))
 		api.Patch("/agents/{agentId}/budgets", routes.UpdateAgentBudgetHandler(db))
 		api.Put("/companies/{companyId}/budget-policy", routes.UpdateBudgetPolicyHandler(db))
 
@@ -234,6 +288,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Patch("/execution-workspaces/{id}", routes.UpdateExecutionWorkspaceHandler(db))
 		api.Get("/execution-workspaces/{id}/close-readiness", routes.GetWorkspaceCloseReadinessHandler(db))
 		api.Get("/execution-workspaces/{id}/workspace-operations", routes.GetWorkspaceWorkspaceOperationsHandler(db))
+		api.Post("/execution-workspaces/{id}/runtime-services/{action}", routes.ExecutionWorkspaceRuntimeServicesHandler(db))
 
 		// Inbox Dismissal Routes
 		api.Get("/companies/{companyId}/inbox-dismissals", routes.ListInboxDismissalsHandler(db))
@@ -247,11 +302,17 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// LLM Routes
 		api.Get("/llms/configuration", routes.ListAgentConfigurationHandler())
+		api.Get("/llms/agent-configuration.txt", routes.ListAgentConfigurationHandler())
 		api.Get("/llms/icons", routes.ListAgentIconsHandler())
+		api.Get("/llms/agent-icons.txt", routes.ListAgentIconsHandler())
 		api.Get("/llms/adapters/{adapterType}", routes.GetAdapterConfigurationHandler())
+		api.Get("/llms/agent-configuration/{adapterType}.txt", routes.GetAdapterConfigurationHandler())
 
 		// Org Chart SVG
 		api.Get("/companies/{companyId}/org-chart.svg", routes.OrgChartSVGHandler(db))
+		api.Get("/companies/{companyId}/org", routes.OrgChartSVGHandler(db))
+		api.Get("/companies/{companyId}/org.svg", routes.OrgChartSVGHandler(db))
+		api.Get("/companies/{companyId}/org.png", routes.OrgChartPNGHandler(db))
 
 		// Project Routes
 		api.Get("/companies/{companyId}/projects", routes.ListProjectsHandler(db))
@@ -272,11 +333,15 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Patch("/routines/{id}", routes.UpdateRoutineHandler(db))
 		api.Delete("/routines/{id}", routes.DeleteRoutineHandler(db))
 		api.Post("/routines/{id}/triggers", routes.CreateRoutineTriggerHandler(db))
+		api.Patch("/routine-triggers/{triggerId}", routes.UpdateRoutineTriggerHandler(db))
+		api.Delete("/routine-triggers/{triggerId}", routes.DeleteRoutineTriggerHandler(db))
+		api.Post("/routine-triggers/public/{publicId}/fire", routes.FirePublicRoutineTriggerHandler(db))
 		api.Post("/routines/{id}/run", routes.RunRoutineNowHandler(db))
 		api.Get("/routines/{id}/runs", routes.ListRoutineRunsHandler(db))
 
 		// Secret Routes
 		api.Get("/secret-providers", routes.ListSecretProvidersHandler())
+		api.Get("/companies/{companyId}/secret-providers", routes.ListSecretProvidersHandler())
 		api.Get("/companies/{companyId}/secrets", routes.ListSecretsHandler(db))
 		api.Post("/companies/{companyId}/secrets", routes.CreateSecretHandler(db))
 		api.Post("/secrets/{id}/rotate", routes.RotateSecretHandler(db))
