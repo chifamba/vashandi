@@ -36,16 +36,16 @@ Total Go routes at analysis time: ~90 | Total Node.js routes: ~220+
 - [ ] `issue_attachments` — file attachments on issues
 - [ ] `issue_comments` — comments on issues
 - [ ] `issue_documents` — documents linked to issues
-- [ ] `issue_execution_decisions` — execution stage decisions
+- [x] `issue_execution_decisions` — execution stage decisions
 - [ ] `issue_inbox_archives` — per-user inbox archive state
 - [ ] `issue_labels` — join table: issue ↔ label
 - [ ] `issue_read_states` — per-user issue read state
-- [ ] `issue_relations` — issue blocking relationships
+- [x] `issue_relations` — issue blocking relationships
 - [ ] `issue_work_products` — PR/branch/artifact links
 - [ ] `labels` — company-scoped labels
-- [ ] `principal_permission_grants` — RBAC grants
+- [x] `principal_permission_grants` — RBAC grants
 - [ ] `project_goals` — join table: project ↔ goal
-- [ ] `workspace_runtime_services` — running workspace services
+- [x] `workspace_runtime_services` — running workspace services
 
 ## 3. Agent Management
 
