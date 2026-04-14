@@ -1,7 +1,10 @@
 package routes
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -10,6 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
+
+func sha256hash(data []byte) [32]byte {
+	return sha256.Sum256(data)
+}
 
 // IssueRoutes handles HTTP requests for issues
 type IssueRoutes struct {
@@ -23,6 +30,18 @@ func NewIssueRoutes(db *gorm.DB, activity *services.ActivityService) *IssueRoute
 		db:      db,
 		service: services.NewIssueService(db, activity),
 	}
+}
+
+// ListAllIssuesHandler returns issues across all companies (admin)
+func (ir *IssueRoutes) ListAllIssuesHandler(w http.ResponseWriter, r *http.Request) {
+	var issues []models.Issue
+	q := ir.db.WithContext(r.Context()).Order("created_at DESC").Limit(100)
+	if status := r.URL.Query().Get("status"); status != "" {
+		q = q.Where("status = ?", status)
+	}
+	q.Find(&issues)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(issues)
 }
 
 // ListIssuesHandler returns a list of issues
@@ -706,3 +725,117 @@ func (ir *IssueRoutes) GetIssueCommentHandler(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(comment)
 }
+
+// GetIssueHeartbeatContextHandler returns the heartbeat context for an issue.
+func (ir *IssueRoutes) GetIssueHeartbeatContextHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).
+		Preload("AssigneeAgent").Preload("Project").
+		First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"issue":        issue,
+		"activeRunId":  issue.ExecutionRunID,
+		"checkoutRunId": issue.CheckoutRunID,
+	})
+}
+
+// ListIssueDocumentRevisionsHandler returns document revisions for a given issue document.
+func (ir *IssueRoutes) ListIssueDocumentRevisionsHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key := chi.URLParam(r, "key")
+	var issueDoc models.IssueDocument
+	if err := ir.db.WithContext(r.Context()).
+		First(&issueDoc, "issue_id = ? AND key = ?", id, key).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var revisions []models.DocumentRevision
+	ir.db.WithContext(r.Context()).
+		Where("document_id = ?", issueDoc.DocumentID).
+		Order("revision_number ASC").
+		Find(&revisions)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(revisions)
+}
+
+// UploadIssueAttachmentHandler handles POST /companies/:companyId/issues/:issueId/attachments
+func UploadIssueAttachmentHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		issueID := chi.URLParam(r, "issueId")
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		data, _ := io.ReadAll(file)
+		hash := fmt.Sprintf("%x", sha256hash(data))
+		fname := header.Filename
+		asset := models.Asset{
+			CompanyID:        companyID,
+			Provider:         "local",
+			ObjectKey:        companyID + "/" + hash + "/" + fname,
+			ContentType:      header.Header.Get("Content-Type"),
+			ByteSize:         len(data),
+			Sha256:           hash,
+			OriginalFilename: &fname,
+		}
+		if err := db.WithContext(r.Context()).Create(&asset).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		attachment := models.IssueAttachment{
+			CompanyID: companyID,
+			IssueID:   issueID,
+			AssetID:   asset.ID,
+		}
+		if err := db.WithContext(r.Context()).Create(&attachment).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"attachment": attachment,
+			"asset":      asset,
+		})
+	}
+}
+
+// GetAttachmentContentHandler handles GET /attachments/:attachmentId/content
+func GetAttachmentContentHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		attachmentID := chi.URLParam(r, "attachmentId")
+		var attachment models.IssueAttachment
+		if err := db.WithContext(r.Context()).First(&attachment, "id = ?", attachmentID).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		var asset models.Asset
+		if err := db.WithContext(r.Context()).First(&asset, "id = ?", attachment.AssetID).Error; err != nil {
+			http.Error(w, "Asset not found", http.StatusNotFound)
+			return
+		}
+		// Return asset metadata; actual file serving requires storage backend integration
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(asset)
+	}
+}
+
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+

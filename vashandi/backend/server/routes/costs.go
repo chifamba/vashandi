@@ -2,6 +2,7 @@ package routes
 
 import (
 "encoding/json"
+"fmt"
 "net/http"
 "time"
 
@@ -176,4 +177,157 @@ db.WithContext(r.Context()).Save(&policy)
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(policy)
 }
+}
+
+func PatchCompanyBudgetsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var policy models.BudgetPolicy
+		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		policy.ScopeType = "company"
+		policy.ScopeID = companyID
+		result := db.WithContext(r.Context()).
+			Where("scope_type = ? AND scope_id = ?", "company", companyID).
+			FirstOrCreate(&policy)
+		if result.Error != nil {
+			http.Error(w, result.Error.Error(), http.StatusInternalServerError)
+			return
+		}
+		db.WithContext(r.Context()).Save(&policy)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(policy)
+	}
+}
+
+func GetCostsByAgentModelHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var results []struct {
+			AgentID   string `json:"agentId"`
+			Model     string `json:"model"`
+			TotalCents int64 `json:"totalCents"`
+		}
+		db.WithContext(r.Context()).Model(&models.CostEvent{}).
+			Where("company_id = ?", companyID).
+			Select("agent_id, model, SUM(cost_cents) as total_cents").
+			Group("agent_id, model").
+			Scan(&results)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	}
+}
+
+func GetCostsByProjectHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var results []struct {
+			ProjectID  *string `json:"projectId"`
+			TotalCents int64   `json:"totalCents"`
+		}
+		db.WithContext(r.Context()).Model(&models.CostEvent{}).
+			Where("company_id = ?", companyID).
+			Select("project_id, SUM(cost_cents) as total_cents").
+			Group("project_id").
+			Scan(&results)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	}
+}
+
+func GetFinanceSummaryHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var totalDebit, totalCredit int64
+		db.WithContext(r.Context()).Model(&models.FinanceEvent{}).
+			Where("company_id = ? AND direction = ?", companyID, "debit").
+			Select("COALESCE(SUM(amount_cents), 0)").Scan(&totalDebit)
+		db.WithContext(r.Context()).Model(&models.FinanceEvent{}).
+			Where("company_id = ? AND direction = ?", companyID, "credit").
+			Select("COALESCE(SUM(amount_cents), 0)").Scan(&totalCredit)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"totalDebitCents":  totalDebit,
+			"totalCreditCents": totalCredit,
+			"netCents":         totalDebit - totalCredit,
+		})
+	}
+}
+
+func GetFinanceByBillerHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var results []struct {
+			Biller     string `json:"biller"`
+			TotalCents int64  `json:"totalCents"`
+		}
+		db.WithContext(r.Context()).Model(&models.FinanceEvent{}).
+			Where("company_id = ?", companyID).
+			Select("biller, SUM(amount_cents) as total_cents").
+			Group("biller").
+			Scan(&results)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	}
+}
+
+func GetFinanceByKindHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var results []struct {
+			EventKind  string `json:"eventKind"`
+			TotalCents int64  `json:"totalCents"`
+		}
+		db.WithContext(r.Context()).Model(&models.FinanceEvent{}).
+			Where("company_id = ?", companyID).
+			Select("event_kind, SUM(amount_cents) as total_cents").
+			Group("event_kind").
+			Scan(&results)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	}
+}
+
+func GetFinanceEventsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var events []models.FinanceEvent
+		db.WithContext(r.Context()).
+			Where("company_id = ?", companyID).
+			Order("occurred_at DESC").
+			Limit(200).
+			Find(&events)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(events)
+	}
+}
+
+func GetWindowSpendHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		windowDays := 30
+		var totalCents int64
+		db.WithContext(r.Context()).Model(&models.CostEvent{}).
+			Where(fmt.Sprintf("company_id = ? AND occurred_at >= NOW() - INTERVAL '%d days'", windowDays), companyID).
+			Select("COALESCE(SUM(cost_cents), 0)").Scan(&totalCents)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"windowDays": windowDays,
+			"totalCents": totalCents,
+		})
+	}
+}
+
+func GetQuotaWindowsHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		var policies []models.BudgetPolicy
+		db.WithContext(r.Context()).
+			Where("scope_type IN ('company','agent') AND (scope_id = ? OR scope_id IN (SELECT id::text FROM agents WHERE company_id = ?))", companyID, companyID).
+			Find(&policies)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(policies)
+	}
 }

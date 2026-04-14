@@ -90,8 +90,28 @@ json.NewEncoder(w).Encode(activities)
 }
 
 func ListIssueRunsHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode([]struct{}{})
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := chi.URLParam(r, "id")
+		var runs []models.HeartbeatRun
+		db.WithContext(r.Context()).
+			Joins("JOIN issues ON issues.execution_run_id = heartbeat_runs.id OR issues.checkout_run_id = heartbeat_runs.id").
+			Where("issues.id = ?", issueID).
+			Order("heartbeat_runs.started_at DESC").
+			Find(&runs)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(runs)
+	}
 }
+
+// ListHeartbeatRunIssuesHandler handles GET /heartbeat-runs/:runId/issues
+func ListHeartbeatRunIssuesHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		runID := chi.URLParam(r, "runId")
+		var issues []models.Issue
+		db.WithContext(r.Context()).
+			Where("checkout_run_id = ? OR execution_run_id = ?", runID, runID).
+			Find(&issues)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(issues)
+	}
 }

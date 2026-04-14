@@ -76,3 +76,22 @@ w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(operations)
 }
 }
+
+// ExecutionWorkspaceRuntimeServicesHandler handles POST /execution-workspaces/:id/runtime-services/:action
+func ExecutionWorkspaceRuntimeServicesHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		action := chi.URLParam(r, "action")
+		var ws models.ExecutionWorkspace
+		if err := db.WithContext(r.Context()).First(&ws, "id = ?", id).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"workspaceId": ws.ID,
+			"action":      action,
+			"status":      "ok",
+		})
+	}
+}

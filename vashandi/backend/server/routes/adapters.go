@@ -72,3 +72,60 @@ Update("status", "uninstalled")
 w.WriteHeader(http.StatusNoContent)
 }
 }
+
+// InstallAdapterHandler handles POST /adapters/install
+func InstallAdapterHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "body": body})
+	}
+}
+
+// OverrideAdapterHandler handles PATCH /adapters/:type/override
+func OverrideAdapterHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		adapterType := chi.URLParam(r, "type")
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"adapterType": adapterType, "status": "overridden"})
+	}
+}
+
+// ReloadAdapterHandler handles POST /adapters/:type/reload
+func ReloadAdapterHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		adapterType := chi.URLParam(r, "type")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"adapterType": adapterType, "status": "reloaded"})
+	}
+}
+
+// ReinstallAdapterHandler handles POST /adapters/:type/reinstall
+func ReinstallAdapterHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		adapterType := chi.URLParam(r, "type")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"adapterType": adapterType, "status": "reinstalled"})
+	}
+}
+
+// GetAdapterConfigSchemaHandler handles GET /adapters/:type/config-schema
+func GetAdapterConfigSchemaHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		adapterType := chi.URLParam(r, "type")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"adapterType": adapterType,
+			"schema":      map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		})
+	}
+}
