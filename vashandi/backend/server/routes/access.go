@@ -114,7 +114,10 @@ http.Error(w, "Not found", http.StatusNotFound)
 return
 }
 var body map[string]interface{}
-json.NewDecoder(r.Body).Decode(&body)
+if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+http.Error(w, "invalid request body", http.StatusBadRequest)
+return
+}
 db.WithContext(r.Context()).Save(&role)
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(role)

@@ -384,11 +384,14 @@ return systemPrompt
 return "<agent_memory>\n" + memoryXML + "\n</agent_memory>\n\n" + systemPrompt
 }
 
+var xmlEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	`"`, "&quot;",
+	"'", "&#39;",
+)
+
 func xmlEscape(s string) string {
-s = strings.ReplaceAll(s, "&", "&amp;")
-s = strings.ReplaceAll(s, "<", "&lt;")
-s = strings.ReplaceAll(s, ">", "&gt;")
-s = strings.ReplaceAll(s, "\"", "&quot;")
-s = strings.ReplaceAll(s, "'", "&#39;")
-return s
+	return xmlEscaper.Replace(s)
 }

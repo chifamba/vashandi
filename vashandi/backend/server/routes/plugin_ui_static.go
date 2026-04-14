@@ -35,7 +35,7 @@ return
 baseDir := filepath.Join(*plugin.PackagePath, "ui", "dist")
 cleaned := filepath.Join(baseDir, filepath.Clean("/"+filePath))
 rel, err := filepath.Rel(baseDir, cleaned)
-if err != nil || rel == ".." || len(rel) >= 2 && rel[:3] == "../" {
+if err != nil || strings.HasPrefix(rel, "..") {
 http.Error(w, "Forbidden", http.StatusForbidden)
 return
 }

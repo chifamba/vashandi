@@ -55,7 +55,7 @@ Additional: "Porting logic from approvals.ts"}
 TestCase: "Upload a file locally via REST and read the asset payload back",
 Additional: "Porting logic from assets.ts"}
 
-[ ] Node.js Route Migration: authz.go
+[x] Node.js Route Migration: authz.go
 {Description: "Map Better-Auth primitives directly to Vashandi session management",
 TestCase: "Validate JWT Bearer token across instance boundaries",
 Additional: "Porting logic from authz.ts"}
