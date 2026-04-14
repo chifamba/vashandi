@@ -14,7 +14,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
-	"github.com/chifamba/vashandi/vashandi/backend/shared"
 )
 
 var authCmd = &cobra.Command{

@@ -316,17 +316,25 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 	recorder.Finish(ctx, op.ID, 0, nil)
 	
 	// --- Fat Context Injection ---
-	semanticContext, err := s.Memory.CompileContext(ctx, ContextRequest{
-		NamespaceID: run.CompanyID,
-		AgentID:     run.AgentID,
-		Intent:      "heartbeat_invocation",
-		Query:       run.TaskID,
-	})
-	if err == nil && semanticContext != nil {
-		// Merge into context data
-		contextData["openBrainMemories"] = semanticContext
-		updatedContextJSON, _ := json.Marshal(contextData)
-		run.ContextSnapshot = datatypes.JSON(updatedContextJSON)
+	if obAdapter, ok := s.Memory.(*OpenBrainAdapter); ok {
+		memXML, xmlErr := obAdapter.CompileContextXML(ctx, run.CompanyID, run.AgentID, run.TaskID)
+		if xmlErr == nil && memXML != "" {
+			contextData["openBrainMemoryXML"] = memXML
+			updatedContextJSON, _ := json.Marshal(contextData)
+			run.ContextSnapshot = datatypes.JSON(updatedContextJSON)
+		}
+	} else {
+		semanticContext, err := s.Memory.CompileContext(ctx, ContextRequest{
+			NamespaceID: run.CompanyID,
+			AgentID:     run.AgentID,
+			Intent:      "heartbeat_invocation",
+			Query:       run.TaskID,
+		})
+		if err == nil && semanticContext != nil {
+			contextData["openBrainMemories"] = semanticContext
+			updatedContextJSON, _ := json.Marshal(contextData)
+			run.ContextSnapshot = datatypes.JSON(updatedContextJSON)
+		}
 	}
 	// -----------------------------
 

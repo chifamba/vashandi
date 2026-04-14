@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chifamba/vashandi/vashandi/backend/shared/tls"
@@ -333,4 +334,64 @@ func (o *OpenBrainAdapter) ResolveProposal(ctx context.Context, namespaceID, pro
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return o.do(req)
+}
+
+// CompileContextXML fetches semantic memory and formats it as XML for LLM system prompt injection.
+func (o *OpenBrainAdapter) CompileContextXML(ctx context.Context, companyID, agentID, taskID string) (string, error) {
+data, err := o.CompileContext(ctx, ContextRequest{
+NamespaceID: companyID,
+AgentID:     agentID,
+Intent:      "heartbeat_invocation",
+Query:       taskID,
+})
+if err != nil || data == nil {
+return "", err
+}
+
+var sb strings.Builder
+sb.WriteString("<memory_context>\n")
+sb.WriteString(fmt.Sprintf("  <meta agent_id=%q task_id=%q timestamp=%q/>\n",
+agentID, taskID, time.Now().UTC().Format(time.RFC3339)))
+
+if memories, ok := data["memories"]; ok {
+if memList, ok := memories.([]interface{}); ok {
+sb.WriteString(fmt.Sprintf("  <memories count=\"%d\">\n", len(memList)))
+for _, m := range memList {
+if mMap, ok := m.(map[string]interface{}); ok {
+title, _ := mMap["title"].(string)
+text, _ := mMap["text"].(string)
+tier, _ := mMap["tier"].(float64)
+relevance, _ := mMap["relevance"].(float64)
+sb.WriteString(fmt.Sprintf("    <memory title=%q tier=\"%.0f\" relevance=\"%.4f\">\n",
+xmlEscape(title), tier, relevance))
+sb.WriteString("      " + xmlEscape(text) + "\n")
+sb.WriteString("    </memory>\n")
+}
+}
+sb.WriteString("  </memories>\n")
+}
+}
+
+sb.WriteString("</memory_context>")
+return sb.String(), nil
+}
+
+// InjectContextIntoPrompt prepends an XML memory block to a system prompt.
+func InjectContextIntoPrompt(systemPrompt, memoryXML string) string {
+if memoryXML == "" {
+return systemPrompt
+}
+return "<agent_memory>\n" + memoryXML + "\n</agent_memory>\n\n" + systemPrompt
+}
+
+var xmlEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	`"`, "&quot;",
+	"'", "&#39;",
+)
+
+func xmlEscape(s string) string {
+	return xmlEscaper.Replace(s)
 }
