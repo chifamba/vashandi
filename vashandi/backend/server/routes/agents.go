@@ -385,13 +385,19 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 
-// Determine current state by finding the most recent revision for this agent
+// Use the most recent revision's AfterConfig as the current state (BeforeConfig for the rollback).
+// Fall back to the agent's RuntimeConfig snapshot if no revisions exist.
 var currentBeforeConfig datatypes.JSON
 var latestRevision models.AgentConfigRevision
 if err := db.Where("agent_id = ?", id).Order("created_at DESC").First(&latestRevision).Error; err == nil {
 currentBeforeConfig = latestRevision.AfterConfig
 } else {
+var agentForConfig models.Agent
+if err2 := db.First(&agentForConfig, "id = ?", id).Error; err2 == nil {
+currentBeforeConfig = agentForConfig.RuntimeConfig
+} else {
 currentBeforeConfig = datatypes.JSON("{}")
+}
 }
 
 newRevision := models.AgentConfigRevision{
