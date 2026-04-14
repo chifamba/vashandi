@@ -26,12 +26,7 @@ type ActorInfo struct {
 // as a string-keyed context value. We re-implement a compatible lookup here to
 // avoid an import cycle between the routes and server packages.
 func GetActorInfo(r *http.Request) ActorInfo {
-	// The middleware in the server package stores the actor under its own
-	// unexported key type, so we fall back to reading the Authorization header
-	// directly in cases where the context value is inaccessible from this package.
-	type serverActorKey string
-	const serverKey serverActorKey = "actor"
-	if v := r.Context().Value(serverKey); v != nil {
+	if v := r.Context().Value(actorKey); v != nil {
 		if ai, ok := v.(ActorInfo); ok {
 			return ai
 		}
@@ -96,7 +91,5 @@ func AssertCompanyAccess(r *http.Request, companyID string) error {
 
 // WithActor stores an ActorInfo in the context (useful for tests).
 func WithActor(ctx context.Context, actor ActorInfo) context.Context {
-	type serverActorKey string
-	const serverKey serverActorKey = "actor"
-	return context.WithValue(ctx, serverKey, actor)
+	return context.WithValue(ctx, actorKey, actor)
 }
