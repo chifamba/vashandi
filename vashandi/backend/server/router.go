@@ -24,6 +24,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(ActorMiddleware(db))
 
 	// Routes
 	r.Get("/health", routes.HealthHandler(db))

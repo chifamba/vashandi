@@ -2,8 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strings"
+
+	"gorm.io/gorm"
+
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
 type contextKey string
@@ -11,26 +17,51 @@ type contextKey string
 const ActorContextKey contextKey = "actor"
 
 type ActorInfo struct {
-	UserID   string
+	// Board actor fields
+	UserID string
+	// Agent actor fields
+	AgentID   string
+	CompanyID string
+	// Common
 	IsSystem bool
 	IsAgent  bool
 }
 
-// ActorMiddleware is a stub for the auth middleware that will parse JWTs and session tokens.
-func ActorMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
+// ActorMiddleware resolves the caller identity from the Authorization header and
+// stores it in the request context. Auth is opt-in per route — the middleware
+// always calls next regardless of whether a valid token was found.
+//
+// Token prefixes:
+//   - pcp_board_  → look up in board_api_keys, set board actor
+//   - pcp_agent_  → look up in agent_api_keys, set agent actor
+//   - anything else → anonymous actor
+func ActorMiddleware(db *gorm.DB) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var actor ActorInfo
 
-		var actor ActorInfo
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				token := strings.TrimPrefix(authHeader, "Bearer ")
+				hash := sha256.Sum256([]byte(token))
+				keyHash := hex.EncodeToString(hash[:])
 
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-			// In a real implementation, we would verify the JWT or session token here.
-			// For now, we just pass the token as the user ID for testing.
-			actor = ActorInfo{UserID: token, IsAgent: false}
-		}
+				switch {
+				case strings.HasPrefix(token, "pcp_board_") && db != nil:
+					var key models.BoardAPIKey
+					if err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error; err == nil {
+						actor = ActorInfo{UserID: key.UserID, IsAgent: false}
+					}
+				case strings.HasPrefix(token, "pcp_agent_") && db != nil:
+					var key models.AgentAPIKey
+					if err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error; err == nil {
+						actor = ActorInfo{AgentID: key.AgentID, CompanyID: key.CompanyID, IsAgent: true}
+					}
+				}
+			}
 
-		ctx := context.WithValue(r.Context(), ActorContextKey, actor)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+			ctx := context.WithValue(r.Context(), ActorContextKey, actor)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }

@@ -12,30 +12,49 @@ func TestActorMiddleware(t *testing.T) {
 		authHeader     string
 		expectedUserID string
 		expectedSystem bool
+		expectedAgent  bool
 	}{
 		{
 			name:           "No Auth Header",
 			authHeader:     "",
 			expectedUserID: "",
 			expectedSystem: false,
+			expectedAgent:  false,
 		},
 		{
-			name:           "Bearer System - Vulnerability Removed",
+			name:           "Non-prefixed token is anonymous",
 			authHeader:     "Bearer system",
-			expectedUserID: "system", // It should now just be treated as a normal user ID "system"
+			expectedUserID: "",
 			expectedSystem: false,
+			expectedAgent:  false,
 		},
 		{
-			name:           "Normal User Token",
+			name:           "Non-prefixed user token is anonymous",
 			authHeader:     "Bearer user123",
-			expectedUserID: "user123",
+			expectedUserID: "",
 			expectedSystem: false,
+			expectedAgent:  false,
 		},
 		{
 			name:           "Invalid Bearer Format",
 			authHeader:     "Basic user:pass",
 			expectedUserID: "",
 			expectedSystem: false,
+			expectedAgent:  false,
+		},
+		{
+			name:           "Board token with nil DB stays anonymous",
+			authHeader:     "Bearer pcp_board_sometoken",
+			expectedUserID: "",
+			expectedSystem: false,
+			expectedAgent:  false,
+		},
+		{
+			name:           "Agent token with nil DB stays anonymous",
+			authHeader:     "Bearer pcp_agent_sometoken",
+			expectedUserID: "",
+			expectedSystem: false,
+			expectedAgent:  false,
 		},
 	}
 
@@ -48,7 +67,8 @@ func TestActorMiddleware(t *testing.T) {
 
 			rr := httptest.NewRecorder()
 
-			handler := ActorMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Pass nil db — no DB lookups are performed in these unit tests.
+			handler := ActorMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				actor, ok := r.Context().Value(ActorContextKey).(ActorInfo)
 				if !ok {
 					t.Fatalf("Expected ActorInfo in context")
@@ -60,6 +80,10 @@ func TestActorMiddleware(t *testing.T) {
 
 				if actor.IsSystem != tt.expectedSystem {
 					t.Errorf("Expected IsSystem %v, got %v", tt.expectedSystem, actor.IsSystem)
+				}
+
+				if actor.IsAgent != tt.expectedAgent {
+					t.Errorf("Expected IsAgent %v, got %v", tt.expectedAgent, actor.IsAgent)
 				}
 			}))
 
