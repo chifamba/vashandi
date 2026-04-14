@@ -453,7 +453,7 @@ func GetInviteOnboardingTextHandler(db *gorm.DB) http.HandlerFunc {
 		hash := hashToken(token)
 		var invite models.Invite
 		if err := db.WithContext(r.Context()).
-			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()", hash).
+			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > ?", hash, time.Now()).
 			First(&invite).Error; err != nil {
 			http.Error(w, "Invite not found or expired", http.StatusNotFound)
 			return
@@ -631,7 +631,10 @@ func ApproveCLIAuthChallengeHandler(db *gorm.DB) http.HandlerFunc {
 
 		now := time.Now()
 		challenge.ApprovedAt = &now
-		db.WithContext(r.Context()).Save(&challenge)
+		if err := db.WithContext(r.Context()).Save(&challenge).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -671,7 +674,10 @@ func CancelCLIAuthChallengeHandler(db *gorm.DB) http.HandlerFunc {
 
 		now := time.Now()
 		challenge.CancelledAt = &now
-		db.WithContext(r.Context()).Save(&challenge)
+		if err := db.WithContext(r.Context()).Save(&challenge).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -826,7 +832,10 @@ func ClaimJoinRequestAPIKeyHandler(db *gorm.DB) http.HandlerFunc {
 		keyHash := hashToken(token)
 
 		var agent models.Agent
-		db.WithContext(r.Context()).First(&agent, "id = ?", *joinReq.CreatedAgentID)
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", *joinReq.CreatedAgentID).Error; err != nil {
+			http.Error(w, "Created agent not found", http.StatusInternalServerError)
+			return
+		}
 
 		apiKey := models.AgentAPIKey{
 			AgentID:   *joinReq.CreatedAgentID,
