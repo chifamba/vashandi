@@ -16,172 +16,172 @@ Total Go routes at analysis time: ~90 | Total Node.js routes: ~220+
 
 ## 1. Authentication & Authorization
 
-- [ ] **Real JWT/session verification in auth middleware** — Replace stub with actual bearer token parsing, board API key lookup and verification (hashed at rest), agent API key verification
-- [ ] **Board API key routes** — `GET /board-claim/:token`, `POST /board-claim/:token/claim`
-- [ ] **Member management routes** — `GET /companies/:companyId/members`, `PATCH /companies/:companyId/members/:userId`, `POST /companies/:companyId/members/:userId/remove`
-- [ ] **Admin user access** — `GET /admin/users/:userId/company-access`, `PUT /admin/users/:userId/company-access`
-- [ ] **Board mutation guard middleware** — Prevent agents from hitting board-only write endpoints
-- [ ] **Error handler middleware** — Consistent `{ error, code }` JSON error response format
-- [ ] **Validation middleware** — Request body schema validation
+- [x]**Real JWT/session verification in auth middleware** — Replace stub with actual bearer token parsing, board API key lookup and verification (hashed at rest), agent API key verification
+- [x] **Board API key routes** — `GET /board-claim/:token`, `POST /board-claim/:token/claim`
+- [x]**Member management routes** — `GET /companies/:companyId/members`, `PATCH /companies/:companyId/members/:userId`, `POST /companies/:companyId/members/:userId/remove`
+- [x] **Admin user access** — `GET /admin/users/:userId/company-access`, `PUT /admin/users/:userId/company-access`
+- [x]**Board mutation guard middleware** — Prevent agents from hitting board-only write endpoints
+- [x]**Error handler middleware** — Consistent `{ error, code }` JSON error response format
+- [x]**Validation middleware** — Request body schema validation
 
 ## 2. DB Models (Missing Tables)
 
-- [ ] `approval_comments` — comments on approvals
-- [ ] `company_memberships` — company member records
-- [ ] `company_skills` — company-scoped skill registry
-- [ ] `document_revisions` — versioned document history
-- [ ] `feedback_votes` — user feedback votes on issues
-- [ ] `inbox_dismissals` (functional) — already exists but needs proper persistence
-- [ ] `issue_approvals` — join table: issue ↔ approval
-- [ ] `issue_attachments` — file attachments on issues
-- [ ] `issue_comments` — comments on issues
-- [ ] `issue_documents` — documents linked to issues
+- [x]`approval_comments` — comments on approvals
+- [x]`company_memberships` — company member records
+- [x]`company_skills` — company-scoped skill registry
+- [x]`document_revisions` — versioned document history
+- [x]`feedback_votes` — user feedback votes on issues
+- [x]`inbox_dismissals` (functional) — already exists but needs proper persistence
+- [x]`issue_approvals` — join table: issue ↔ approval
+- [x]`issue_attachments` — file attachments on issues
+- [x]`issue_comments` — comments on issues
+- [x]`issue_documents` — documents linked to issues
 - [x] `issue_execution_decisions` — execution stage decisions
-- [ ] `issue_inbox_archives` — per-user inbox archive state
-- [ ] `issue_labels` — join table: issue ↔ label
-- [ ] `issue_read_states` — per-user issue read state
+- [x]`issue_inbox_archives` — per-user inbox archive state
+- [x]`issue_labels` — join table: issue ↔ label
+- [x]`issue_read_states` — per-user issue read state
 - [x] `issue_relations` — issue blocking relationships
-- [ ] `issue_work_products` — PR/branch/artifact links
-- [ ] `labels` — company-scoped labels
+- [x]`issue_work_products` — PR/branch/artifact links
+- [x]`labels` — company-scoped labels
 - [x] `principal_permission_grants` — RBAC grants
-- [ ] `project_goals` — join table: project ↔ goal
+- [x]`project_goals` — join table: project ↔ goal
 - [x] `workspace_runtime_services` — running workspace services
 
 ## 3. Agent Management
 
-- [ ] `PATCH /agents/:id` — update agent fields
-- [ ] `POST /agents/:id/pause`, `/resume`, `/terminate`
-- [ ] `GET /agents/:id/runtime-state`, `POST /agents/:id/runtime-state/reset-session`
-- [ ] `GET /agents/:id/task-sessions`
-- [ ] `GET /agents/:id/config-revisions`, `GET /agents/:id/config-revisions/:revId`, `POST .../rollback`
-- [ ] `GET /agents/:id/configuration`
-- [ ] `GET /agents/:id/keys`, `POST /agents/:id/keys`, `DELETE /agents/:id/keys/:keyId`
-- [ ] `POST /agents/:id/wakeup`
-- [ ] `GET /agents/:id/skills`, `POST /agents/:id/skills`
-- [ ] `GET /agents/:id/instructions-bundle`, `PATCH ...`, `GET .../file`, `PUT .../file`, `DELETE .../file`
-- [ ] `PATCH /agents/:id/instructions-path`
-- [ ] `GET /companies/:companyId/adapters/:type/models`, `/detect-model`
-- [ ] `GET /companies/:companyId/org`, `/org.svg`, `/org.png`
-- [ ] `GET /companies/:companyId/agent-configurations`
-- [ ] `GET /instance/scheduler-heartbeats`
-- [ ] `GET /companies/:companyId/live-runs`, `/heartbeat-runs`
-- [ ] `GET /heartbeat-runs/:runId`, `POST .../cancel`
-- [ ] `GET /heartbeat-runs/:runId/events`, `/log`, `/workspace-operations`
-- [ ] `GET /workspace-operations/:operationId/log`
+- [x]`PATCH /agents/:id` — update agent fields
+- [x]`POST /agents/:id/pause`, `/resume`, `/terminate`
+- [x]`GET /agents/:id/runtime-state`, `POST /agents/:id/runtime-state/reset-session`
+- [x]`GET /agents/:id/task-sessions`
+- [x]`GET /agents/:id/config-revisions`, `GET /agents/:id/config-revisions/:revId`, `POST .../rollback`
+- [x]`GET /agents/:id/configuration`
+- [x]`GET /agents/:id/keys`, `POST /agents/:id/keys`, `DELETE /agents/:id/keys/:keyId`
+- [x]`POST /agents/:id/wakeup`
+- [x]`GET /agents/:id/skills`, `POST /agents/:id/skills`
+- [x]`GET /agents/:id/instructions-bundle`, `PATCH ...`, `GET .../file`, `PUT .../file`, `DELETE .../file`
+- [x]`PATCH /agents/:id/instructions-path`
+- [x]`GET /companies/:companyId/adapters/:type/models`, `/detect-model`
+- [x]`GET /companies/:companyId/org`, `/org.svg`, `/org.png`
+- [x]`GET /companies/:companyId/agent-configurations`
+- [x]`GET /instance/scheduler-heartbeats`
+- [x]`GET /companies/:companyId/live-runs`, `/heartbeat-runs`
+- [x]`GET /heartbeat-runs/:runId`, `POST .../cancel`
+- [x]`GET /heartbeat-runs/:runId/events`, `/log`, `/workspace-operations`
+- [x]`GET /workspace-operations/:operationId/log`
 
 ## 4. Issues
 
-- [ ] `POST /issues/:id/release` — release checkout lock
-- [ ] `GET /issues/:id/documents`, CRUD for documents and revisions
-- [ ] `PATCH /work-products/:id`, `DELETE /work-products/:id`
-- [ ] `GET /issues/:id/comments/:commentId`
-- [ ] `POST /issues/:id/read`, `DELETE /issues/:id/read`
-- [ ] `POST /issues/:id/inbox-archive`, `DELETE /issues/:id/inbox-archive`
-- [ ] `GET /issues/:id/approvals`, `POST /issues/:id/approvals`, `DELETE /issues/:id/approvals/:approvalId`
-- [ ] `GET /issues/:id/attachments`, `POST /companies/:companyId/issues/:issueId/attachments`, `GET /attachments/:id/content`, `DELETE /attachments/:id`
-- [ ] `GET /issues/:id/feedback-votes`, `POST /issues/:id/feedback-votes`
-- [ ] `GET /issues/:id/heartbeat-context`
-- [ ] `GET /companies/:companyId/labels`, `POST /companies/:companyId/labels`, `DELETE /labels/:labelId`
+- [x]`POST /issues/:id/release` — release checkout lock
+- [x]`GET /issues/:id/documents`, CRUD for documents and revisions
+- [x]`PATCH /work-products/:id`, `DELETE /work-products/:id`
+- [x]`GET /issues/:id/comments/:commentId`
+- [x]`POST /issues/:id/read`, `DELETE /issues/:id/read`
+- [x]`POST /issues/:id/inbox-archive`, `DELETE /issues/:id/inbox-archive`
+- [x]`GET /issues/:id/approvals`, `POST /issues/:id/approvals`, `DELETE /issues/:id/approvals/:approvalId`
+- [x]`GET /issues/:id/attachments`, `POST /companies/:companyId/issues/:issueId/attachments`, `GET /attachments/:id/content`, `DELETE /attachments/:id`
+- [x]`GET /issues/:id/feedback-votes`, `POST /issues/:id/feedback-votes`
+- [x]`GET /issues/:id/heartbeat-context`
+- [x]`GET /companies/:companyId/labels`, `POST /companies/:companyId/labels`, `DELETE /labels/:labelId`
 
 ## 5. Companies
 
-- [ ] `PATCH /companies/:companyId` — update company
-- [ ] `DELETE /companies/:companyId`
-- [ ] `GET /companies/stats`
-- [ ] `PATCH /companies/:companyId/branding`
-- [ ] `POST /companies/:companyId/exports`, `POST /companies/:companyId/imports/apply`
+- [x]`PATCH /companies/:companyId` — update company
+- [x]`DELETE /companies/:companyId`
+- [x]`GET /companies/stats`
+- [x]`PATCH /companies/:companyId/branding`
+- [x] `POST /companies/:companyId/exports`, `POST /companies/:companyId/imports/apply`
 
 ## 6. Costs & Budgets
 
-- [ ] `POST /companies/:companyId/finance-events`
-- [ ] `GET /companies/:companyId/costs/by-agent-model`, `/by-provider`, `/by-biller`, `/by-project`
-- [ ] `GET /companies/:companyId/costs/finance-summary`, `/finance-by-biller`, `/finance-by-kind`, `/finance-events`
-- [ ] `GET /companies/:companyId/costs/window-spend`, `/quota-windows`
-- [ ] `GET /companies/:companyId/budgets/overview`
-- [ ] `PATCH /companies/:companyId/budgets`, `PATCH /agents/:agentId/budgets`
+- [x]`POST /companies/:companyId/finance-events`
+- [x]`GET /companies/:companyId/costs/by-agent-model`, `/by-provider`, `/by-biller`, `/by-project`
+- [x]`GET /companies/:companyId/costs/finance-summary`, `/finance-by-biller`, `/finance-by-kind`, `/finance-events`
+- [x]`GET /companies/:companyId/costs/window-spend`, `/quota-windows`
+- [x]`GET /companies/:companyId/budgets/overview`
+- [x]`PATCH /companies/:companyId/budgets`, `PATCH /agents/:agentId/budgets`
 
 ## 7. Routines
 
-- [ ] `POST /routines/:id/triggers` — create trigger
-- [ ] `PATCH /routine-triggers/:id`, `DELETE /routine-triggers/:id`
-- [ ] `POST /routine-triggers/public/:publicId/fire`
-- [ ] `POST /routines/:id/run` — manual run
+- [x]`POST /routines/:id/triggers` — create trigger
+- [x]`PATCH /routine-triggers/:id`, `DELETE /routine-triggers/:id`
+- [x]`POST /routine-triggers/public/:publicId/fire`
+- [x]`POST /routines/:id/run` — manual run
 
 ## 8. Company Skills
 
-- [ ] `GET /companies/:companyId/skills/:skillId`
-- [ ] `DELETE /companies/:companyId/skills/:skillId`
-- [ ] `GET /companies/:companyId/skills/:skillId/update-status`
-- [ ] `GET /companies/:companyId/skills/:skillId/files`
-- [ ] `POST /companies/:companyId/skills/:skillId/install-update`
+- [x]`GET /companies/:companyId/skills/:skillId`
+- [x]`DELETE /companies/:companyId/skills/:skillId`
+- [x]`GET /companies/:companyId/skills/:skillId/update-status`
+- [x]`GET /companies/:companyId/skills/:skillId/files`
+- [x]`POST /companies/:companyId/skills/:skillId/install-update`
 
 ## 9. Execution Workspaces
 
-- [ ] `GET /execution-workspaces/:id/close-readiness`
-- [ ] `GET /execution-workspaces/:id/workspace-operations`
-- [ ] `POST /execution-workspaces/:id/runtime-services/:action`
+- [x]`GET /execution-workspaces/:id/close-readiness`
+- [x]`GET /execution-workspaces/:id/workspace-operations`
+- [x]`POST /execution-workspaces/:id/runtime-services/:action`
 
 ## 10. Projects
 
-- [ ] `DELETE /projects/:id`
-- [ ] `GET /projects/:id/workspaces`, `POST /projects/:id/workspaces`
-- [ ] `PATCH /projects/:id/workspaces/:workspaceId`
-- [ ] `POST /projects/:id/workspaces/:workspaceId/runtime-services/:action`
-- [ ] `DELETE /projects/:id/workspaces/:workspaceId`
+- [x]`DELETE /projects/:id`
+- [x]`GET /projects/:id/workspaces`, `POST /projects/:id/workspaces`
+- [x] `PATCH /projects/:id/workspaces/:workspaceId`
+- [x] `POST /projects/:id/workspaces/:workspaceId/runtime-services/:action`
+- [x]`DELETE /projects/:id/workspaces/:workspaceId`
 
 ## 11. Adapters
 
-- [ ] `POST /adapters/install`
-- [ ] `PATCH /adapters/:type`, `PATCH /adapters/:type/override`
-- [ ] `DELETE /adapters/:type`
-- [ ] `POST /adapters/:type/reload`, `/reinstall`
-- [ ] `GET /adapters/:type/config-schema`
+- [x]`POST /adapters/install`
+- [x]`PATCH /adapters/:type`, `PATCH /adapters/:type/override`
+- [x]`DELETE /adapters/:type`
+- [x]`POST /adapters/:type/reload`, `/reinstall`
+- [x]`GET /adapters/:type/config-schema`
 
 ## 12. Approvals
 
-- [ ] `GET /approvals/:id`
-- [ ] `GET /approvals/:id/issues`
-- [ ] `POST /approvals/:id/resubmit`
-- [ ] `GET /approvals/:id/comments`
+- [x]`GET /approvals/:id`
+- [x]`GET /approvals/:id/issues`
+- [x]`POST /approvals/:id/resubmit`
+- [x]`GET /approvals/:id/comments`
 
 ## 13. Assets
 
-- [ ] `POST /companies/:companyId/assets/images`
-- [ ] `POST /companies/:companyId/logo`
-- [ ] `GET /assets/:assetId/content` — stream asset content
+- [x]`POST /companies/:companyId/assets/images`
+- [x]`POST /companies/:companyId/logo`
+- [x]`GET /assets/:assetId/content` — stream asset content
 
 ## 14. Activity
 
-- [ ] `GET /issues/:id/activity`
-- [ ] `GET /issues/:id/runs`
-- [ ] `GET /heartbeat-runs/:runId/issues`
+- [x]`GET /issues/:id/activity`
+- [x]`GET /issues/:id/runs`
+- [x]`GET /heartbeat-runs/:runId/issues`
 
 ## 15. Sidebar Badges (Functional)
 
-- [ ] Compute real-time badge counts (unread inbox, pending approvals, open issues)
+- [x]Compute real-time badge counts (unread inbox, pending approvals, open issues)
 
 ## 16. Inbox Dismissals (Functional)
 
-- [ ] Proper persistence and queries against `inbox_dismissals` table
+- [x]Proper persistence and queries against `inbox_dismissals` table
 
 ## 17. LLMs / Agent Configuration
 
-- [ ] `GET /llms/agent-configuration.txt`
-- [ ] `GET /llms/agent-icons.txt`
-- [ ] `GET /llms/agent-configuration/:adapterType.txt`
+- [x]`GET /llms/agent-configuration.txt`
+- [x]`GET /llms/agent-icons.txt`
+- [x]`GET /llms/agent-configuration/:adapterType.txt`
 
 ## 18. Realtime / SSE
 
-- [ ] SSE hub wired to routes
-- [ ] `GET /heartbeat-runs/:runId/events` — live run event stream
-- [ ] `GET /companies/:companyId/sidebar-badges/stream` — live badge updates
+- [x] SSE hub wired to routes
+- [x]`GET /heartbeat-runs/:runId/events` — live run event stream
+- [x] `GET /companies/:companyId/sidebar-badges/stream` — live badge updates
 
 ## 19. Middleware
 
-- [ ] Real auth middleware (JWT + board API key + agent API key)
-- [ ] Board mutation guard
-- [ ] Error handler (consistent JSON errors)
-- [ ] Request validation middleware
+- [x]Real auth middleware (JWT + board API key + agent API key)
+- [x]Board mutation guard
+- [x]Error handler (consistent JSON errors)
+- [x]Request validation middleware
 
 ---
 

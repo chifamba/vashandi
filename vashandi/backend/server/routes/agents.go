@@ -77,7 +77,9 @@ func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.Handler
 
 		// Fire HTTP POST to OpenBrain webhook for Agent Sync Lifecycle Events (Task 2.3)
 		go func(agentID, agentName, compID string) {
-			_ = memory.RegisterAgent(context.Background(), compID, agentID, agentName)
+			if memory != nil {
+				_ = memory.RegisterAgent(context.Background(), compID, agentID, agentName)
+			}
 		}(agent.ID, agent.Name, companyID)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -108,7 +110,9 @@ func DeleteAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.Handler
 
 		// Fire HTTP DELETE to OpenBrain webhook for Agent Sync Lifecycle Events (Task 2.3)
 		go func(agentID, compID string) {
-			_ = memory.DeregisterAgent(context.Background(), compID, agentID)
+			if memory != nil {
+				_ = memory.DeregisterAgent(context.Background(), compID, agentID)
+			}
 		}(agent.ID, agent.CompanyID)
 
 		w.WriteHeader(http.StatusNoContent)
