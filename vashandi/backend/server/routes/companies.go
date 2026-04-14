@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -70,7 +69,7 @@ func CreateCompanyHandler(db *gorm.DB, secrets *services.SecretService, memory s
 		seedText := "Initial company knowledge base and context. Welcome to Vashandi!"
 
 		// Generate OpenBrain Service Token
-		token, err := secrets.GenerateOpenBrainToken(company.ID, "", 4) // Admin tier for service
+		_, err := secrets.GenerateOpenBrainToken(company.ID, "", 4) // Admin tier for service
 		if err == nil {
 			// In a real system, we'd store this in company_secrets
 			// For now, we use it for the initial seed

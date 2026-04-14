@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/chifamba/vashandi/vashandi/backend/shared/tls"
 )
@@ -25,6 +26,8 @@ type MemoryAdapter interface {
 	ExportAudit(ctx context.Context, namespaceID, format string) ([]byte, string, error)
 	ArchiveNamespace(ctx context.Context, namespaceID string) error
 	DeleteNamespace(ctx context.Context, namespaceID string) error
+	ListProposals(ctx context.Context, namespaceID string) ([]map[string]interface{}, error)
+	ResolveProposal(ctx context.Context, namespaceID, proposalID, action string) error
 }
 
 type MemoryPayload struct {
@@ -103,8 +106,6 @@ func NewOpenBrainAdapter() *OpenBrainAdapter {
 }
 
 func (o *OpenBrainAdapter) IngestMemory(ctx context.Context, namespaceID, text string, metadata map[string]string) error {
-	url := fmt.Sprintf("%s/api/v1/namespaces/%s/memories/ingest", o.baseURL, namespaceID)
-	// ... rest of standardized ingest logic
 	return o.CreateMemory(ctx, namespaceID, MemoryPayload{
 		EntityType: metadata["type"],
 		Text:       text,
@@ -297,5 +298,39 @@ func (o *OpenBrainAdapter) DeleteNamespace(ctx context.Context, namespaceID stri
 	if err != nil {
 		return err
 	}
+	return o.do(req)
+}
+
+func (o *OpenBrainAdapter) ListProposals(ctx context.Context, namespaceID string) ([]map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s/proposals", o.baseURL, namespaceID)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("openbrain error: %d", resp.StatusCode)
+	}
+	var result []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (o *OpenBrainAdapter) ResolveProposal(ctx context.Context, namespaceID, proposalID, action string) error {
+	url := fmt.Sprintf("%s/internal/v1/namespaces/%s/proposals/%s", o.baseURL, namespaceID, proposalID)
+	payload := map[string]string{"action": action}
+	bodyBytes, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	return o.do(req)
 }

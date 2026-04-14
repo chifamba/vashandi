@@ -43,7 +43,7 @@ export class OpenBrainClient {
         },
       });
 
-      logger.info("OpenBrain mTLS client initialized", { baseURL: this.options.baseURL });
+      logger.info({ baseURL: this.options.baseURL }, "OpenBrain mTLS client initialized");
     } catch (err) {
       logger.error({ err }, "Failed to initialize OpenBrain mTLS client");
       this.client = null;
@@ -57,7 +57,7 @@ export class OpenBrainClient {
         namespaceId,
         companyId,
       });
-      logger.info("Namespace registered in OpenBrain", { namespaceId, companyId });
+      logger.info({ namespaceId, companyId }, "Namespace registered in OpenBrain");
     } catch (err) {
       logger.error({ err, namespaceId }, "Failed to register namespace in OpenBrain");
     }
@@ -67,7 +67,7 @@ export class OpenBrainClient {
     if (!this.client) return;
     try {
       await this.client.delete(`/internal/v1/namespaces/${namespaceId}`);
-      logger.info("Namespace archived in OpenBrain", { namespaceId });
+      logger.info({ namespaceId }, "Namespace archived in OpenBrain");
     } catch (err) {
       logger.error({ err, namespaceId }, "Failed to archive namespace in OpenBrain");
     }
@@ -78,9 +78,22 @@ export class OpenBrainClient {
     try {
       // In OpenBrain internal API, DELETE handles both archiving and deletion (data is soft-deleted by status)
       await this.client.delete(`/internal/v1/namespaces/${namespaceId}`);
-      logger.info("Namespace deleted in OpenBrain", { namespaceId });
+      logger.info({ namespaceId }, "Namespace deleted in OpenBrain");
     } catch (err) {
       logger.error({ err, namespaceId }, "Failed to delete namespace in OpenBrain");
+    }
+  }
+
+  async registerAgent(namespaceId: string, agentId: string, agentName: string) {
+    if (!this.client) return;
+    try {
+      await this.client.post(`/internal/v1/namespaces/${namespaceId}/agents`, {
+        agentId,
+        agentName,
+      });
+      logger.info({ namespaceId, agentId }, "Agent registered in OpenBrain");
+    } catch (err) {
+      logger.error({ err, agentId }, "Failed to register agent in OpenBrain");
     }
   }
 
@@ -88,7 +101,7 @@ export class OpenBrainClient {
     if (!this.client) return;
     try {
       await this.client.delete(`/internal/v1/namespaces/${namespaceId}/agents/${agentId}`);
-      logger.info("Agent deregistered in OpenBrain", { namespaceId, agentId });
+      logger.info({ namespaceId, agentId }, "Agent deregistered in OpenBrain");
     } catch (err) {
       logger.error({ err, agentId }, "Failed to deregister agent in OpenBrain");
     }
@@ -123,7 +136,7 @@ export class OpenBrainClient {
         namespaceId,
         ...payload,
       });
-      logger.info("Memory created in OpenBrain", { namespaceId, entityType: payload.entityType });
+      logger.info({ namespaceId, entityType: payload.entityType }, "Memory created in OpenBrain");
     } catch (err) {
       logger.error({ err, namespaceId }, "Failed to create memory in OpenBrain");
     }

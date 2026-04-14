@@ -1,18 +1,17 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
-	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 )
 
 type App struct {

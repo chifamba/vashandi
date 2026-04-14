@@ -1,15 +1,13 @@
 package routes
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 
-	"github.com/chifamba/vashandi/vashandi/backend/shared"
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
