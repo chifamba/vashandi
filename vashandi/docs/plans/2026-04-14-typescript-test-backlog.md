@@ -282,35 +282,35 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 
 #### P0
 
-- [ ] **`agents` routes** (`server/src/routes/agents.ts`)
-  - CRUD (create, list, get, update, archive)
-  - Company scoping enforcement
-  - Permission gating: board admin vs non-admin vs agent callers
-  - `reportsTo` hierarchy validation
-  - Role uniqueness (CEO singleton)
-  - `GET /agents/:id/models` — model list delegation to adapter
+- [x] **`agents` routes** (`server/src/routes/agents.ts`) — Go: `backend/server/routes/agents_crud_test.go`
+  - CRUD (create, list, get, update, archive) ✓
+  - Company scoping enforcement ✓
+  - Permission gating: board admin vs non-admin vs agent callers (⚠ partial — authz context key bug blocks full test)
+  - `reportsTo` hierarchy validation (todo)
+  - Role uniqueness (CEO singleton) (todo)
+  - `GET /agents/:id/models` — model list delegation to adapter (todo)
 
-- [ ] **`secrets` routes** (`server/src/routes/secrets.ts`)
-  - Create/update/delete company-level and agent-level secrets
-  - `local_encrypted` storage: verify ciphertext is stored, plaintext is not exposed
-  - `inline` secret key vs value scoping
-  - Permission gating: admin vs non-admin
+- [x] **`secrets` routes** (`server/src/routes/secrets.ts`) — Go: `backend/server/routes/secrets_test.go`
+  - Create/update/delete company-level and agent-level secrets ✓
+  - `local_encrypted` storage: verify ciphertext is stored, plaintext is not exposed ✓
+  - `inline` secret key vs value scoping (todo)
+  - Permission gating: admin vs non-admin (todo)
 
-- [ ] **`projects` routes** (`server/src/routes/projects.ts`)
-  - CRUD (create, list, get, update, archive)
-  - Project member add/remove
-  - Company scoping on all reads/writes
+- [x] **`projects` routes** (`server/src/routes/projects.ts`) — Go: `backend/server/routes/projects_test.go`
+  - CRUD (create, list, get, update, archive) ✓
+  - Project member add/remove (todo)
+  - Company scoping on all reads/writes ✓
 
 #### P1
 
-- [ ] **`goals` routes** (`server/src/routes/goals.ts`)
-  - CRUD (create, list, get, update, complete)
-  - Scoping to project and company
+- [x] **`goals` routes** (`server/src/routes/goals.ts`) — Go: `backend/server/routes/goals_test.go`
+  - CRUD (create, list, get, update, complete) ✓
+  - Scoping to project and company ✓
 
-- [ ] **`authz` routes** (`server/src/routes/authz.ts`)
-  - Grant/revoke permissions for principals
-  - Board admin vs non-admin access
-  - Agent-scope permission reads
+- [x] **`authz` routes** (`server/src/routes/authz.ts`) — Go: `backend/server/routes/authz_test.go`
+  - Grant/revoke permissions for principals (todo)
+  - Board admin vs non-admin access ✓ (tests written; 4 fail due to context key type bug in implementation)
+  - Agent-scope permission reads ✓
 
 - [ ] **`approvals` routes** (broader coverage beyond idempotency)
   - List approvals for a company
@@ -333,7 +333,7 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [ ] **`adapters` routes** — adapter listing, model introspection
 - [ ] **`llms` routes** — model list by adapter type
 - [ ] **`sidebar-badges` route** — badge count aggregation
-- [ ] **`health` route** — 200 OK and database connectivity check
+- [x] **`health` route** — 200 OK and database connectivity check — Go: `backend/server/routes/health_test.go`
 - [ ] **`org-chart-svg` route** — SVG generation from agent hierarchy
 
 ---
@@ -342,11 +342,11 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 
 #### P0
 
-- [ ] **`secrets` service** (`server/src/services/secrets.ts`)
-  - `local_encrypted` encrypt/decrypt round-trip using `ENCRYPTION_SECRET`
-  - `resolveAdapterConfigForRuntime` merges secret values into config
-  - `normalizeAdapterConfigForPersistence` strips plaintext values before storage
-  - Secret version rotation
+- [x] **`secrets` service** (`server/src/services/secrets.ts`) — Go: `backend/server/services/secrets_test.go`
+  - `local_encrypted` encrypt/decrypt round-trip using `ENCRYPTION_SECRET` ✓ (in `backend/shared/crypto_test.go`)
+  - `resolveAdapterConfigForRuntime` merges secret values into config ✓
+  - `normalizeAdapterConfigForPersistence` strips plaintext values before storage (todo)
+  - Secret version rotation ✓
 
 - [ ] **`access` service** (`server/src/services/access.ts`)
   - `canUser` permission evaluation
@@ -514,5 +514,24 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 Use the checkboxes above. When a test file is created:
 1. Check the box in this document.
 2. Reference the PR that added the tests in a comment.
+
+### Golang Port — Completed (2026-04-14)
+
+The following Go test files were created as equivalents to the TypeScript backlog items above:
+
+| Go test file | What it covers |
+|---|---|
+| `backend/server/routes/health_test.go` | Health route: nil DB response, DB-connected response, Content-Type |
+| `backend/server/routes/authz_test.go` | `AssertBoard`, `AssertInstanceAdmin`, `AssertCompanyAccess`, `GetActorInfo` (⚠ 4 tests fail due to `WithActor`/`GetActorInfo` context key type mismatch bug in impl) |
+| `backend/server/routes/secrets_test.go` | ListSecretProviders, CreateSecret (company scoping, default provider), ListSecrets (scoping), RotateSecret (increment version, not-found), DeleteSecret, UpdateSecret |
+| `backend/server/routes/projects_test.go` | ListProjects (scoping), GetProject (found/not-found), CreateProject (scoping, bad body), UpdateProject (found/not-found), DeleteProject |
+| `backend/server/routes/goals_test.go` | ListGoals (scoping, missing companyId→400), GetGoal (found/not-found), CreateGoal (scoping, bad body), UpdateGoal (found/not-found), DeleteGoal (found/not-found) |
+| `backend/server/routes/agents_crud_test.go` | ListAgents (scoping, empty), GetAgent (found/not-found), CreateAgent (company scoping, default permissions, bad body), UpdateAgent (name update, not-found, runtimeConfig merge), PauseAgent, ResumeAgent |
+| `backend/shared/crypto_test.go` | `DecryptLocalSecret` round-trip, missing env var, wrong key size, invalid JSON, invalid base64 IV, tampered ciphertext |
+| `backend/server/services/secrets_test.go` | `ResolveEnvBindings` (plain, multiple, skip non-map), `ResolveAdapterConfigForRuntime` (passthrough, nested maps), `GenerateOpenBrainToken` (structure, claims) |
+
+**Known failing tests and root cause:**
+
+- `TestAssertBoard_BoardActor`, `TestAssertBoard_SystemActor`, `TestAssertInstanceAdmin_BoardActor`, `TestGetActorInfo_FromContext` — All fail because `WithActor` and `GetActorInfo` in `routes/authz.go` each declare a local `type serverActorKey string`; in Go, locally-scoped type declarations are distinct types even with the same name, so the context `Value()` lookup never matches. Fix: define the key type at package level.
 
 Suggest reviewing this backlog quarterly and re-prioritising based on incident history and code churn in untested areas.
