@@ -1,6 +1,7 @@
 package services
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -23,18 +24,18 @@ func TestInjectContextIntoPrompt_WithXML(t *testing.T) {
 	}
 
 	// Should contain the agent_memory wrapper
-	if !contains(result, "<agent_memory>") {
+	if !strings.Contains(result, "<agent_memory>") {
 		t.Error("expected result to contain <agent_memory> tag")
 	}
-	if !contains(result, "</agent_memory>") {
+	if !strings.Contains(result, "</agent_memory>") {
 		t.Error("expected result to contain </agent_memory> closing tag")
 	}
 	// Should contain original prompt at the end
-	if !contains(result, prompt) {
+	if !strings.Contains(result, prompt) {
 		t.Error("expected result to contain original prompt")
 	}
 	// Should contain the memory XML
-	if !contains(result, xml) {
+	if !strings.Contains(result, xml) {
 		t.Error("expected result to contain the memory XML")
 	}
 }
@@ -87,18 +88,4 @@ func TestStringMapToAny_Empty(t *testing.T) {
 	if len(result) != 0 {
 		t.Fatalf("expected 0 entries for empty input, got %d", len(result))
 	}
-}
-
-// contains is a simple helper for string containment check
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
-}
-
-func containsSubstr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
