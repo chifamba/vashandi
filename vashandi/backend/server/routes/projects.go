@@ -149,3 +149,16 @@ return
 w.WriteHeader(http.StatusNoContent)
 }
 }
+
+// ProjectWorkspaceRuntimeServicesHandler — POST /projects/:id/workspaces/:workspaceId/runtime-services/:action
+// Stub: real implementation requires a process manager.
+func ProjectWorkspaceRuntimeServicesHandler() http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+action := chi.URLParam(r, "action")
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]string{
+"status": "ok",
+"action": action,
+})
+}
+}

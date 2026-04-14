@@ -181,6 +181,14 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Patch("/member-roles/{id}", routes.UpdateMemberPermissionsHandler(db))
 		api.Get("/llms/skills.txt", routes.ListSkillsHandler())
 
+		// Board-claim Routes
+		api.Get("/board-claim/{token}", routes.BoardClaimTokenHandler(db))
+		api.Post("/board-claim/{token}/claim", routes.ClaimBoardTokenHandler(db))
+
+		// Admin user access Routes
+		api.Get("/admin/users/{userId}/company-access", routes.GetUserCompanyAccessHandler(db))
+		api.Put("/admin/users/{userId}/company-access", routes.UpdateUserCompanyAccessHandler(db))
+
 		// Adapter Routes
 		api.Get("/adapters", routes.ListAdaptersHandler(db))
 		api.Post("/adapters/{adapterType}/pause", routes.PauseAdapterHandler())
@@ -255,6 +263,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/projects/{id}/workspaces", routes.CreateProjectWorkspaceHandler(db))
 		api.Patch("/projects/{id}/workspaces/{workspaceId}", routes.UpdateProjectWorkspaceHandler(db))
 		api.Delete("/projects/{id}/workspaces/{workspaceId}", routes.DeleteProjectWorkspaceHandler(db))
+		api.Post("/projects/{id}/workspaces/{workspaceId}/runtime-services/{action}", routes.ProjectWorkspaceRuntimeServicesHandler())
 
 		// Routine Routes
 		api.Get("/companies/{companyId}/routines", routes.ListRoutinesHandler(db))
@@ -276,6 +285,14 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Sidebar Badges
 		api.Get("/companies/{companyId}/sidebar-badges", routes.SidebarBadgesHandler(db))
+		api.Get("/companies/{companyId}/sidebar-badges/stream", routes.SidebarBadgesSSEHandler())
+
+		// Company Export/Import
+		api.Post("/companies/{companyId}/exports", routes.ExportCompanyHandler())
+		api.Post("/companies/{companyId}/imports/apply", routes.ImportCompanyHandler())
+
+		// Heartbeat Run SSE Events
+		api.Get("/heartbeat-runs/{runId}/events", routes.HeartbeatRunEventsSSEHandler())
 	})
 
 	return r

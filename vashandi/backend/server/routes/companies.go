@@ -201,3 +201,29 @@ func ArchiveCompanyHandler(db *gorm.DB, memory services.MemoryAdapter) http.Hand
 		json.NewEncoder(w).Encode(map[string]string{"status": "archived"})
 	}
 }
+
+// ExportCompanyHandler — POST /companies/:id/exports
+// Stub: company export not yet implemented in the Go backend.
+func ExportCompanyHandler() http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusNotImplemented)
+json.NewEncoder(w).Encode(map[string]string{
+"status":  "export_not_implemented",
+"message": "Company export is not yet available in the Go backend",
+})
+}
+}
+
+// ImportCompanyHandler — POST /companies/:id/imports/apply
+// Stub: company import not yet implemented in the Go backend.
+func ImportCompanyHandler() http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusNotImplemented)
+json.NewEncoder(w).Encode(map[string]string{
+"status":  "import_not_implemented",
+"message": "Company import is not yet available in the Go backend",
+})
+}
+}

@@ -130,3 +130,114 @@ w.Header().Set("Content-Type", "text/plain")
 w.Write([]byte("bash\npython\ngit\ndocker\nkubernetes\nterraform\n"))
 }
 }
+
+// BoardClaimTokenHandler — GET /board-claim/:token
+// Looks up a CLI auth challenge by SHA256(token) and returns its status.
+func BoardClaimTokenHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+token := chi.URLParam(r, "token")
+hash := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+
+var challenge models.CLIAuthChallenge
+if err := db.WithContext(r.Context()).Where("secret_hash = ?", hash).First(&challenge).Error; err != nil {
+http.Error(w, "Not found", http.StatusNotFound)
+return
+}
+
+status := "pending"
+switch {
+case challenge.CancelledAt != nil:
+status = "cancelled"
+case challenge.ApprovedAt != nil:
+status = "approved"
+case challenge.ExpiresAt.Before(time.Now()):
+status = "expired"
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]interface{}{
+"status":    status,
+"companyId": challenge.RequestedCompanyID,
+})
+}
+}
+
+// ClaimBoardTokenHandler — POST /board-claim/:token/claim
+// Marks a CLI auth challenge as approved.
+func ClaimBoardTokenHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+token := chi.URLParam(r, "token")
+hash := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+
+var challenge models.CLIAuthChallenge
+if err := db.WithContext(r.Context()).Where("secret_hash = ?", hash).First(&challenge).Error; err != nil {
+http.Error(w, "Not found", http.StatusNotFound)
+return
+}
+
+now := time.Now()
+challenge.ApprovedAt = &now
+db.WithContext(r.Context()).Save(&challenge)
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
+}
+}
+
+// GetUserCompanyAccessHandler — GET /admin/users/:userId/company-access
+// Returns all company memberships for a user.
+func GetUserCompanyAccessHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+userID := chi.URLParam(r, "userId")
+
+var memberships []models.CompanyMembership
+db.WithContext(r.Context()).
+Where("principal_id = ? AND principal_type = ?", userID, "user").
+Find(&memberships)
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(memberships)
+}
+}
+
+// UpdateUserCompanyAccessHandler — PUT /admin/users/:userId/company-access
+// Upserts a company membership for a user.
+func UpdateUserCompanyAccessHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+userID := chi.URLParam(r, "userId")
+
+var body struct {
+CompanyID string  `json:"companyId"`
+Role      *string `json:"role"`
+}
+if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+http.Error(w, err.Error(), http.StatusBadRequest)
+return
+}
+if body.CompanyID == "" {
+http.Error(w, "companyId is required", http.StatusBadRequest)
+return
+}
+
+var membership models.CompanyMembership
+db.WithContext(r.Context()).
+Where("principal_id = ? AND principal_type = ? AND company_id = ?", userID, "user", body.CompanyID).
+FirstOrInit(&membership)
+
+membership.CompanyID = body.CompanyID
+membership.PrincipalID = userID
+membership.PrincipalType = "user"
+membership.MembershipRole = body.Role
+if membership.Status == "" {
+membership.Status = "active"
+}
+
+if err := db.WithContext(r.Context()).Save(&membership).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(membership)
+}
+}
