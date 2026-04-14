@@ -16,7 +16,7 @@ func SidebarBadgesHandler(db *gorm.DB) http.HandlerFunc {
 return func(w http.ResponseWriter, r *http.Request) {
 companyID := chi.URLParam(r, "companyId")
 
-var pendingApprovals, pendingJoinRequests, failedRuns int64
+var pendingApprovals, pendingJoinRequests, failedRuns, openIssues int64
 
 db.WithContext(r.Context()).Model(&models.Approval{}).
 Where("company_id = ? AND status = ?", companyID, "pending").
@@ -31,11 +31,16 @@ db.WithContext(r.Context()).Model(&models.HeartbeatRun{}).
 Where("company_id = ? AND status = ? AND created_at > ?", companyID, "failed", cutoff).
 Count(&failedRuns)
 
+db.WithContext(r.Context()).Model(&models.Issue{}).
+Where("company_id = ? AND status NOT IN ?", companyID, []string{"done", "cancelled"}).
+Count(&openIssues)
+
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(map[string]int64{
 "pendingApprovals":    pendingApprovals,
 "pendingJoinRequests": pendingJoinRequests,
 "failedRuns":          failedRuns,
+"openIssues":          openIssues,
 })
 }
 }

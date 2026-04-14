@@ -75,3 +75,23 @@ func CreateActivityHandler(db *gorm.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(payload)
 	}
 }
+
+func ListIssueActivityHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+issueID := chi.URLParam(r, "id")
+var activities []models.ActivityLog
+db.WithContext(r.Context()).
+Where("entity_type = ? AND entity_id = ?", "issue", issueID).
+Order("created_at ASC").
+Find(&activities)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(activities)
+}
+}
+
+func ListIssueRunsHandler(db *gorm.DB) http.HandlerFunc {
+return func(w http.ResponseWriter, r *http.Request) {
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode([]struct{}{})
+}
+}
