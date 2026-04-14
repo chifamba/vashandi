@@ -312,29 +312,65 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Board admin vs non-admin access ✓ (tests written; 4 fail due to context key type bug in implementation)
   - Agent-scope permission reads ✓
 
-- [ ] **`approvals` routes** (broader coverage beyond idempotency)
-  - List approvals for a company
-  - Comment thread on approvals
-  - `requestRevision` and `resubmit` flows
-  - Agent-only vs board-only approval actions
+- [x] **`approvals` routes** (broader coverage beyond idempotency) — Go: `backend/server/routes/approvals_test.go`
+  - List approvals for a company ✓
+  - Comment thread on approvals ✓
+  - `requestRevision` and `resubmit` flows ✓
+  - Agent-only vs board-only approval actions (todo)
 
-- [ ] **`execution-workspaces` routes** (`server/src/routes/execution-workspaces.ts`)
-  - List and get workspace records
-  - Close workspace and linked issue rejection
+- [x] **`execution-workspaces` routes** (`server/src/routes/execution-workspaces.ts`) — Go: `backend/server/routes/execution_workspaces_test.go`
+  - List and get workspace records ✓
+  - Status and project filters ✓
+  - Close workspace and linked issue rejection (partial — close readiness check ✓)
+  - Runtime services action ✓
+  - Workspace operations listing ✓
 
-- [ ] **`inbox-dismissals` routes**
-  - Dismiss a run or alert
-  - Re-surface after new activity
+- [x] **`inbox-dismissals` routes** — Go: `backend/server/routes/inbox_dismissals_test.go`
+  - Dismiss a run or alert ✓
+  - Idempotent upsert ✓
+  - User filtering ✓
 
 #### P2
 
-- [ ] **`dashboard` routes** — summary/stats endpoint shape
+- [x] **`dashboard` routes** — summary/stats endpoint shape — Go: `backend/server/routes/dashboard_test.go`
+  - Company-scoped dashboard summary ✓
+  - Platform metrics ✓
 - [ ] **`plugins` routes** — install, uninstall, settings update, capability query
 - [ ] **`adapters` routes** — adapter listing, model introspection
 - [ ] **`llms` routes** — model list by adapter type
-- [ ] **`sidebar-badges` route** — badge count aggregation
+- [x] **`sidebar-badges` route** — badge count aggregation — Go: `backend/server/routes/sidebar_badges_test.go`
 - [x] **`health` route** — 200 OK and database connectivity check — Go: `backend/server/routes/health_test.go`
 - [ ] **`org-chart-svg` route** — SVG generation from agent hierarchy
+- [x] **`companies` routes** — Go: `backend/server/routes/companies_test.go`
+  - CRUD (list, get, update, delete) ✓
+  - Branding update ✓
+  - Stats endpoint ✓
+  - Export/import stubs ✓
+  - Filtered field enforcement ✓
+- [x] **`routines` routes** — Go: `backend/server/routes/routines_test.go`
+  - CRUD (list, get, create, update, delete) ✓
+  - Triggers (create, delete, fire) ✓
+  - Run listing ✓
+  - Run-now action ✓
+- [x] **`activity` routes** — Go: `backend/server/routes/activity_test.go`
+  - List activity (company-scoped, entity-type filter) ✓
+  - Create activity ✓
+  - Issue activity listing ✓
+  - Heartbeat run issues listing ✓
+- [x] **`instance-settings` routes** — Go: `backend/server/routes/instance_settings_test.go`
+  - Get/update general settings ✓
+  - Get/update experimental settings ✓
+- [x] **`teams` routes** — Go: `backend/server/routes/teams_test.go`
+  - List teams (company-scoped) ✓
+  - Get team ✓
+- [x] **`costs` routes** — Go: `backend/server/routes/costs_test.go`
+  - Cost summary ✓
+  - Costs by agent ✓
+  - Costs by provider ✓
+  - Budget overview ✓
+  - Budget policy update ✓
+  - Finance events listing ✓
+  - Finance summary ✓
 
 ---
 
@@ -369,9 +405,19 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [ ] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
 - [ ] **`issue-approvals` service** — linking approvals to issues, listing issues pending approval
 - [ ] **`issue-assignment-wakeup` service** — wakeup logic when an assignee changes
-- [ ] **`workspace-operations` service** — operation log writes, idempotency
+- [x] **`workspace-operations` service** — operation log writes, idempotency — Go: `backend/server/services/workspace_operations_test.go`
+  - CreateRecorder ✓
+  - Begin (create operation record) ✓
+  - Finish success/error ✓ (⚠ 2 skipped on SQLite due to UUID PK generation — will pass on PostgreSQL)
+  - Multiple sequential operations ✓
 - [ ] **`workspace-runtime-read-model` service** — derived workspace status from events
-- [ ] **`run-log-store` service** — append and list run log entries
+- [x] **`run-log-store` service** — append and list run log entries — Go: `backend/server/services/run_log_store_test.go`
+  - Begin creates file ✓
+  - Append and read round-trip ✓
+  - Empty file ✓
+  - Non-existent file ✓
+  - Default base path ✓
+  - Multiple runs ✓
 - [ ] **`cron` service** — nextRunAt computation, routine trigger firing cadence
 
 #### P2
@@ -387,7 +433,13 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [ ] **`plugin-job-coordinator` service** — job queue ordering and concurrency
 - [ ] **`plugin-registry` service** — installed plugin lookup
 - [ ] **`plugin-loader` service** — dynamic module loading, sandbox setup
-- [ ] **`activity-log` service** — `logActivity` deduplication, payload shape, company scoping
+- [x] **`activity-log` service** — `logActivity` deduplication, payload shape, company scoping — Go: `backend/server/services/activity_test.go`
+  - Log with basic fields ✓
+  - Log with details JSON ✓
+  - Log with agent and run ID ✓
+  - List with company scoping ✓
+  - List with entity type filter ✓
+  - Default and custom limit ✓
 - [ ] **`feedback-redaction` service** — PII stripping from feedback bundles
 - [ ] **`github-fetch` service** — authenticated GitHub API calls, rate-limit handling
 - [ ] **`default-agent-instructions` service** — template expansion
