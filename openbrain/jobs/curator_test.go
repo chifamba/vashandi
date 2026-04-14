@@ -14,7 +14,7 @@ import (
 func TestHandleCuratorProposal(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	service := brain.NewService(db)
+	service := brain.NewService(db, brain.NewStubProvider(1536))
 	require.NoError(t, service.AutoMigrate())
 	_, err = service.CreateMemory(t.Context(), brain.Actor{Kind: "service", NamespaceID: "ns1", TrustTier: 4}, brain.MemoryPayload{NamespaceID: "ns1", EntityType: "fact", Text: "fact 1 canonical guidance", Tier: 1})
 	require.NoError(t, err)
