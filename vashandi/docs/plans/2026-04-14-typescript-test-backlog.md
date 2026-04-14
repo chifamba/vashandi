@@ -309,7 +309,7 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 
 - [x] **`authz` routes** (`server/src/routes/authz.ts`) — Go: `backend/server/routes/authz_test.go`
   - Grant/revoke permissions for principals (todo)
-  - Board admin vs non-admin access ✓ (tests written; 4 fail due to context key type bug in implementation)
+  - Board admin vs non-admin access ✓ (all tests pass after context key fix)
   - Agent-scope permission reads ✓
 
 - [x] **`approvals` routes** (broader coverage beyond idempotency) — Go: `backend/server/routes/approvals_test.go`
@@ -335,9 +335,17 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [x] **`dashboard` routes** — summary/stats endpoint shape — Go: `backend/server/routes/dashboard_test.go`
   - Company-scoped dashboard summary ✓
   - Platform metrics ✓
-- [ ] **`plugins` routes** — install, uninstall, settings update, capability query
-- [ ] **`adapters` routes** — adapter listing, model introspection
-- [ ] **`llms` routes** — model list by adapter type
+- [x] **`plugins` routes** — install, uninstall, settings update, capability query — Go: `backend/server/routes/plugins_test.go`
+  - ListPluginsHandler (empty, with plugins, content type) ✓
+- [x] **`adapters` routes** — adapter listing, model introspection — Go: `backend/server/routes/adapters_test.go`
+  - ListAdapters (builtin + plugin adapters) ✓
+  - GetAdapterConfiguration (known/unknown) ✓
+  - InstallAdapter, OverrideAdapter, ReloadAdapter, DeleteAdapter ✓
+  - GetAdapterConfigSchema ✓
+- [x] **`llms` routes** — model list by adapter type — Go: `backend/server/routes/llms_test.go`
+  - ListAgentConfiguration ✓
+  - ListAgentIcons ✓
+  - Content-Type checks ✓
 - [x] **`sidebar-badges` route** — badge count aggregation — Go: `backend/server/routes/sidebar_badges_test.go`
 - [x] **`health` route** — 200 OK and database connectivity check — Go: `backend/server/routes/health_test.go`
 - [ ] **`org-chart-svg` route** — SVG generation from agent hierarchy
@@ -371,6 +379,17 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Budget policy update ✓
   - Finance events listing ✓
   - Finance summary ✓
+- [x] **`access` routes** — Go: `backend/server/routes/access_test.go`
+  - InviteAcceptHandler: success, not-found, expired, already-accepted ✓
+  - CLIAuthChallengeHandler: create ✓
+  - ResolveCLIAuthHandler: found, not-found ✓
+  - ListJoinRequestsHandler: company scoping, status filter ✓
+  - ClaimJoinRequestHandler: success, not-found ✓
+  - BoardClaimTokenHandler: pending, not-found ✓
+  - ListSkillsHandler: content type and body ✓
+  - ListCompanyMembersHandler: company scoping ✓
+  - GetCLIAuthMeHandler: returns actor info ✓
+  - RevokeCLIAuthCurrentHandler: returns revoked status ✓
 
 ---
 
@@ -400,6 +419,32 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 
 #### P1
 
+- [x] **`issues` service** (`server/src/services/issues.ts`) — Go: `backend/server/services/issues_test.go`
+  - ListIssues company scoping ✓
+  - ListIssues status filter ✓
+  - ListIssues assignee filter ✓
+  - CreateIssue default status ✓
+  - CreateIssue with project generates identifier ✓
+  - CreateIssue activity logging (verified issue creation succeeds) ✓
+  - TransitionStatus: valid transitions, side effects (StartedAt, CompletedAt, CancelledAt) ✓
+  - TransitionStatus: same status no-op, invalid status, not-found ✓
+  - Checkout: success, already-locked, same-run idempotent ✓
+  - NormalizeAgentMentionToken: HTML entity unescaping ✓
+- [x] **`budgets` service** (`server/src/services/budgets.ts`) — Go: `backend/server/services/budgets_test.go`
+  - CheckProjectBudget: no policy (unlimited) ✓
+  - CheckProjectBudget: within budget ✓
+  - CheckProjectBudget: exceeds budget ✓
+  - CheckProjectBudget: exactly at budget (blocked) ✓
+  - CheckProjectBudget: inactive policy ignored ✓
+- [x] **`costs` service** (`server/src/services/costs.ts`) — Go: `backend/server/services/costs_test.go`
+  - CreateEvent: basic creation ✓
+  - CreateEvent: updates agent spend ✓
+  - CreateEvent: updates company spend ✓
+  - CreateEvent: defaults OccurredAt ✓
+- [x] **`plugins` service** — Go: `backend/server/services/plugins_test.go`
+  - ListPlugins: empty, installed-only filter ✓
+  - GetPluginManifest: found, not-found, invalid JSON ✓
+  - UpdatePluginStatus: status change, activity logging ✓
 - [ ] **`goals` service** — CRUD, completion transitions, project linkage
 - [ ] **`projects` service** — CRUD, archived project filtering, workspace defaults
 - [ ] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
@@ -574,16 +619,24 @@ The following Go test files were created as equivalents to the TypeScript backlo
 | Go test file | What it covers |
 |---|---|
 | `backend/server/routes/health_test.go` | Health route: nil DB response, DB-connected response, Content-Type |
-| `backend/server/routes/authz_test.go` | `AssertBoard`, `AssertInstanceAdmin`, `AssertCompanyAccess`, `GetActorInfo` (⚠ 4 tests fail due to `WithActor`/`GetActorInfo` context key type mismatch bug in impl) |
+| `backend/server/routes/authz_test.go` | `AssertBoard`, `AssertInstanceAdmin`, `AssertCompanyAccess`, `GetActorInfo` ✓ (all pass after context key fix) |
 | `backend/server/routes/secrets_test.go` | ListSecretProviders, CreateSecret (company scoping, default provider), ListSecrets (scoping), RotateSecret (increment version, not-found), DeleteSecret, UpdateSecret |
 | `backend/server/routes/projects_test.go` | ListProjects (scoping), GetProject (found/not-found), CreateProject (scoping, bad body), UpdateProject (found/not-found), DeleteProject |
 | `backend/server/routes/goals_test.go` | ListGoals (scoping, missing companyId→400), GetGoal (found/not-found), CreateGoal (scoping, bad body), UpdateGoal (found/not-found), DeleteGoal (found/not-found) |
 | `backend/server/routes/agents_crud_test.go` | ListAgents (scoping, empty), GetAgent (found/not-found), CreateAgent (company scoping, default permissions, bad body), UpdateAgent (name update, not-found, runtimeConfig merge), PauseAgent, ResumeAgent |
+| `backend/server/routes/adapters_test.go` | ListAdapters (builtin + plugin), GetAdapterConfiguration (known/unknown), InstallAdapter, OverrideAdapter, ReloadAdapter, DeleteAdapter, GetAdapterConfigSchema |
+| `backend/server/routes/llms_test.go` | ListAgentConfiguration, ListAgentIcons, Content-Type checks |
+| `backend/server/routes/plugins_test.go` | ListPluginsHandler (empty, with plugins, content type) |
+| `backend/server/routes/access_test.go` | InviteAccept (success/not-found/expired/already-accepted), CLIAuthChallenge (create), ResolveCLIAuth (found/not-found), ListJoinRequests (scoping/status filter), ClaimJoinRequest (success/not-found), BoardClaimToken (pending/not-found), ListSkills, ListCompanyMembers, GetCLIAuthMe, RevokeCLIAuthCurrent |
 | `backend/shared/crypto_test.go` | `DecryptLocalSecret` round-trip, missing env var, wrong key size, invalid JSON, invalid base64 IV, tampered ciphertext |
 | `backend/server/services/secrets_test.go` | `ResolveEnvBindings` (plain, multiple, skip non-map), `ResolveAdapterConfigForRuntime` (passthrough, nested maps), `GenerateOpenBrainToken` (structure, claims) |
+| `backend/server/services/issues_test.go` | ListIssues (company scoping, status filter, assignee filter), CreateIssue (default status, identifier generation, activity), TransitionStatus (valid, done, cancelled, same-status no-op, invalid, not-found), Checkout (success, already-locked, same-run idempotent), NormalizeAgentMentionToken |
+| `backend/server/services/budgets_test.go` | CheckProjectBudget (no policy, within budget, exceeds, exactly at budget, inactive policy) |
+| `backend/server/services/costs_test.go` | CreateEvent (basic, updates agent spend, updates company spend, defaults OccurredAt) |
+| `backend/server/services/plugins_test.go` | ListPlugins (empty, installed-only), GetPluginManifest (found, not-found, invalid JSON), UpdatePluginStatus (status change, activity logging) |
 
-**Known failing tests and root cause:**
+**Bug fix applied:**
 
-- `TestAssertBoard_BoardActor`, `TestAssertBoard_SystemActor`, `TestAssertInstanceAdmin_BoardActor`, `TestGetActorInfo_FromContext` — All fail because `WithActor` and `GetActorInfo` in `routes/authz.go` each declare a local `type serverActorKey string`; in Go, locally-scoped type declarations are distinct types even with the same name, so the context `Value()` lookup never matches. Fix: define the key type at package level.
+- **`routes/authz.go` context key type mismatch** — `WithActor` and `GetActorInfo` each declared a local `type serverActorKey string`; in Go, locally-scoped type declarations are distinct types even with the same name, so the context `Value()` lookup never matched. Fixed by using the package-level `actorContextKey`/`actorKey` already defined at file scope. All 4 previously failing authz tests now pass.
 
 Suggest reviewing this backlog quarterly and re-prioritising based on incident history and code churn in untested areas.
