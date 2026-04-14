@@ -21,10 +21,10 @@ import (
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
-	"github.com/chifamba/vashandi/vashandi/backend/shared/tls"
 	"github.com/chifamba/vashandi/openbrain/db/models"
 	"github.com/chifamba/vashandi/openbrain/internal/brain"
 	mcppkg "github.com/chifamba/vashandi/openbrain/internal/mcp"
+	"github.com/chifamba/vashandi/openbrain/internal/tls"
 	pb "github.com/chifamba/vashandi/openbrain/proto/v1"
 	adminui "github.com/chifamba/vashandi/openbrain/ui"
 )
@@ -87,6 +87,7 @@ func main() {
 }
 
 func runServer() error {
+	db := InitDB()
 	embedding := brain.InitEmbeddingProvider()
 	service := brain.NewService(db, embedding)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -107,6 +108,7 @@ func runServer() error {
 		}
 	}
 
+	httpPort := envDefault("PORT", "3101")
 	httpServer := &http.Server{
 		Addr:              ":" + httpPort,
 		Handler:           router,

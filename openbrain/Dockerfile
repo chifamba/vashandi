@@ -7,6 +7,8 @@ RUN go mod download
 COPY . .
 RUN go build -o /openbrain ./cmd/openbrain
 
+
+
 FROM alpine:latest
 RUN adduser -D -u 10001 openbrain
 COPY --from=builder /openbrain /usr/local/bin/openbrain

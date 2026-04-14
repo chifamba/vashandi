@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -589,7 +589,7 @@ func (s *Service) UpdateMemory(ctx context.Context, actor Actor, namespaceID, me
 		memory.Text = strings.TrimSpace(v)
 		embeddingVec, err := s.Embedding.GenerateEmbedding(ctx, memory.Title+" "+memory.Text)
 		if err != nil {
-			return nil, err
+			return models.Memory{}, err
 		}
 		memory.Embedding = encodeEmbedding(embeddingVec)
 	}
@@ -1616,16 +1616,8 @@ func tokenize(text string) []string {
 	return out
 }
 
-// generateEmbedding was removed and replaced by s.Embedding.GenerateEmbedding (see internal/brain/embedding.go)
-	if norm == 0 {
-		return vec
-	}
-	norm = math.Sqrt(norm)
-	for i := range vec {
-		vec[i] /= norm
-	}
-	return vec
-}
+
+
 
 func encodeEmbedding(vec []float64) string { return mustJSON(vec, "[]") }
 

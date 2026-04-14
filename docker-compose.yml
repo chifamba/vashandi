@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - /System/Volumes/Data/storage/postgres/vashandi:/var/lib/postgresql/data
 
   redis:
     image: redis:8-alpine
@@ -41,7 +41,7 @@ services:
       OPENBRAIN_CLIENT_KEY: "/certs/vashandi.key"
       OPENBRAIN_REST_URL: "https://openbrain:3101"
     volumes:
-      - vashandi-data:/paperclip
+      - /System/Volumes/Data/storage/vashandi:/paperclip
       - vashandi-certs:/certs:ro
       - ca-data:/home/step:ro
     depends_on:
@@ -83,10 +83,17 @@ services:
     image: smallstep/step-ca
     command: >
       sh -c "if [ ! -f /home/step/config/ca.json ]; then
-               step ca init --name \"Paperclip Internal CA\" --dns ca,localhost --address :9000 --provisioner admin@paperclip.local --password-file /home/step/secrets/password --provisioner-password-file /home/step/secrets/password --silent;
-               step ca provisioner add acme --type ACME --ca-url https://localhost:9000 --root /home/step/certs/root_ca.crt --password-file /home/step/secrets/password;
+               echo \"$$DOCKER_STEPCA_INIT_PASSWORD\" > /tmp/password &&
+               /usr/local/bin/step ca init --name \"Paperclip Internal CA\" --dns ca --address :9000 --provisioner admin@paperclip.local --password-file /tmp/password --provisioner-password-file /tmp/password --acme &&
+               mkdir -p /home/step/secrets && mv /tmp/password /home/step/secrets/password;
              fi;
              exec /usr/local/bin/step-ca /home/step/config/ca.json --password-file /home/step/secrets/password"
+
+
+
+
+
+
     ports:
       - "9000:9000"
     environment:
@@ -118,7 +125,5 @@ services:
         condition: service_healthy
 
 volumes:
-  pgdata:
-  vashandi-data:
   ca-data:
   vashandi-certs:

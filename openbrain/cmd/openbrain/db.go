@@ -69,7 +69,8 @@ func InitDB() *gorm.DB {
 
 	// AutoMigrate handles any model changes not yet covered by migration files
 	// (additive only; for SQLite in tests it also bootstraps the schema).
-	service := brain.NewService(db)
+	embedding := brain.InitEmbeddingProvider()
+	service := brain.NewService(db, embedding)
 	if err := service.AutoMigrate(); err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
