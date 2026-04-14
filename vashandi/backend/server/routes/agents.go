@@ -173,7 +173,10 @@ return
 }
 }
 
-db.First(&agent, "id = ?", id)
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
 
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(agent)
@@ -204,7 +207,10 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 
-db.First(&agent, "id = ?", id)
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
 
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(agent)
@@ -234,7 +240,10 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 
-db.First(&agent, "id = ?", id)
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
 
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(agent)
@@ -261,7 +270,10 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 
-db.First(&agent, "id = ?", id)
+if err := db.First(&agent, "id = ?", id).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
 
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(agent)
@@ -373,13 +385,22 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 
+// Determine current state by finding the most recent revision for this agent
+var currentBeforeConfig datatypes.JSON
+var latestRevision models.AgentConfigRevision
+if err := db.Where("agent_id = ?", id).Order("created_at DESC").First(&latestRevision).Error; err == nil {
+currentBeforeConfig = latestRevision.AfterConfig
+} else {
+currentBeforeConfig = datatypes.JSON("{}")
+}
+
 newRevision := models.AgentConfigRevision{
 CompanyID:                original.CompanyID,
 AgentID:                  original.AgentID,
 Source:                   "rollback",
 RolledBackFromRevisionID: &original.ID,
 ChangedKeys:              original.ChangedKeys,
-BeforeConfig:             original.AfterConfig,
+BeforeConfig:             currentBeforeConfig,
 AfterConfig:              original.AfterConfig,
 }
 
@@ -611,7 +632,10 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 
-db.First(&run, "id = ?", runID)
+if err := db.First(&run, "id = ?", runID).Error; err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
 
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(run)
