@@ -183,6 +183,26 @@ Total Go routes at analysis time: ~90 | Total Node.js routes: ~220+
 - [x]Error handler (consistent JSON errors)
 - [x]Request validation middleware
 
+## 20. Invites & Join Requests
+
+- [x] `GET /invites/:token/onboarding.txt` — plain-text onboarding document for agents
+- [x] `POST /companies/:companyId/invites` — create a company invite with token
+- [x] `POST /companies/:companyId/openclaw/invite-prompt` — create agent-only OpenClaw invite
+- [x] `POST /companies/:companyId/join-requests/:requestId/approve` — approve a pending join request
+- [x] `POST /companies/:companyId/join-requests/:requestId/reject` — reject a pending join request
+- [x] `POST /join-requests/:requestId/claim-api-key` — claim initial agent API key after approval
+
+## 21. CLI Auth
+
+- [x] `POST /cli-auth/challenges` — canonical plural path (singular `/cli-auth/challenge` kept as alias)
+- [x] `POST /cli-auth/challenges/:id/approve` — approve CLI auth challenge
+- [x] `POST /cli-auth/challenges/:id/cancel` — cancel CLI auth challenge
+
+## 22. Instance Admin
+
+- [x] `POST /admin/users/:userId/promote-instance-admin` — promote user to instance admin
+- [x] `POST /admin/users/:userId/demote-instance-admin` — demote user from instance admin
+
 ---
 
 ## Not Ported (Out of Scope)
@@ -190,8 +210,8 @@ Total Go routes at analysis time: ~90 | Total Node.js routes: ~220+
 These items are too large and complex for this parity cycle and are deferred:
 
 - **Plugin system** (25+ routes, ~8,000 lines) — plugin loader, sandbox, worker manager, job scheduler, event bus, stream bus; retained in Node.js only
-- **Company portability** (export/import as zip) — 4,417-line service; deferred
+- **Company portability** (export/import as zip) — 4,417-line service; deferred (Go has `POST /exports` and `POST /imports/apply` stubs; preview endpoints `POST /exports/preview` and `POST /imports/preview` remain Node.js only)
 - **Full heartbeat orchestration** — workspace assignment, session compaction, billing ledger; partial Go implementation retained, full parity deferred
 - **Workspace runtime management** — Docker/process lifecycle for execution workspaces; deferred
-- **Feedback system** (shares, exports, redaction) — deferred
+- **Feedback system** (`GET /companies/:companyId/feedback-traces`, `GET /issues/:id/feedback-traces`, `GET /feedback-traces/:traceId`, `GET /feedback-traces/:traceId/bundle`, shares, exports, redaction) — deferred
 - **CLI porting** — `backend/cmd/paperclipai`; tracked in `PORT_TO_GOLANG_PLAN.md`
