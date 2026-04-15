@@ -39,18 +39,29 @@ func GHFetch(ctx context.Context, rawURL string, reqOpts *http.Request) (*http.R
 		Timeout: 30 * time.Second,
 	}
 
-	req := reqOpts
-	if req == nil {
-		req, err = http.NewRequestWithContext(ctx, "GET", rawURL, nil)
-		if err != nil {
-			return nil, err
+	method := "GET"
+	var bodyReader interface{ Read([]byte) (int, error) }
+	if reqOpts != nil {
+		if reqOpts.Method != "" {
+			method = reqOpts.Method
 		}
-	} else {
-		req = req.WithContext(ctx)
-		// Assume URL is already set properly on the provided request,
-		// or at least it matches the provided string.
+		if reqOpts.Body != nil {
+			bodyReader = reqOpts.Body
+		}
 	}
 
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	if reqOpts != nil {
+		req.Header = reqOpts.Header.Clone()
+		req.Host = reqOpts.Host
+		req.ContentLength = reqOpts.ContentLength
+		req.GetBody = reqOpts.GetBody
+		req.TransferEncoding = append([]string(nil), reqOpts.TransferEncoding...)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to %s — ensure the URL points to a GitHub or GitHub Enterprise instance", parsedURL.Hostname())
