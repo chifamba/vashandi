@@ -17,6 +17,7 @@ import (
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
+	"github.com/chifamba/vashandi/vashandi/backend/shared/telemetry"
 )
 
 func validateAgentReportsTo(db *gorm.DB, companyID, agentID string, reportsToID *string) error {
@@ -118,7 +119,7 @@ func GetAgentHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 // CreateAgentHandler unmarshals JSON into an Agent, saves it, and triggers OpenBrain sync
-func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.HandlerFunc {
+func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter, tc *telemetry.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
 

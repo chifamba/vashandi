@@ -12,6 +12,7 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/server/realtime"
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
+	"github.com/chifamba/vashandi/vashandi/backend/shared/telemetry"
 )
 
 // RouterOptions configures the router beyond the basic service dependencies.
@@ -39,6 +40,10 @@ type RouterOptions struct {
 	// Hub is the shared realtime event hub used for WebSocket live events and
 	// SSE badge streams. A new Hub is created automatically when nil.
 	Hub *realtime.Hub
+
+	// Telemetry is the active telemetry client. When non-nil, route handlers
+	// emit events to the ingest endpoint. Pass nil to disable tracking.
+	Telemetry *telemetry.Client
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
@@ -48,10 +53,11 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		hub = realtime.NewHub()
 	}
 	deploymentMode := opts.DeploymentMode
+	tc := opts.Telemetry
 
 	r := chi.NewRouter()
 
-	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
+	issueRoutes := routes.NewIssueRoutes(db, activitySvc, tc)
 	costSvc := services.NewCostService(db)
 	runtimeMgr := services.NewWorkspaceRuntimeManager(db)
 
@@ -227,7 +233,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Agent Routes
 		api.Get("/companies/{companyId}/agents", routes.ListAgentsHandler(db))
-		api.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db, heartbeatSvc.Memory))
+		api.Post("/companies/{companyId}/agents", routes.CreateAgentHandler(db, heartbeatSvc.Memory, tc))
 		api.Post("/companies/{companyId}/agent-hires", routes.CreateAgentHireHandler(db))
 		api.Get("/agents/me", routes.GetAgentMeHandler(db))
 		api.Get("/agents/me/inbox-lite", routes.GetAgentMeInboxLiteHandler(db))
@@ -239,7 +245,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/agents/{id}/resume", routes.ResumeAgentHandler(db))
 		api.Post("/agents/{id}/terminate", routes.TerminateAgentHandler(db))
 		api.Post("/agents/{id}/wakeup", routes.WakeupAgentHandler(db))
-		api.Post("/agents/{id}/heartbeat/invoke", routes.InvokeAgentHeartbeatHandler(db))
+		api.Post("/agents/{id}/heartbeat/invoke", routes.InvokeAgentHeartbeatHandler(db, tc))
 		api.Post("/agents/{id}/claude-login", routes.AgentClaudeLoginHandler(db))
 		api.Get("/agents/{id}/runtime-state", routes.GetAgentRuntimeStateHandler(db))
 		api.Post("/agents/{id}/runtime-state/reset-session", routes.ResetAgentSessionHandler(db))
@@ -297,7 +303,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Goals Routes
 		api.Get("/companies/{companyId}/goals", routes.ListGoalsHandler(db))
-		api.Post("/companies/{companyId}/goals", routes.CreateGoalHandler(db))
+		api.Post("/companies/{companyId}/goals", routes.CreateGoalHandler(db, tc))
 		api.Get("/goals/{id}", routes.GetGoalHandler(db))
 		api.Patch("/goals/{id}", routes.UpdateGoalHandler(db))
 		api.Delete("/goals/{id}", routes.DeleteGoalHandler(db))
@@ -387,7 +393,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Company Skills Routes
 		api.Get("/companies/{companyId}/skills", routes.ListCompanySkillsHandler(db))
-		api.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db))
+		api.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db, tc))
 		api.Get("/companies/{companyId}/skills/{skillId}", routes.GetCompanySkillHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}/update-status", routes.GetCompanySkillUpdateStatusHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}/files", routes.GetCompanySkillFilesHandler(db))
@@ -453,7 +459,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Project Routes
 		api.Get("/companies/{companyId}/projects", routes.ListProjectsHandler(db))
-		api.Post("/companies/{companyId}/projects", routes.CreateProjectHandler(db))
+		api.Post("/companies/{companyId}/projects", routes.CreateProjectHandler(db, tc))
 		api.Get("/projects/{id}", routes.GetProjectHandler(db))
 		api.Patch("/projects/{id}", routes.UpdateProjectHandler(db))
 		api.Delete("/projects/{id}", routes.DeleteProjectHandler(db))
@@ -465,7 +471,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Routine Routes
 		api.Get("/companies/{companyId}/routines", routes.ListRoutinesHandler(db))
-		api.Post("/companies/{companyId}/routines", routes.CreateRoutineHandler(db))
+		api.Post("/companies/{companyId}/routines", routes.CreateRoutineHandler(db, tc))
 		api.Get("/routines/{id}", routes.GetRoutineHandler(db))
 		api.Patch("/routines/{id}", routes.UpdateRoutineHandler(db))
 		api.Delete("/routines/{id}", routes.DeleteRoutineHandler(db))
