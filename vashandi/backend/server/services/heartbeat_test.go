@@ -29,6 +29,7 @@ func (r *heartbeatTestRunner) Execute(_ context.Context, _ *models.HeartbeatRun,
 
 type heartbeatTestMemory struct {
 	createCalls []MemoryPayload
+	createdCh   chan struct{}
 }
 
 func (m *heartbeatTestMemory) IngestMemory(context.Context, string, string, map[string]string) error {
@@ -36,6 +37,12 @@ func (m *heartbeatTestMemory) IngestMemory(context.Context, string, string, map[
 }
 func (m *heartbeatTestMemory) CreateMemory(_ context.Context, _ string, payload MemoryPayload) error {
 	m.createCalls = append(m.createCalls, payload)
+	if m.createdCh != nil {
+		select {
+		case m.createdCh <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 func (m *heartbeatTestMemory) QueryMemory(context.Context, string, string, int) ([]MemoryResult, error) {
@@ -204,7 +211,7 @@ func TestHeartbeatService_StartRun_CompletesRunAndRecordsWorkspaceOperation(t *t
 		VALUES ('run-1', 'comp-1', 'agent-1', 'api', 'starting', '{}', 'task-1')`)
 
 	runner := &heartbeatTestRunner{}
-	memory := &heartbeatTestMemory{}
+	memory := &heartbeatTestMemory{createdCh: make(chan struct{}, 1)}
 	svc := &HeartbeatService{
 		DB:               db,
 		Secrets:          NewSecretService(db, nil),
@@ -267,11 +274,9 @@ func TestHeartbeatService_StartRun_CompletesRunAndRecordsWorkspaceOperation(t *t
 		t.Fatalf("expected 1 cost event, got %d", costCount)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for len(memory.createCalls) == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if len(memory.createCalls) == 0 {
+	select {
+	case <-memory.createdCh:
+	case <-time.After(2 * time.Second):
 		t.Fatal("expected run completion to create a memory payload")
 	}
 	if memory.createCalls[0].EntityType != "run_summary" {
