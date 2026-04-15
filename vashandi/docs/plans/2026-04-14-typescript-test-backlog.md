@@ -375,6 +375,7 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Heartbeat run issues listing ✓
 - [x] **`instance-settings` routes** — Go: `backend/server/routes/instance_settings_test.go`
   - Get/update general settings ✓
+  - S3 asset storage settings round-trip for UI configuration ✓
   - Get/update experimental settings ✓
   - Board read vs instance-admin update gating ✓
   - UI `/instance/settings/*` route parity ✓

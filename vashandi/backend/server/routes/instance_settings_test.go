@@ -143,6 +143,81 @@ func TestUpdateGeneralSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
 	}
 }
 
+func TestUpdateGeneralSettingsHandler_PersistsS3StorageConfigForUi(t *testing.T) {
+	db := setupInstanceSettingsTestDB(t)
+
+	storagePatch := map[string]any{
+		"storage": map[string]any{
+			"provider": "s3",
+			"localDisk": map[string]any{
+				"baseDir": "/var/lib/vashandi/storage",
+			},
+			"s3": map[string]any{
+				"bucket":         "attachments",
+				"region":         "af-south-1",
+				"endpoint":       "https://minio.internal",
+				"prefix":         "companies",
+				"forcePathStyle": true,
+			},
+		},
+	}
+	body, _ := json.Marshal(storagePatch)
+	req := httptest.NewRequest(http.MethodPatch, "/instance/settings/general", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withActor(req, ActorInfo{UserID: "local-board", ActorType: "board", IsInstanceAdmin: true})
+	w := httptest.NewRecorder()
+
+	UpdateGeneralSettingsHandler(db)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
+	}
+
+	got := decodeJSONBody(t, w.Body)
+	storage, ok := got["storage"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected storage object, got %#v", got["storage"])
+	}
+	if storage["provider"] != "s3" {
+		t.Fatalf("expected s3 provider, got %#v", storage["provider"])
+	}
+
+	s3Config, ok := storage["s3"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected s3 config object, got %#v", storage["s3"])
+	}
+	if s3Config["bucket"] != "attachments" {
+		t.Fatalf("expected bucket attachments, got %#v", s3Config["bucket"])
+	}
+	if s3Config["region"] != "af-south-1" {
+		t.Fatalf("expected region af-south-1, got %#v", s3Config["region"])
+	}
+	if s3Config["endpoint"] != "https://minio.internal" {
+		t.Fatalf("expected endpoint https://minio.internal, got %#v", s3Config["endpoint"])
+	}
+	if s3Config["prefix"] != "companies" {
+		t.Fatalf("expected prefix companies, got %#v", s3Config["prefix"])
+	}
+	if s3Config["forcePathStyle"] != true {
+		t.Fatalf("expected forcePathStyle true, got %#v", s3Config["forcePathStyle"])
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/instance/settings/general", nil)
+	getReq = withActor(getReq, ActorInfo{UserID: "user-1", ActorType: "board"})
+	getW := httptest.NewRecorder()
+
+	GetGeneralSettingsHandler(db)(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from readback, got %d; body=%s", getW.Code, getW.Body.String())
+	}
+
+	readback := decodeJSONBody(t, getW.Body)
+	if readbackStorage, ok := readback["storage"].(map[string]any); !ok || readbackStorage["provider"] != "s3" {
+		t.Fatalf("expected persisted storage config on readback, got %#v", readback["storage"])
+	}
+}
+
 func TestUpdateGeneralSettingsHandler_RejectsNonAdminBoardUsers(t *testing.T) {
 	db := setupInstanceSettingsTestDB(t)
 
