@@ -32,6 +32,9 @@ type heartbeatTestMemory struct {
 	createdCh   chan struct{}
 }
 
+func (m *heartbeatTestMemory) CreateNamespace(context.Context, string, string) error {
+	return nil
+}
 func (m *heartbeatTestMemory) IngestMemory(context.Context, string, string, map[string]string) error {
 	return nil
 }

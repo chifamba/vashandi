@@ -64,6 +64,7 @@ func (m *mockMemoryAdapter) HandleTrigger(_ context.Context, _, _ string, _ serv
 func (m *mockMemoryAdapter) ExportAudit(_ context.Context, _, _ string) ([]byte, string, error) {
 	return nil, "", nil
 }
+func (m *mockMemoryAdapter) CreateNamespace(_ context.Context, _, _ string) error        { return nil }
 func (m *mockMemoryAdapter) ArchiveNamespace(_ context.Context, _ string) error { return nil }
 func (m *mockMemoryAdapter) DeleteNamespace(_ context.Context, _ string) error  { return nil }
 func (m *mockMemoryAdapter) ListProposals(_ context.Context, _ string) ([]map[string]interface{}, error) {
