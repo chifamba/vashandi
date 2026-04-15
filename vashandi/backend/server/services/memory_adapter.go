@@ -17,6 +17,7 @@ import (
 
 // MemoryAdapter defines the interface for interacting with OpenBrain
 type MemoryAdapter interface {
+	CreateNamespace(ctx context.Context, namespaceID, companyID string) error
 	IngestMemory(ctx context.Context, namespaceID, text string, metadata map[string]string) error
 	CreateMemory(ctx context.Context, namespaceID string, payload MemoryPayload) error
 	QueryMemory(ctx context.Context, namespaceID, query string, limit int) ([]MemoryResult, error)
@@ -104,6 +105,26 @@ func NewOpenBrainAdapter() *OpenBrainAdapter {
 		client:  client,
 		baseURL: baseURL,
 	}
+}
+
+func (o *OpenBrainAdapter) CreateNamespace(ctx context.Context, namespaceID, companyID string) error {
+	url := fmt.Sprintf("%s/internal/v1/namespaces", o.baseURL)
+	payload := map[string]string{
+		"namespaceId": namespaceID,
+		"companyId":   companyID,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if err := o.do(req); err != nil {
+		slog.ErrorContext(ctx, "Failed to register namespace in OpenBrain", "namespaceId", namespaceID, "error", err)
+		return err
+	}
+	slog.InfoContext(ctx, "Namespace registered in OpenBrain", "namespaceId", namespaceID, "companyId", companyID)
+	return nil
 }
 
 func (o *OpenBrainAdapter) IngestMemory(ctx context.Context, namespaceID, text string, metadata map[string]string) error {
