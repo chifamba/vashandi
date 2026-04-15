@@ -227,3 +227,59 @@ json.NewEncoder(w).Encode(map[string]string{
 })
 }
 }
+
+// ListCompanyFeedbackTracesHandler returns feedback traces for a company (board only).
+func ListCompanyFeedbackTracesHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := AssertBoard(r); err != nil {
+			http.Error(w, "Only board users can view feedback traces", http.StatusForbidden)
+			return
+		}
+		companyID := chi.URLParam(r, "companyId")
+
+		q := r.URL.Query()
+		filters := map[string]interface{}{"company_id": companyID}
+		var extra []string
+		var extraArgs []interface{}
+		if v := q.Get("issueId"); v != "" {
+			filters["issue_id"] = v
+		}
+		if v := q.Get("projectId"); v != "" {
+			filters["project_id"] = v
+		}
+		if v := q.Get("targetType"); v != "" {
+			filters["target_type"] = v
+		}
+		if v := q.Get("vote"); v != "" {
+			filters["vote"] = v
+		}
+		if v := q.Get("status"); v != "" {
+			filters["status"] = v
+		}
+		if q.Get("sharedOnly") == "true" {
+			extra = append(extra, "fe.status != ?")
+			extraArgs = append(extraArgs, "local_only")
+		}
+		if v := q.Get("from"); v != "" {
+			extra = append(extra, "fe.created_at >= ?")
+			extraArgs = append(extraArgs, v)
+		}
+		if v := q.Get("to"); v != "" {
+			extra = append(extra, "fe.created_at <= ?")
+			extraArgs = append(extraArgs, v)
+		}
+
+		includePayload := q.Get("includePayload") == "true"
+		rows, err := queryFeedbackTraces(r.Context(), db, filters, extra, extraArgs)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		out := make([]feedbackTraceResponse, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, buildFeedbackTraceResponse(row, includePayload))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
+	}
+}
