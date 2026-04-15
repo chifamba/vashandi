@@ -30,9 +30,10 @@ type Client struct {
 	// send carries outbound messages. It is never closed by the hub; instead the
 	// hub closes done to signal the client goroutines to exit, avoiding the
 	// send-to-closed-channel race.
-	send      chan []byte
-	done      chan struct{} // closed once via closeOnce to signal disconnect
-	closeOnce sync.Once
+	send          chan []byte
+	done          chan struct{} // closed once via closeOnce to signal disconnect
+	closeOnce     sync.Once
+	closeConnOnce sync.Once
 }
 
 // disconnect signals the client goroutines to exit. Safe to call multiple times.
@@ -40,12 +41,17 @@ func (c *Client) disconnect() {
 	c.closeOnce.Do(func() { close(c.done) })
 }
 
+// closeConn closes the underlying WebSocket connection exactly once.
+func (c *Client) closeConn() {
+	c.closeConnOnce.Do(func() { c.conn.Close() })
+}
+
 // readPump drains incoming messages and monitors ping/pong liveness.
 // It calls unregister and closes the connection when the remote end disconnects.
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister(c)
-		c.conn.Close()
+		c.closeConn()
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
@@ -75,7 +81,7 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		c.closeConn()
 	}()
 
 	for {

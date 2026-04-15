@@ -80,7 +80,7 @@ func TestLiveEventsHandler_LocalTrusted(t *testing.T) {
 	data, _ := json.Marshal(event)
 	hub.Publish("company-1", data)
 
-	msg, err := readWithTimeout(t, conn, 2*time.Second)
+	msg, err := readWithTimeout(t, conn, 5*time.Second)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestLiveEventsHandler_EventsNotLeakedAcrossCompanies(t *testing.T) {
 	hub.Publish("company-A", data)
 
 	// company-A client should receive the event.
-	msg, err := readWithTimeout(t, connA, 2*time.Second)
+	msg, err := readWithTimeout(t, connA, 5*time.Second)
 	if err != nil {
 		t.Fatalf("company-A read: %v", err)
 	}

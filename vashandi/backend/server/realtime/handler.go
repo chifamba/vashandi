@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -101,9 +102,12 @@ func resolveTokenActor(db *gorm.DB, token string) routes.ActorInfo {
 	}
 
 	// Update last-used timestamp asynchronously so the upgrade is not delayed.
+	// A short timeout prevents the goroutine from leaking if the DB is slow.
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		now := time.Now()
-		if updateErr := db.Model(&models.AgentAPIKey{}).
+		if updateErr := db.WithContext(ctx).Model(&models.AgentAPIKey{}).
 			Where("id = ?", key.ID).
 			Update("last_used_at", now).Error; updateErr != nil {
 			slog.Warn("ws: failed to update agent key last_used_at", "error", updateErr)
