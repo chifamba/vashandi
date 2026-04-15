@@ -1,5 +1,8 @@
 # Master Porting Plan: Paperclip to Go 1.24+
 
+> **Superseded — historical reference only.**  
+> This document captured the original aspirational porting plan. The authoritative, up-to-date record of what has actually been ported and what remains deferred is **`doc/plans/2026-04-14-go-parity-tracking.md`**. Consult that document for current status.
+
 This document is the consolidated master tracker outlining the complete execution strategy, progress state, and the exhaustive 100% completion parity roadmap for porting the Vashandi/Paperclip monorepo (originally Node.js/TypeScript) natively to Go 1.24+.
 
 ## 1. Architecture Assessment & Technology Mapping
@@ -21,11 +24,11 @@ This document is the consolidated master tracker outlining the complete executio
 |---|---|---|
 | 1 | Go Workspace Initialization and Shared Models | Complete |
 | 2 | Database Layer and GORM Migrations | Complete |
-| 3 | Core Server Implementation (HTTP) | In Progress (Router initialized; Health, Dashboard, Activity, Goals routes ported. Large deficit remains, see below) |
-| 4 | WebSockets and Realtime Functionality | Not Started |
-| 5 | Adapters and Plugins Architecture (Heartbeat Runner) | In Progress (Anthropic native SDK base mapped, needs full LLM binding parity) |
-| 6 | CLI Porting (Cobra Mapping) | Pending Internal Implementation (Commands are structurally registered but lack REST connections) |
-| 7 | Testing, CI/CD, and Docker | Not Started |
+| 3 | Core Server Implementation (HTTP) | Complete (with deferred exceptions — see §4 below) |
+| 4 | WebSockets and Realtime Functionality | Complete (SSE hub and streaming; native WebSocket transport deferred) |
+| 5 | Adapters and Plugins Architecture (Heartbeat Runner) | Complete (Anthropic, OpenAI, Gemini native adapters; plugin system deferred) |
+| 6 | CLI Porting (Cobra Mapping) | Complete (structural commands; see §4 for deferred scope) |
+| 7 | Testing, CI/CD, and Docker | Complete |
 
 ---
 
@@ -100,10 +103,10 @@ Additional: "Porting logic from llms.ts"}
 TestCase: "GET the SVG endpoint and verify valid DOM tree representing root Company users",
 Additional: "Porting logic from org-chart-svg.ts (heavy 40KB+ generator)"}
 
-[x] Node.js Route Migration: plugin_ui_static.go
+[ ] Node.js Route Migration: plugin_ui_static.go
 {Description: "Re-implement static proxy layers mounting Plugin UI injection bundles",
 TestCase: "Access plugin IFRAME context and verify CORS mappings",
-Additional: "Porting logic from plugin-ui-static.ts"}
+Additional: "Porting logic from plugin-ui-static.ts — DEFERRED: plugin system retained in Node.js"}
 
 [x] Node.js Route Migration: projects.go
 {Description: "Write project boundary enforcement, settings, and workspace isolation variables",
@@ -168,3 +171,16 @@ Additional: "Parity matching for the existing TS gemini-local adapter"}
 {Description: "Generate strict memory XML bindings directly injecting semantic vector search results into LLM boundary variables before execution",
 TestCase: "Perform Agent Heartbeat invocation specifying an active TaskID and validating the Memory String hits the final LLM Context prompt securely via mTLS",
 Additional: "Ensures Go agents do not lose temporal context limits previously guaranteed by OpenBrain."}
+
+---
+
+## 4. Deferred / Out-of-Scope Items
+
+The following areas were explicitly **not ported** in this cycle and are retained in Node.js. See `doc/plans/2026-04-14-go-parity-tracking.md` § "Not Ported (Out of Scope)" for the authoritative list.
+
+- **Plugin system** (25+ routes, ~8,000 lines) — plugin loader, sandbox, worker manager, job scheduler, event bus, stream bus; the `plugin_ui_static.go` item above is unchecked accordingly.
+- **Company portability preview** — `POST /exports/preview` and `POST /imports/preview` remain Node.js only; Go has stub `POST /exports` and `POST /imports/apply` routes.
+- **Full heartbeat orchestration** — workspace assignment, session compaction, and billing ledger; partial Go implementation retained, full parity deferred.
+- **Workspace runtime management** — Docker/process lifecycle for execution workspaces.
+- **Feedback system** — `GET /companies/:companyId/feedback-traces` and related trace/bundle/share/export/redaction routes.
+- **Realtime WebSocket transport** — SSE is complete; native WebSocket upgrade path is deferred.
