@@ -39,25 +39,28 @@ func TestIsPrivateIP(t *testing.T) {
 func TestValidateAndResolveFetchURL_Safe(t *testing.T) {
 	ctx := context.Background()
 
-	// 1. Safe domain
-	target, err := ValidateAndResolveFetchURL(ctx, "https://example.com")
+	// 1. Safe public HTTPS IP literal (hermetic: no DNS lookup required)
+	target, err := ValidateAndResolveFetchURL(ctx, "https://8.8.8.8")
 	if err != nil {
-		t.Fatalf("unexpected error for safe domain: %v", err)
+		t.Fatalf("unexpected error for safe HTTPS IP: %v", err)
 	}
-	if target.HostHeader != "example.com" {
-		t.Errorf("expected host header example.com, got %s", target.HostHeader)
+	if target.HostHeader != "8.8.8.8" {
+		t.Errorf("expected host header 8.8.8.8, got %s", target.HostHeader)
 	}
-	if target.ResolvedAddress == "" || isPrivateIP(target.ResolvedAddress) {
-		t.Errorf("expected public IP for example.com, got %s", target.ResolvedAddress)
+	if target.ResolvedAddress != "8.8.8.8" || isPrivateIP(target.ResolvedAddress) {
+		t.Errorf("expected public IP 8.8.8.8, got %s", target.ResolvedAddress)
 	}
 
-	// 2. Safe IP
-	target, err = ValidateAndResolveFetchURL(ctx, "http://8.8.8.8")
+	// 2. Safe public HTTP IP literal
+	target, err = ValidateAndResolveFetchURL(ctx, "http://1.1.1.1")
 	if err != nil {
-		t.Fatalf("unexpected error for safe IP: %v", err)
+		t.Fatalf("unexpected error for safe HTTP IP: %v", err)
 	}
-	if target.ResolvedAddress != "8.8.8.8" {
-		t.Errorf("expected 8.8.8.8, got %s", target.ResolvedAddress)
+	if target.HostHeader != "1.1.1.1" {
+		t.Errorf("expected host header 1.1.1.1, got %s", target.HostHeader)
+	}
+	if target.ResolvedAddress != "1.1.1.1" || isPrivateIP(target.ResolvedAddress) {
+		t.Errorf("expected public IP 1.1.1.1, got %s", target.ResolvedAddress)
 	}
 }
 
