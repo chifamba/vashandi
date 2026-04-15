@@ -7,6 +7,7 @@ require (
 	github.com/chifamba/vashandi/vashandi/backend/shared v0.0.0-20260414011212-34c73c8a303c
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/sqlite v1.6.0
@@ -16,7 +17,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgx/v5 v5.7.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect

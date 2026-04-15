@@ -288,7 +288,7 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Permission gating: board admin vs non-admin vs agent callers (⚠ partial — authz context key bug blocks full test)
   - `reportsTo` hierarchy validation (todo)
   - Role uniqueness (CEO singleton) (todo)
-  - `GET /agents/:id/models` — model list delegation to adapter (todo)
+  - `GET /companies/:companyId/adapters/:type/models` — adapter model list response contract ✓
 
 - [x] **`secrets` routes** (`server/src/routes/secrets.ts`) — Go: `backend/server/routes/secrets_test.go`
   - Create/update/delete company-level and agent-level secrets ✓
@@ -412,11 +412,11 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Secret version rotation ✓
 
 - [x] **`access` service** (`server/src/services/access.ts`) — Go: `backend/server/services/access_test.go`
-  - `canUser` permission evaluation
-  - `hasPermission` with explicit grants
-  - `ensureMembership` throws on non-members
-  - Company-scoped membership lookup
-  - Instance admin bypass
+  - `canUser` permission evaluation ✓
+  - `hasPermission` with explicit grants ✓
+  - `ensureMembership` upserts membership state ✓
+  - Company-scoped membership lookup ✓
+  - Instance admin bypass ✓
 
 - [x] **`agents` service** (`server/src/services/agents.ts`) — Go: `backend/server/services/agents_test.go`
   - Create with automatic membership grant
@@ -453,11 +453,13 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - ListPlugins: empty, installed-only filter ✓
   - GetPluginManifest: found, not-found, invalid JSON ✓
   - UpdatePluginStatus: status change, activity logging ✓
-- [x] **`goals` service** — CRUD, completion transitions, project linkage
-- [x] **`projects` service** — CRUD, archived project filtering, workspace defaults
-- [x] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
-- [x] **`issue-approvals` service** — linking approvals to issues, listing issues pending approval
-- [x] **`issue-assignment-wakeup` service** — wakeup logic when an assignee changes
+- [x] **`goals` service** (`server/src/services/goals.ts`) — Go: `backend/server/services/goals_test.go`
+  - List/create/get/update/remove ✓
+  - `getDefaultCompanyGoal` active-root fallback chain ✓
+- [ ] **`projects` service** — CRUD, archived project filtering, workspace defaults
+- [ ] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
+- [ ] **`issue-approvals` service** — linking approvals to issues, listing issues pending approval
+- [ ] **`issue-assignment-wakeup` service** — wakeup logic when an assignee changes
 - [x] **`workspace-operations` service** — operation log writes, idempotency — Go: `backend/server/services/workspace_operations_test.go`
   - CreateRecorder ✓
   - Begin (create operation record) ✓
@@ -716,6 +718,7 @@ The following Go test files were created as equivalents to the TypeScript backlo
 | `backend/server/services/budgets_test.go` | CheckProjectBudget (no policy, within budget, exceeds, exactly at budget, inactive policy) |
 | `backend/server/services/costs_test.go` | CreateEvent (basic, updates agent spend, updates company spend, defaults OccurredAt) |
 | `backend/server/services/plugins_test.go` | ListPlugins (empty, installed-only), GetPluginManifest (found, not-found, invalid JSON), UpdatePluginStatus (status change, activity logging) |
+| `backend/server/services/goals_test.go` | ListGoals (company scoping), GetGoalByID (found/not-found), GetDefaultCompanyGoal (active root and fallback order), CreateGoal (company scoping, defaults), UpdateGoal (partial update, timestamp), RemoveGoal (returns deleted record, missing) |
 | `backend/server/routes/org_chart_svg_test.go` | OrgChartSVG (empty company, single agent, hierarchy with edges, company scoping, nebula style, long name truncation, PNG fallback, htmlEscape) |
 | `backend/server/routes/company_skills_test.go` | ListCompanySkills (company scoping, empty), CreateCompanySkill (success, bad body), GetCompanySkill (found, not-found, cross-company block), DeleteCompanySkill, GetCompanySkillUpdateStatus, GetCompanySkillFiles, InstallUpdateCompanySkill |
 | `backend/server/routes/mcp_governance_test.go` | MCPTools (company scoping, empty, missing companyId), MCPProfiles (company scoping, content type), AgentMCPTools (no entitlements, missing agentId) |
