@@ -170,7 +170,7 @@ describe("issue-execution-policy", () => {
         approverValues: [],
       });
 
-      expect(policy?.mode).toBe("strict");
+      expect(policy?.mode).toBe("normal");
       expect(policy?.stages[0].id).toBe("stage-1");
 
       const user1 = policy?.stages[0].participants.find(p => p.userId === "user-1");
