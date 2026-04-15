@@ -22,11 +22,28 @@ type RouterOptions struct {
 	// BetterAuth endpoints (sign-in, sign-out, etc.).  When nil those paths
 	// return 501 Not Implemented.
 	AuthHandler http.Handler
+
+	// UIHandler is an optional catch-all handler for non-API requests.  When
+	// set it is mounted after all API routes so that the frontend SPA (or a
+	// reverse proxy to a frontend dev server) receives every request that does
+	// not match a known API path.  When nil, unmatched requests fall through to
+	// chi's built-in 404 response.
+	UIHandler http.Handler
+
+	// Hub is the realtime event hub used for WebSocket live-events.  When nil,
+	// SetupRouter creates a new Hub internally.
+	Hub *realtime.Hub
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
 func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc *services.SecretService, heartbeatSvc *services.HeartbeatService, opts RouterOptions) *chi.Mux {
 	r := chi.NewRouter()
+
+	// Resolve the Hub: use the provided one or create a fresh instance.
+	hub := opts.Hub
+	if hub == nil {
+		hub = realtime.NewHub()
+	}
 
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
 	costSvc := services.NewCostService(db)
@@ -70,7 +87,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	// Live-events WebSocket — GET /api/companies/{companyId}/events/ws
 	// Path matches the Node.js server and the UI client expectations.
 	// Auth is handled inside the handler (bearer token, ?token= query param, or local_trusted mode).
-	r.Get("/api/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode))
+	r.Get("/api/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, opts.DeploymentMode))
 
 	// API v1 Routes
 	r.Route("/api/v1", func(api chi.Router) {
@@ -449,6 +466,12 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		// Heartbeat Run SSE Events
 		api.Get("/heartbeat-runs/{runId}/events", routes.HeartbeatRunEventsSSEHandler())
 	})
+
+	// UI catch-all — mounted last so that all API routes take priority.
+	// When UIHandler is nil, unmatched requests fall through to chi's 404.
+	if opts.UIHandler != nil {
+		r.Handle("/*", opts.UIHandler)
+	}
 
 	return r
 }

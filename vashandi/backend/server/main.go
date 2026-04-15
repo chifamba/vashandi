@@ -32,6 +32,10 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	opsSvc := services.NewWorkspaceOperationService(db)
 	heartbeatSvc := services.NewHeartbeatService(db, secretsSvc, activitySvc, opsSvc, nil, nil)
 
+	// Create the live-events hub and inject it so SetupRouter and App share the same instance.
+	hub := realtime.NewHub()
+	routerOpts.Hub = hub
+
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
 	
 	r.Use(cors.Handler(cors.Options{
@@ -95,7 +99,10 @@ func Run() {
 		os.Exit(1)
 	}
 
-	app := NewApp(db, RouterOptions{DeploymentMode: cfg.Server.DeploymentMode})
+	app := NewApp(db, RouterOptions{
+		DeploymentMode: cfg.Server.DeploymentMode,
+		UIHandler:      newUIHandlerFromConfig(cfg.Server.ServeUi),
+	})
 
 	// Startup Recovery
 	if app.Heartbeat != nil {
