@@ -40,6 +40,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
 	costSvc := services.NewCostService(db)
+	runtimeMgr := services.NewWorkspaceRuntimeManager(db)
 
 	// A good base middleware stack
 	r.Use(middleware.RequestID)
@@ -383,7 +384,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Patch("/execution-workspaces/{id}", routes.UpdateExecutionWorkspaceHandler(db))
 		api.Get("/execution-workspaces/{id}/close-readiness", routes.GetWorkspaceCloseReadinessHandler(db))
 		api.Get("/execution-workspaces/{id}/workspace-operations", routes.GetWorkspaceWorkspaceOperationsHandler(db))
-		api.Post("/execution-workspaces/{id}/runtime-services/{action}", routes.ExecutionWorkspaceRuntimeServicesHandler(db))
+		api.Post("/execution-workspaces/{id}/runtime-services/{action}", routes.ExecutionWorkspaceRuntimeServicesHandler(db, runtimeMgr))
 
 		// Inbox Dismissal Routes
 		api.Get("/companies/{companyId}/inbox-dismissals", routes.ListInboxDismissalsHandler(db))
