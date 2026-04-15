@@ -118,6 +118,17 @@ func Run() {
 		services.StartRoutineScheduler(context.Background(), app.Scheduler, 60_000)
 	}
 
+	// Start the feedback export flusher (mirrors the Node.js 5-second timer).
+	feedbackShareClient := services.NewFeedbackTraceShareClientFromEnv()
+	feedbackExportSvc := services.NewFeedbackExportService(db, feedbackShareClient)
+	if result, err := feedbackExportSvc.FlushPendingFeedbackTraces(context.Background(), nil); err != nil {
+		slog.Error("Initial feedback export flush failed", "error", err)
+	} else if result.Attempted > 0 {
+		slog.Info("Initial feedback export flush", "attempted", result.Attempted, "sent", result.Sent, "failed", result.Failed)
+	}
+	slog.Info("Starting feedback export flusher")
+	services.StartFeedbackExportFlusher(context.Background(), feedbackExportSvc, 5_000)
+
 	if err := app.Start(cfg.Server.Port); err != nil {
 		slog.Error("Server failed", "error", err)
 		os.Exit(1)
