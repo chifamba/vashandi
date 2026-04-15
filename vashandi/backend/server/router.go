@@ -324,6 +324,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/adapters/{type}/reload", routes.ReloadAdapterHandler(db))
 		api.Post("/adapters/{type}/reinstall", routes.ReinstallAdapterHandler(db))
 		api.Get("/adapters/{type}/config-schema", routes.GetAdapterConfigSchemaHandler(db))
+		api.Get("/adapters/{type}/ui-parser.js", routes.GetAdapterUIParserHandler(db))
 		api.Patch("/adapters/{type}", routes.UpdateAdapterHandler(db))
 		api.Patch("/adapters/{type}/override", routes.OverrideAdapterHandler(db))
 		api.Delete("/adapters/{type}", routes.DeleteAdapterHandler(db))
