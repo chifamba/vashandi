@@ -453,7 +453,9 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - ListPlugins: empty, installed-only filter ✓
   - GetPluginManifest: found, not-found, invalid JSON ✓
   - UpdatePluginStatus: status change, activity logging ✓
-- [ ] **`goals` service** — CRUD, completion transitions, project linkage
+- [x] **`goals` service** (`server/src/services/goals.ts`) — Go: `backend/server/services/goals_test.go`
+  - List/create/get/update/remove ✓
+  - `getDefaultCompanyGoal` active-root fallback chain ✓
 - [ ] **`projects` service** — CRUD, archived project filtering, workspace defaults
 - [ ] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
 - [ ] **`issue-approvals` service** — linking approvals to issues, listing issues pending approval
@@ -716,6 +718,7 @@ The following Go test files were created as equivalents to the TypeScript backlo
 | `backend/server/services/budgets_test.go` | CheckProjectBudget (no policy, within budget, exceeds, exactly at budget, inactive policy) |
 | `backend/server/services/costs_test.go` | CreateEvent (basic, updates agent spend, updates company spend, defaults OccurredAt) |
 | `backend/server/services/plugins_test.go` | ListPlugins (empty, installed-only), GetPluginManifest (found, not-found, invalid JSON), UpdatePluginStatus (status change, activity logging) |
+| `backend/server/services/goals_test.go` | ListGoals (company scoping), GetGoalByID (found/not-found), GetDefaultCompanyGoal (active root and fallback order), CreateGoal (company scoping, defaults), UpdateGoal (partial update, timestamp), RemoveGoal (returns deleted record, missing) |
 | `backend/server/routes/org_chart_svg_test.go` | OrgChartSVG (empty company, single agent, hierarchy with edges, company scoping, nebula style, long name truncation, PNG fallback, htmlEscape) |
 | `backend/server/routes/company_skills_test.go` | ListCompanySkills (company scoping, empty), CreateCompanySkill (success, bad body), GetCompanySkill (found, not-found, cross-company block), DeleteCompanySkill, GetCompanySkillUpdateStatus, GetCompanySkillFiles, InstallUpdateCompanySkill |
 | `backend/server/routes/mcp_governance_test.go` | MCPTools (company scoping, empty, missing companyId), MCPProfiles (company scoping, content type), AgentMCPTools (no entitlements, missing agentId) |
