@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -246,30 +247,169 @@ func extractUIMetadata(manifest map[string]interface{}) (uiEntryFile string, slo
 }
 
 // --------------------------------------------------------------------------
-// GET /plugins/tools  (501 — requires worker manager)
+// GET /plugins/tools
 // --------------------------------------------------------------------------
 
-func GetPluginToolsHandler() http.HandlerFunc {
+// agentToolDescriptor is the agent-facing tool shape returned by GET /plugins/tools.
+type agentToolDescriptor struct {
+	Name             string                 `json:"name"`
+	DisplayName      string                 `json:"displayName"`
+	Description      string                 `json:"description"`
+	ParametersSchema map[string]interface{} `json:"parametersSchema"`
+	PluginID         string                 `json:"pluginId"`
+}
+
+// GetPluginToolsHandler lists all plugin-contributed tools extracted from ready
+// plugin manifests. An optional ?pluginId= query parameter restricts results to
+// a single plugin.
+func GetPluginToolsHandler(db *gorm.DB) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
-		notImplemented(w, "Plugin tool dispatch")
+
+		filterPluginID := r.URL.Query().Get("pluginId")
+
+		var plugins []models.Plugin
+		var err error
+		if filterPluginID != "" {
+			p, resolveErr := registry.Resolve(r.Context(), filterPluginID)
+			if resolveErr != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": resolveErr.Error()})
+				return
+			}
+			if p == nil {
+				writeJSON(w, http.StatusOK, []agentToolDescriptor{})
+				return
+			}
+			plugins = []models.Plugin{*p}
+		} else {
+			plugins, err = registry.ListByStatus(r.Context(), "ready")
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+
+		tools := make([]agentToolDescriptor, 0)
+		for _, plugin := range plugins {
+			if plugin.Status != "ready" {
+				continue
+			}
+			manifest := parseManifest(plugin.ManifestJSON)
+			if manifest == nil {
+				continue
+			}
+			rawTools, _ := manifest["tools"].([]interface{})
+			for _, t := range rawTools {
+				toolMap, ok := t.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				name, _ := toolMap["name"].(string)
+				if name == "" {
+					continue
+				}
+				displayName, _ := toolMap["displayName"].(string)
+				if displayName == "" {
+					displayName = name
+				}
+				description, _ := toolMap["description"].(string)
+				schema, _ := toolMap["parametersSchema"].(map[string]interface{})
+				if schema == nil {
+					schema = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+				}
+				tools = append(tools, agentToolDescriptor{
+					Name:             plugin.PluginKey + ":" + name,
+					DisplayName:      displayName,
+					Description:      description,
+					ParametersSchema: schema,
+					PluginID:         plugin.ID,
+				})
+			}
+		}
+		writeJSON(w, http.StatusOK, tools)
 	}
 }
 
 // --------------------------------------------------------------------------
-// POST /plugins/tools/execute  (501 — requires worker manager)
+// POST /plugins/tools/execute
 // --------------------------------------------------------------------------
 
-func ExecutePluginToolHandler() http.HandlerFunc {
+// ExecutePluginToolHandler dispatches a tool-execution call to the appropriate
+// plugin worker via the executeTool RPC method.
+func ExecutePluginToolHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
-		notImplemented(w, "Plugin tool dispatch")
+		if wm == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin tool dispatch is not enabled"})
+			return
+		}
+
+		var body struct {
+			Tool       string                 `json:"tool"`
+			Parameters map[string]interface{} `json:"parameters"`
+			RunContext map[string]interface{} `json:"runContext"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+			return
+		}
+		if body.Tool == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"tool" is required`})
+			return
+		}
+		if body.RunContext == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"runContext" is required`})
+			return
+		}
+
+		// tool format: "pluginKey:toolName"
+		idx := strings.Index(body.Tool, ":")
+		if idx < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"tool" must be in format "pluginKey:toolName"`})
+			return
+		}
+		pluginKey := body.Tool[:idx]
+		toolName := body.Tool[idx+1:]
+
+		plugin, err := registry.Resolve(r.Context(), pluginKey)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if plugin == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Plugin %q not found", pluginKey)})
+			return
+		}
+		if plugin.Status != "ready" {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Plugin is not ready (status: %s)", plugin.Status)})
+			return
+		}
+		if !wm.IsRunning(plugin.ID) {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Worker for plugin %q is not running", pluginKey)})
+			return
+		}
+
+		params := map[string]interface{}{
+			"toolName":   toolName,
+			"parameters": body.Parameters,
+			"runContext": body.RunContext,
+		}
+		raw, callErr := wm.Call(r.Context(), plugin.ID, "executeTool", params, 0)
+		if callErr != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": callErr.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
 	}
 }
 
@@ -835,54 +975,305 @@ func SetPluginConfigHandler(db *gorm.DB, activity *services.ActivityService) htt
 }
 
 // --------------------------------------------------------------------------
-// POST /plugins/:pluginId/config/test  (501 — requires worker manager)
+// POST /plugins/:pluginId/config/test
 // --------------------------------------------------------------------------
 
-func TestPluginConfigHandler() http.HandlerFunc {
+// pluginBridgeError is the standard error envelope for bridge RPC failures.
+type pluginBridgeError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// TestPluginConfigHandler validates a plugin configuration by forwarding it to
+// the plugin worker's validateConfig RPC method.
+func TestPluginConfigHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
-		notImplemented(w, "Plugin config testing (requires worker manager)")
+		if wm == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin bridge is not enabled"})
+			return
+		}
+
+		pluginID := chi.URLParam(r, "pluginId")
+		plugin, err := resolvePlugin(registry, r, pluginID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if plugin == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Plugin not found"})
+			return
+		}
+		if plugin.Status != "ready" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("Plugin is not ready (current status: %s)", plugin.Status),
+			})
+			return
+		}
+
+		var body struct {
+			ConfigJSON map[string]interface{} `json:"configJson"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ConfigJSON == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"configJson" is required and must be an object`})
+			return
+		}
+
+		// Check if the worker supports validateConfig.
+		handle := wm.GetWorker(plugin.ID)
+		if handle != nil && !handle.SupportsMethod("validateConfig") {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"valid":     false,
+				"supported": false,
+				"message":   "This plugin does not support configuration testing.",
+			})
+			return
+		}
+
+		params := map[string]interface{}{"config": body.ConfigJSON}
+		raw, callErr := wm.Call(r.Context(), plugin.ID, "validateConfig", params, 30*time.Second)
+		if callErr != nil {
+			writeJSON(w, http.StatusBadGateway, pluginBridgeError{Code: "WORKER_UNAVAILABLE", Message: callErr.Error()})
+			return
+		}
+
+		var result struct {
+			OK       bool     `json:"ok"`
+			Warnings []string `json:"warnings"`
+			Errors   []string `json:"errors"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Invalid response from worker"})
+			return
+		}
+		if result.OK {
+			resp := map[string]interface{}{"valid": true}
+			if len(result.Warnings) > 0 {
+				resp["message"] = "Warnings: " + strings.Join(result.Warnings, "; ")
+			}
+			writeJSON(w, http.StatusOK, resp)
+		} else {
+			msg := "Configuration validation failed."
+			if len(result.Errors) > 0 {
+				msg = strings.Join(result.Errors, "; ")
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{"valid": false, "message": msg})
+		}
 	}
 }
 
 // --------------------------------------------------------------------------
-// POST /plugins/:pluginId/bridge/data  (501)
-// POST /plugins/:pluginId/bridge/action  (501)
-// POST /plugins/:pluginId/data/:key  (501)
-// POST /plugins/:pluginId/actions/:key  (501)
-// GET  /plugins/:pluginId/bridge/stream/:channel  (501)
+// POST /plugins/:pluginId/bridge/data
+// POST /plugins/:pluginId/bridge/action
+// POST /plugins/:pluginId/data/:key
+// POST /plugins/:pluginId/actions/:key
+// GET  /plugins/:pluginId/bridge/stream/:channel
 // --------------------------------------------------------------------------
 
-func PluginBridgeDataHandler() http.HandlerFunc {
+// PluginBridgeDataHandler proxies a getData call from the UI to the plugin worker.
+func PluginBridgeDataHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		notImplemented(w, "Plugin bridge getData (requires worker manager)")
+		if wm == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin bridge is not enabled"})
+			return
+		}
+		pluginID := chi.URLParam(r, "pluginId")
+		plugin, bridgeErr, status := resolvePluginForBridge(registry, r, pluginID)
+		if bridgeErr != nil {
+			writeJSON(w, status, bridgeErr)
+			return
+		}
+
+		var body struct {
+			Key               string                 `json:"key"`
+			CompanyID         string                 `json:"companyId"`
+			Params            map[string]interface{} `json:"params"`
+			RenderEnvironment interface{}            `json:"renderEnvironment"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Key == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"key" is required and must be a string`})
+			return
+		}
+
+		params := map[string]interface{}{
+			"key":               body.Key,
+			"params":            orEmptyMap(body.Params),
+			"renderEnvironment": body.RenderEnvironment,
+		}
+		proxyBridgeCall(w, r.Context(), wm, plugin.ID, "getData", params)
 	}
 }
 
-func PluginBridgeActionHandler() http.HandlerFunc {
+// PluginBridgeActionHandler proxies a performAction call from the UI to the plugin worker.
+func PluginBridgeActionHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		notImplemented(w, "Plugin bridge performAction (requires worker manager)")
+		if wm == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin bridge is not enabled"})
+			return
+		}
+		pluginID := chi.URLParam(r, "pluginId")
+		plugin, bridgeErr, status := resolvePluginForBridge(registry, r, pluginID)
+		if bridgeErr != nil {
+			writeJSON(w, status, bridgeErr)
+			return
+		}
+
+		var body struct {
+			Key               string                 `json:"key"`
+			CompanyID         string                 `json:"companyId"`
+			Params            map[string]interface{} `json:"params"`
+			RenderEnvironment interface{}            `json:"renderEnvironment"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Key == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"key" is required and must be a string`})
+			return
+		}
+
+		params := map[string]interface{}{
+			"key":               body.Key,
+			"params":            orEmptyMap(body.Params),
+			"renderEnvironment": body.RenderEnvironment,
+		}
+		proxyBridgeCall(w, r.Context(), wm, plugin.ID, "performAction", params)
 	}
 }
 
-func PluginDataByKeyHandler() http.HandlerFunc {
+// PluginDataByKeyHandler proxies a getData call with the key as a URL parameter.
+func PluginDataByKeyHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		notImplemented(w, "Plugin getData by key (requires worker manager)")
+		if wm == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin bridge is not enabled"})
+			return
+		}
+		pluginID := chi.URLParam(r, "pluginId")
+		key := chi.URLParam(r, "key")
+		plugin, bridgeErr, status := resolvePluginForBridge(registry, r, pluginID)
+		if bridgeErr != nil {
+			writeJSON(w, status, bridgeErr)
+			return
+		}
+
+		var body struct {
+			CompanyID         string                 `json:"companyId"`
+			Params            map[string]interface{} `json:"params"`
+			RenderEnvironment interface{}            `json:"renderEnvironment"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		params := map[string]interface{}{
+			"key":               key,
+			"params":            orEmptyMap(body.Params),
+			"renderEnvironment": body.RenderEnvironment,
+		}
+		proxyBridgeCall(w, r.Context(), wm, plugin.ID, "getData", params)
 	}
 }
 
-func PluginActionByKeyHandler() http.HandlerFunc {
+// PluginActionByKeyHandler proxies a performAction call with the key as a URL parameter.
+func PluginActionByKeyHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		notImplemented(w, "Plugin performAction by key (requires worker manager)")
+		if wm == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin bridge is not enabled"})
+			return
+		}
+		pluginID := chi.URLParam(r, "pluginId")
+		key := chi.URLParam(r, "key")
+		plugin, bridgeErr, status := resolvePluginForBridge(registry, r, pluginID)
+		if bridgeErr != nil {
+			writeJSON(w, status, bridgeErr)
+			return
+		}
+
+		var body struct {
+			CompanyID         string                 `json:"companyId"`
+			Params            map[string]interface{} `json:"params"`
+			RenderEnvironment interface{}            `json:"renderEnvironment"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		params := map[string]interface{}{
+			"key":               key,
+			"params":            orEmptyMap(body.Params),
+			"renderEnvironment": body.RenderEnvironment,
+		}
+		proxyBridgeCall(w, r.Context(), wm, plugin.ID, "performAction", params)
 	}
 }
 
-func PluginBridgeStreamHandler() http.HandlerFunc {
+// PluginBridgeStreamHandler is an SSE endpoint that fans out stream events from
+// the plugin worker to the connected UI client.
+func PluginBridgeStreamHandler(db *gorm.DB, wm *services.PluginWorkerManager, streamBus *services.PluginStreamBus) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		notImplemented(w, "Plugin SSE stream bridge (requires worker manager)")
+		if err := AssertBoard(r); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
+		if wm == nil || streamBus == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin stream bridge is not enabled"})
+			return
+		}
+
+		pluginID := chi.URLParam(r, "pluginId")
+		channel := chi.URLParam(r, "channel")
+		companyID := r.URL.Query().Get("companyId")
+		if companyID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"companyId" query parameter is required`})
+			return
+		}
+
+		plugin, err := resolvePlugin(registry, r, pluginID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if plugin == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Plugin not found"})
+			return
+		}
+
+		// Set SSE response headers.
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		// Send initial connection comment.
+		_, _ = fmt.Fprint(w, ":ok\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		ctx := r.Context()
+		unsubscribe := streamBus.Subscribe(plugin.ID, channel, companyID, func(event interface{}, eventType services.StreamEventType) {
+			eventJSON, err := json.Marshal(event)
+			if err != nil {
+				return
+			}
+			if eventType != services.StreamEventMessage {
+				_, _ = fmt.Fprintf(w, "event: %s\n", string(eventType))
+			}
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(eventJSON))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		})
+		defer unsubscribe()
+
+		// Block until client disconnects.
+		<-ctx.Done()
 	}
 }
 
@@ -991,16 +1382,107 @@ func GetPluginJobRunsHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 // --------------------------------------------------------------------------
-// POST /plugins/:pluginId/jobs/:jobId/trigger  (501 — requires job scheduler)
+// POST /plugins/:pluginId/jobs/:jobId/trigger
 // --------------------------------------------------------------------------
 
-func TriggerPluginJobHandler() http.HandlerFunc {
+// TriggerPluginJobHandler manually triggers a plugin job outside its cron schedule.
+// It creates a run record with trigger="manual" and dispatches via the runJob RPC.
+func TriggerPluginJobHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
-		notImplemented(w, "Plugin job trigger (requires job scheduler)")
+		if wm == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Job scheduling is not enabled"})
+			return
+		}
+
+		pluginID := chi.URLParam(r, "pluginId")
+		jobID := chi.URLParam(r, "jobId")
+
+		plugin, err := resolvePlugin(registry, r, pluginID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if plugin == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Plugin not found"})
+			return
+		}
+
+		job, err := registry.GetJobByIDForPlugin(r.Context(), plugin.ID, jobID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if job == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Job not found"})
+			return
+		}
+
+		if !wm.IsRunning(plugin.ID) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("Worker for plugin %q is not running — cannot trigger job", plugin.PluginKey),
+			})
+			return
+		}
+
+		// Create a job run record.
+		run := models.PluginJobRun{
+			JobID:    job.ID,
+			PluginID: plugin.ID,
+			Trigger:  "manual",
+			Status:   "pending",
+		}
+		if err := db.WithContext(r.Context()).Create(&run).Error; err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+
+		// Dispatch to worker in the background — mirrors TypeScript's dispatchManualRun.
+		runID := run.ID
+		pluginID2 := plugin.ID
+		jobCopy := *job
+		go func() {
+			bgCtx, bgCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer bgCancel()
+
+			startedAt := time.Now()
+			db.WithContext(bgCtx).Model(&models.PluginJobRun{}).Where("id = ?", runID).Updates(map[string]interface{}{
+				"status":     "running",
+				"started_at": startedAt,
+			})
+
+			params := map[string]interface{}{
+				"jobId":       jobCopy.ID,
+				"jobKey":      jobCopy.JobKey,
+				"trigger":     "manual",
+				"scheduledAt": startedAt.UTC().Format(time.RFC3339),
+			}
+			_, runErr := wm.Call(bgCtx, pluginID2, "runJob", params, 5*time.Minute)
+
+			finishedAt := time.Now()
+			durationMs := int(finishedAt.Sub(startedAt).Milliseconds())
+			updates := map[string]interface{}{
+				"finished_at": finishedAt,
+				"duration_ms": durationMs,
+			}
+			if runErr != nil {
+				errMsg := runErr.Error()
+				updates["status"] = "failed"
+				updates["error"] = errMsg
+			} else {
+				updates["status"] = "completed"
+			}
+			db.WithContext(bgCtx).Model(&models.PluginJobRun{}).Where("id = ?", runID).Updates(updates)
+		}()
+
+		writeJSON(w, http.StatusOK, map[string]string{
+			"runId": run.ID,
+			"jobId": job.ID,
+		})
 	}
 }
 
@@ -1173,3 +1655,56 @@ func GetPluginDashboardHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+
+// --------------------------------------------------------------------------
+// Bridge helpers (shared by the bridge/data, bridge/action, data/:key, actions/:key)
+// --------------------------------------------------------------------------
+
+// resolvePluginForBridge resolves a plugin and validates it is ready for bridge calls.
+// Returns (plugin, errorBody, statusCode) — if errorBody is non-nil the caller should
+// write it and return.
+func resolvePluginForBridge(
+registry *services.PluginRegistryService,
+r *http.Request,
+pluginID string,
+) (*models.Plugin, interface{}, int) {
+plugin, err := registry.Resolve(r.Context(), pluginID)
+if err != nil {
+return nil, map[string]string{"error": err.Error()}, http.StatusInternalServerError
+}
+if plugin == nil {
+return nil, map[string]string{"error": "Plugin not found"}, http.StatusNotFound
+}
+if plugin.Status != "ready" {
+return nil, pluginBridgeError{
+Code:    "WORKER_UNAVAILABLE",
+Message: fmt.Sprintf("Plugin is not ready (current status: %s)", plugin.Status),
+}, http.StatusBadGateway
+}
+return plugin, nil, 0
+}
+
+// proxyBridgeCall calls the given RPC method on the plugin worker and writes the
+// result as { data: <result> } or a bridge-error envelope on failure.
+func proxyBridgeCall(w http.ResponseWriter, ctx context.Context, wm *services.PluginWorkerManager, pluginID, method string, params map[string]interface{}) {
+raw, err := wm.Call(ctx, pluginID, method, params, 30*time.Second)
+if err != nil {
+writeJSON(w, http.StatusBadGateway, pluginBridgeError{
+Code:    "WORKER_UNAVAILABLE",
+Message: err.Error(),
+})
+return
+}
+// Wrap result in { data: ... }
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusOK)
+_, _ = fmt.Fprintf(w, `{"data":%s}`, string(raw))
+}
+
+// orEmptyMap returns m if non-nil, otherwise an empty map.
+func orEmptyMap(m map[string]interface{}) map[string]interface{} {
+if m != nil {
+return m
+}
+return map[string]interface{}{}
+}
