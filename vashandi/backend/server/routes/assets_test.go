@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
-	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -18,7 +18,8 @@ import (
 
 func setupAssetsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dbURI := "file:assets_" + url.QueryEscape(t.Name()) + "?mode=memory&cache=shared"
+	sanitizedName := strings.NewReplacer("/", "_", " ", "_", ":", "_").Replace(t.Name())
+	dbURI := "file:assets_" + sanitizedName + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dbURI), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)

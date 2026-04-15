@@ -69,7 +69,7 @@ func attachmentDisposition(contentType string) string {
 
 func sanitizeAttachmentFilename(name string) string {
 	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || r == '\\' {
+		if r < 0x20 || r == 0x7f || r == '\\' || r == '"' || r == '\'' {
 			return -1
 		}
 		return r
