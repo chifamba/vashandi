@@ -23,6 +23,7 @@ type App struct {
 	Router     *chi.Mux
 	DB         *gorm.DB
 	Heartbeat  *services.HeartbeatService
+	Scheduler  *services.RoutineSchedulerService
 	LiveEvents *realtime.Hub
 }
 
@@ -39,6 +40,9 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	routerOpts.Hub = hub
 	heartbeatSvc.Notify = hub.Publish
 
+	issueSvc := services.NewIssueService(db, activitySvc)
+	schedulerSvc := services.NewRoutineSchedulerService(db, heartbeatSvc, issueSvc, activitySvc)
+
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
 	
 	r.Use(cors.Handler(cors.Options{
@@ -54,6 +58,7 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 		Router:     r,
 		DB:         db,
 		Heartbeat:  heartbeatSvc,
+		Scheduler:  schedulerSvc,
 		LiveEvents: hub,
 	}
 }
@@ -110,6 +115,12 @@ func Run() {
 		if err := app.Heartbeat.ReapOrphanedRuns(context.Background()); err != nil {
 			slog.Error("Startup recovery failed", "error", err)
 		}
+	}
+
+	// Start the routine cron scheduler.
+	if app.Scheduler != nil {
+		slog.Info("Starting routine cron scheduler")
+		services.StartRoutineScheduler(context.Background(), app.Scheduler, 60_000)
 	}
 
 	if err := app.Start(cfg.Server.Port); err != nil {

@@ -69,3 +69,29 @@ type Routine struct {
 func (Routine) TableName() string {
 	return "routines"
 }
+
+type RoutineRun struct {
+	ID                 string         `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	CompanyID          string         `gorm:"column:company_id;type:uuid;not null;index:routine_runs_company_routine_idx"`
+	RoutineID          string         `gorm:"column:routine_id;type:uuid;not null;index:routine_runs_company_routine_idx"`
+	TriggerID          *string        `gorm:"column:trigger_id;type:uuid;index:routine_runs_trigger_idx;index:routine_runs_trigger_idempotency_idx"`
+	Source             string         `gorm:"column:source;not null"`
+	Status             string         `gorm:"column:status;not null;default:received"`
+	TriggeredAt        time.Time      `gorm:"column:triggered_at;type:timestamptz;not null;default:now()"`
+	IdempotencyKey     *string        `gorm:"column:idempotency_key;index:routine_runs_trigger_idempotency_idx"`
+	TriggerPayload     datatypes.JSON `gorm:"column:trigger_payload;type:jsonb"`
+	LinkedIssueID      *string        `gorm:"column:linked_issue_id;type:uuid;index:routine_runs_linked_issue_idx"`
+	CoalescedIntoRunID *string        `gorm:"column:coalesced_into_run_id;type:uuid"`
+	FailureReason      *string        `gorm:"column:failure_reason"`
+	CompletedAt        *time.Time     `gorm:"column:completed_at;type:timestamptz"`
+	CreatedAt          time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
+	UpdatedAt          time.Time      `gorm:"column:updated_at;type:timestamptz;not null;default:now()"`
+
+	Company Company        `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
+	Routine Routine        `gorm:"foreignKey:RoutineID;constraint:OnDelete:CASCADE"`
+	Trigger *RoutineTrigger `gorm:"foreignKey:TriggerID;constraint:OnDelete:SET NULL"`
+}
+
+func (RoutineRun) TableName() string {
+	return "routine_runs"
+}
