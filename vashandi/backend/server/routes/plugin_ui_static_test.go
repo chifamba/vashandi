@@ -206,4 +206,7 @@ func TestPluginUIStaticHandler_UsesImmutableCachingForContentHashedAssets(t *tes
 	if got := w.Header().Get("ETag"); got != "" {
 		t.Fatalf("expected no ETag for immutable asset, got %q", got)
 	}
+	if body := strings.TrimSpace(w.Body.String()); body != `console.log("hashed")` {
+		t.Fatalf("unexpected body %q", body)
+	}
 }

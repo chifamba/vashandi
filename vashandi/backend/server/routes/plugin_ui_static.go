@@ -1,10 +1,9 @@
 package routes
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -116,9 +115,6 @@ func PluginUIStaticHandler(db *gorm.DB) http.HandlerFunc {
 
 		ext := strings.ToLower(filepath.Ext(realFilePath))
 		contentType := pluginAssetContentTypes[ext]
-		if contentType == "" {
-			contentType = mime.TypeByExtension(ext)
-		}
 		if contentType != "" {
 			w.Header().Set("Content-Type", contentType)
 		}
@@ -135,6 +131,7 @@ func PluginUIStaticHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// pluginUIEntrypoint extracts the manifest entrypoints.ui path when present.
 func pluginUIEntrypoint(manifestJSON []byte) (string, bool) {
 	if len(manifestJSON) == 0 {
 		return "", false
@@ -156,6 +153,7 @@ func pluginUIEntrypoint(manifestJSON []byte) (string, bool) {
 	return uiValue, true
 }
 
+// resolvePluginUIDir resolves the declared UI directory and keeps it inside the package root.
 func resolvePluginUIDir(packagePath string, uiEntrypoint string) (string, error) {
 	root := filepath.Clean(packagePath)
 	resolved := filepath.Clean(filepath.Join(root, filepath.FromSlash(uiEntrypoint)))
@@ -171,7 +169,9 @@ func resolvePluginUIDir(packagePath string, uiEntrypoint string) (string, error)
 	return resolved, nil
 }
 
+// computePluginAssetETag builds a short versioned ETag from file size and modification time.
+// The v2 prefix lets us rotate the format if the cache key inputs ever change.
 func computePluginAssetETag(size int64, mtimeMs int64) string {
-	sum := md5.Sum([]byte(fmt.Sprintf("v2:%d-%d", size, mtimeMs)))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("v2:%d-%d", size, mtimeMs)))
 	return fmt.Sprintf(`"%x"`, sum[:8])
 }
