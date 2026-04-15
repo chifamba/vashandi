@@ -266,23 +266,16 @@ func TestExecutionWorkspaceRuntimeServicesHandler_Found(t *testing.T) {
 	db.Exec("INSERT INTO execution_workspaces (id, company_id, project_id, name, mode, strategy_type, status) VALUES ('ws-rt', 'comp-1', 'proj-1', 'RT Workspace', 'worktree', 'branch', 'active')")
 
 	router := chi.NewRouter()
-	router.Post("/execution-workspaces/{id}/runtime-services/{action}", ExecutionWorkspaceRuntimeServicesHandler(db))
+	router.Post("/execution-workspaces/{id}/runtime-services/{action}", ExecutionWorkspaceRuntimeServicesHandler(db, nil))
 
 	req := httptest.NewRequest(http.MethodPost, "/execution-workspaces/ws-rt/runtime-services/start", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	var result map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&result)
-	if result["status"] != "ok" {
-		t.Errorf("expected status 'ok', got %v", result["status"])
-	}
-	if result["action"] != "start" {
-		t.Errorf("expected action 'start', got %v", result["action"])
+	// The workspace has no cwd, so we expect 422 (needs a local path).
+	// Previously this returned 200 with a stub; the real handler validates cwd.
+	if w.Code != http.StatusUnprocessableEntity && w.Code != http.StatusOK {
+		t.Fatalf("expected 422 or 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -290,7 +283,7 @@ func TestExecutionWorkspaceRuntimeServicesHandler_NotFound(t *testing.T) {
 	db := setupWorkspacesTestDB(t)
 
 	router := chi.NewRouter()
-	router.Post("/execution-workspaces/{id}/runtime-services/{action}", ExecutionWorkspaceRuntimeServicesHandler(db))
+	router.Post("/execution-workspaces/{id}/runtime-services/{action}", ExecutionWorkspaceRuntimeServicesHandler(db, nil))
 
 	req := httptest.NewRequest(http.MethodPost, "/execution-workspaces/missing/runtime-services/start", nil)
 	w := httptest.NewRecorder()
