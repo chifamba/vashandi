@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
 	github.com/aws/smithy-go v1.24.2
 	github.com/chifamba/vashandi/vashandi/backend/db v0.0.0-20260414011212-34c73c8a303c
-	github.com/chifamba/vashandi/vashandi/backend/shared v0.0.0-20260414011212-34c73c8a303c
+	github.com/chifamba/vashandi/vashandi/backend/shared v0.0.0-20260415201538-53513390dbe8
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
 	github.com/google/uuid v1.6.0

@@ -22,6 +22,7 @@ builtin := []map[string]string{
 {"type": "cursor", "name": "Cursor"},
 {"type": "windsurf", "name": "Windsurf"},
 {"type": "aider", "name": "Aider"},
+{"type": "opencode_local", "name": "OpenCode (local)"},
 }
 
 var plugins []models.Plugin

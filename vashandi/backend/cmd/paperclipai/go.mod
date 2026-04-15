@@ -14,7 +14,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
-	github.com/chifamba/vashandi/vashandi/backend/shared v0.0.0-20260414011212-34c73c8a303c // indirect
+	github.com/chifamba/vashandi/vashandi/backend/shared v0.0.0-20260415201538-53513390dbe8 // indirect
 	github.com/go-chi/chi/v5 v5.2.5 // indirect
 	github.com/go-chi/cors v1.2.2 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
