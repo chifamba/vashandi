@@ -3,7 +3,9 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -202,55 +204,138 @@ func ArchiveCompanyHandler(db *gorm.DB, memory services.MemoryAdapter) http.Hand
 	}
 }
 
+// assertCanManagePortability checks that the request actor may manage portability
+// for the given company. Board users are always allowed. Agent actors must be
+// CEO agents scoped to the same company.
+func assertCanManagePortability(r *http.Request, db *gorm.DB, companyID, capability string) error {
+	actor := GetActorInfo(r)
+	if !actor.IsAgent {
+		// Board / system access
+		if err := AssertBoard(r); err != nil {
+			return err
+		}
+		return nil
+	}
+	if actor.AgentID == "" {
+		return fmt.Errorf("agent authentication required")
+	}
+	var agent models.Agent
+	if err := db.WithContext(r.Context()).First(&agent, "id = ?", actor.AgentID).Error; err != nil {
+		return fmt.Errorf("agent not found")
+	}
+	if agent.CompanyID != companyID {
+		return fmt.Errorf("agent key cannot access another company")
+	}
+	if !strings.EqualFold(strings.TrimSpace(agent.Role), "ceo") {
+		return fmt.Errorf("only CEO agents can manage company %s", capability)
+	}
+	return nil
+}
+
 // PreviewExportCompanyHandler — POST /companies/:companyId/exports/preview
-// Stub: company export preview not yet implemented in the Go backend.
-func PreviewExportCompanyHandler() http.HandlerFunc {
+func PreviewExportCompanyHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewPortabilityService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		if err := assertCanManagePortability(r, db, companyID, "exports"); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		var req services.ExportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		result, err := svc.PreviewExport(r.Context(), companyID, req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "export_preview_not_implemented",
-			"message": "Company export preview is not yet available in the Go backend",
-		})
+		json.NewEncoder(w).Encode(result)
 	}
 }
 
 // ExportCompanyHandler — POST /companies/:companyId/exports
-// Stub: company export not yet implemented in the Go backend.
-func ExportCompanyHandler() http.HandlerFunc {
+func ExportCompanyHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewPortabilityService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		if err := assertCanManagePortability(r, db, companyID, "exports"); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		var req services.ExportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		result, err := svc.ExportBundle(r.Context(), companyID, req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "export_not_implemented",
-			"message": "Company export is not yet available in the Go backend",
-		})
+		json.NewEncoder(w).Encode(result)
 	}
 }
 
 // PreviewImportCompanyHandler — POST /companies/:companyId/imports/preview
-// Stub: company import preview not yet implemented in the Go backend.
-func PreviewImportCompanyHandler() http.HandlerFunc {
+func PreviewImportCompanyHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewPortabilityService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		if err := assertCanManagePortability(r, db, companyID, "imports"); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		var req services.ImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		actor := GetActorInfo(r)
+		mode := services.ImportModeBoardFull
+		if actor.IsAgent {
+			mode = services.ImportModeAgentSafe
+		}
+		result, err := svc.PreviewImport(r.Context(), req, mode)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "import_preview_not_implemented",
-			"message": "Company import preview is not yet available in the Go backend",
-		})
+		json.NewEncoder(w).Encode(result)
 	}
 }
 
 // ImportCompanyHandler — POST /companies/:companyId/imports/apply
-// Stub: company import not yet implemented in the Go backend.
-func ImportCompanyHandler() http.HandlerFunc {
+func ImportCompanyHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewPortabilityService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		if err := assertCanManagePortability(r, db, companyID, "imports"); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		var req services.ImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		actor := GetActorInfo(r)
+		mode := services.ImportModeBoardFull
+		if actor.IsAgent {
+			mode = services.ImportModeAgentSafe
+		}
+		actorUserID := actor.UserID
+		result, err := svc.ImportBundle(r.Context(), req, actorUserID, mode)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "import_not_implemented",
-			"message": "Company import is not yet available in the Go backend",
-		})
+		json.NewEncoder(w).Encode(result)
 	}
 }
 
