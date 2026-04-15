@@ -14,23 +14,27 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/chifamba/vashandi/vashandi/backend/server/realtime"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
 )
 
 type App struct {
-	Router    *chi.Mux
-	DB        *gorm.DB
-	Heartbeat *services.HeartbeatService
+	Router     *chi.Mux
+	DB         *gorm.DB
+	Heartbeat  *services.HeartbeatService
+	LiveEvents *realtime.Hub
 }
 
-func NewApp(db *gorm.DB) *App {
+func NewApp(db *gorm.DB, deploymentMode string) *App {
 	activitySvc := services.NewActivityService(db)
 	secretsSvc := services.NewSecretService(db, activitySvc)
 	opsSvc := services.NewWorkspaceOperationService(db)
 	heartbeatSvc := services.NewHeartbeatService(db, secretsSvc, activitySvc, opsSvc, nil, nil)
 
-	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc)
+	hub := realtime.NewHub()
+
+	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, hub, deploymentMode)
 	
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
@@ -42,9 +46,10 @@ func NewApp(db *gorm.DB) *App {
 	}))
 
 	return &App{
-		Router:    r,
-		DB:        db,
-		Heartbeat: heartbeatSvc,
+		Router:     r,
+		DB:         db,
+		Heartbeat:  heartbeatSvc,
+		LiveEvents: hub,
 	}
 }
 
@@ -92,7 +97,7 @@ func Run() {
 		os.Exit(1)
 	}
 
-	app := NewApp(db)
+	app := NewApp(db, cfg.Server.DeploymentMode)
 
 	// Startup Recovery
 	if app.Heartbeat != nil {
