@@ -13,10 +13,11 @@ const actorKey actorContextKey = "actor"
 
 // ActorInfo carries identity information set by the auth middleware.
 type ActorInfo struct {
-	UserID   string
-	AgentID  string
-	IsSystem bool
-	IsAgent  bool
+	UserID          string
+	AgentID         string
+	IsSystem        bool
+	IsAgent         bool
+	IsInstanceAdmin bool
 	// ActorType is one of "user", "agent", "system", "board"
 	ActorType string
 }
@@ -67,7 +68,20 @@ func AssertBoard(r *http.Request) error {
 // AssertInstanceAdmin returns an error unless the actor holds instance-admin rights.
 // In the current stub implementation, any board actor is treated as an instance admin.
 func AssertInstanceAdmin(r *http.Request) error {
-	return AssertBoard(r)
+	actor := GetActorInfo(r)
+	if actor.IsSystem {
+		return nil
+	}
+	if actor.IsAgent {
+		return fmt.Errorf("instance admin access required: got agent actor")
+	}
+	if actor.UserID == "" {
+		return fmt.Errorf("unauthenticated: no actor identity found")
+	}
+	if !actor.IsInstanceAdmin {
+		return fmt.Errorf("instance admin access required")
+	}
+	return nil
 }
 
 // AssertCompanyAccess returns an error unless the actor has access to the given company.

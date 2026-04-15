@@ -322,6 +322,10 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Patch("/settings/general", routes.UpdateGeneralSettingsHandler(db))
 		api.Get("/settings/experimental", routes.GetExperimentalSettingsHandler(db))
 		api.Patch("/settings/experimental", routes.UpdateExperimentalSettingsHandler(db))
+		api.Get("/instance/settings/general", routes.GetGeneralSettingsHandler(db))
+		api.Patch("/instance/settings/general", routes.UpdateGeneralSettingsHandler(db))
+		api.Get("/instance/settings/experimental", routes.GetExperimentalSettingsHandler(db))
+		api.Patch("/instance/settings/experimental", routes.UpdateExperimentalSettingsHandler(db))
 
 		// LLM Routes
 		api.Get("/llms/configuration", routes.ListAgentConfigurationHandler())

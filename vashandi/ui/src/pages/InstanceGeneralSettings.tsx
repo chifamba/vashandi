@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { PatchInstanceGeneralSettings, BackupRetentionPolicy } from "@paperclipai/shared";
+import {
+  storageConfigSchema,
+  type BackupRetentionPolicy,
+  type StorageConfig,
+} from "@paperclipai/shared";
 import {
   DAILY_RETENTION_PRESETS,
   WEEKLY_RETENTION_PRESETS,
@@ -17,11 +21,13 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { cn } from "../lib/utils";
 
 const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
+const DEFAULT_STORAGE_SETTINGS = storageConfigSchema.parse({});
 
 export function InstanceGeneralSettings() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [storageDraft, setStorageDraft] = useState<StorageConfig>(DEFAULT_STORAGE_SETTINGS);
 
   const signOutMutation = useMutation({
     mutationFn: () => authApi.signOut(),
@@ -44,6 +50,11 @@ export function InstanceGeneralSettings() {
     queryKey: queryKeys.instance.generalSettings,
     queryFn: () => instanceSettingsApi.getGeneral(),
   });
+
+  useEffect(() => {
+    if (!generalQuery.data) return;
+    setStorageDraft(generalQuery.data.storage ?? DEFAULT_STORAGE_SETTINGS);
+  }, [generalQuery.data]);
 
   const updateGeneralMutation = useMutation({
     mutationFn: instanceSettingsApi.updateGeneral,
@@ -74,6 +85,7 @@ export function InstanceGeneralSettings() {
   const keyboardShortcuts = generalQuery.data?.keyboardShortcuts === true;
   const feedbackDataSharingPreference = generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
   const backupRetention: BackupRetentionPolicy = generalQuery.data?.backupRetention ?? DEFAULT_BACKUP_RETENTION;
+  const saveStorageSettings = () => updateGeneralMutation.mutate({ storage: storageDraft });
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -228,6 +240,140 @@ export function InstanceGeneralSettings() {
                 );
               })}
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Asset storage</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Choose where uploaded assets and attachments are stored for this instance.
+            </p>
+          </div>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Provider</span>
+            <select
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={storageDraft.provider}
+              onChange={(event) =>
+                setStorageDraft((current) => ({ ...current, provider: event.target.value as StorageConfig["provider"] }))
+              }
+              disabled={updateGeneralMutation.isPending}
+            >
+              <option value="local_disk">Local disk</option>
+              <option value="s3">S3-compatible</option>
+            </select>
+          </label>
+
+          {storageDraft.provider === "local_disk" ? (
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Base directory</span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={storageDraft.localDisk.baseDir}
+                onChange={(event) =>
+                  setStorageDraft((current) => ({
+                    ...current,
+                    localDisk: { ...current.localDisk, baseDir: event.target.value },
+                  }))
+                }
+                disabled={updateGeneralMutation.isPending}
+              />
+            </label>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bucket</span>
+                <input
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={storageDraft.s3.bucket}
+                  onChange={(event) =>
+                    setStorageDraft((current) => ({
+                      ...current,
+                      s3: { ...current.s3, bucket: event.target.value },
+                    }))
+                  }
+                  disabled={updateGeneralMutation.isPending}
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Region</span>
+                <input
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={storageDraft.s3.region}
+                  onChange={(event) =>
+                    setStorageDraft((current) => ({
+                      ...current,
+                      s3: { ...current.s3, region: event.target.value },
+                    }))
+                  }
+                  disabled={updateGeneralMutation.isPending}
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Endpoint</span>
+                <input
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={storageDraft.s3.endpoint ?? ""}
+                  onChange={(event) =>
+                    setStorageDraft((current) => ({
+                      ...current,
+                      s3: { ...current.s3, endpoint: event.target.value || undefined },
+                    }))
+                  }
+                  disabled={updateGeneralMutation.isPending}
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Prefix</span>
+                <input
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={storageDraft.s3.prefix}
+                  onChange={(event) =>
+                    setStorageDraft((current) => ({
+                      ...current,
+                      s3: { ...current.s3, prefix: event.target.value },
+                    }))
+                  }
+                  disabled={updateGeneralMutation.isPending}
+                />
+              </label>
+              <div className="md:col-span-2">
+                <div className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-3">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium">Force path-style requests</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Enable this for MinIO and other S3-compatible endpoints that do not support virtual-hosted buckets.
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={storageDraft.s3.forcePathStyle}
+                    onCheckedChange={() =>
+                      setStorageDraft((current) => ({
+                        ...current,
+                        s3: { ...current.s3, forcePathStyle: !current.s3.forcePathStyle },
+                      }))
+                    }
+                    disabled={updateGeneralMutation.isPending}
+                    aria-label="Toggle S3 path-style requests"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={updateGeneralMutation.isPending}
+              onClick={saveStorageSettings}
+            >
+              Save storage settings
+            </Button>
           </div>
         </div>
       </section>
