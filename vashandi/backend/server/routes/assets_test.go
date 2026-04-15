@@ -180,7 +180,7 @@ func TestGetAttachmentContentHandler_Found(t *testing.T) {
 	if got := w.Header().Get("Content-Type"); got != "text/plain" {
 		t.Fatalf("expected content type text/plain, got %q", got)
 	}
-	if got := w.Header().Get("Content-Disposition"); got != `attachment; filename="attachment"` {
+	if got := w.Header().Get("Content-Disposition"); got != `attachment; filename="attachment"` && got != "attachment; filename=attachment" {
 		t.Fatalf("expected attachment disposition, got %q", got)
 	}
 	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
@@ -358,7 +358,7 @@ func TestGetAttachmentContentHandler_HTMLDownloadSetsNosniff(t *testing.T) {
 	if got := w.Header().Get("Content-Type"); got != "text/html" {
 		t.Fatalf("expected text/html, got %q", got)
 	}
-	if got := w.Header().Get("Content-Disposition"); got != `attachment; filename="report.html"` {
+	if got := w.Header().Get("Content-Disposition"); got != `attachment; filename="report.html"` && got != "attachment; filename=report.html" {
 		t.Fatalf("expected attachment content disposition, got %q", got)
 	}
 	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
@@ -381,7 +381,7 @@ func TestGetAttachmentContentHandler_ImageStaysInline(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if got := w.Header().Get("Content-Disposition"); got != `inline; filename="preview.png"` {
+	if got := w.Header().Get("Content-Disposition"); got != `inline; filename="preview.png"` && got != "inline; filename=preview.png" {
 		t.Fatalf("expected inline content disposition, got %q", got)
 	}
 }

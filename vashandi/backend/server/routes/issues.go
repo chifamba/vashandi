@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -68,12 +69,25 @@ func attachmentDisposition(contentType string) string {
 
 func sanitizeAttachmentFilename(name string) string {
 	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || r == 0x7f || r == '\\' {
 			return -1
 		}
 		return r
 	}, name)
-	return strings.ReplaceAll(name, `"`, "")
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "attachment"
+	}
+	return name
+}
+
+func buildAttachmentContentDisposition(disposition, filename string) string {
+	if value := mime.FormatMediaType(disposition, map[string]string{
+		"filename": sanitizeAttachmentFilename(filename),
+	}); value != "" {
+		return value
+	}
+	return disposition
 }
 
 // IssueRoutes handles HTTP requests for issues
@@ -857,6 +871,10 @@ func UploadIssueAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 		issueID := chi.URLParam(r, "issueId")
 		var issue models.Issue
 		if err := db.WithContext(r.Context()).First(&issue, "id = ?", issueID).Error; err != nil {
+			if err != gorm.ErrRecordNotFound {
+				http.Error(w, "Failed to load issue", http.StatusInternalServerError)
+				return
+			}
 			http.Error(w, "Issue not found", http.StatusNotFound)
 			return
 		}
@@ -943,10 +961,9 @@ func GetAttachmentContentHandler(db *gorm.DB) http.HandlerFunc {
 			filename = sanitizeAttachmentFilename(*asset.OriginalFilename)
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", asset.ByteSize))
 		w.Header().Set("Cache-Control", "private, max-age=60")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, attachmentDisposition(contentType), filename))
+		w.Header().Set("Content-Disposition", buildAttachmentContentDisposition(attachmentDisposition(contentType), filename))
 		w.WriteHeader(http.StatusOK)
 	}
 }
