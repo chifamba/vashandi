@@ -249,7 +249,7 @@ func ParsePiJsonl(stdout string) ParsedPiOutput {
 		if eventType == "tool_execution_end" {
 			tcID := asString(event["toolCallId"], "")
 			isError, _ := event["isError"].(bool)
-			_ = currentToolCallID
+			currentToolCallID = ""
 
 			var resultStr string
 			if s, ok := event["result"].(string); ok {

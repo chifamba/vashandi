@@ -212,11 +212,10 @@ func buildSkillSnapshot(
 	}
 
 	// Also surface installed skills not in available (external).
-	for name, inst := range installed {
+	for name := range installed {
 		if _, managed := availableByRuntime[name]; managed {
 			continue
 		}
-		_ = inst
 		skills = append(skills, SkillStatus{
 			RuntimeName: name,
 			Status:      "external",
