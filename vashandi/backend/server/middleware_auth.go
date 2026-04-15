@@ -87,7 +87,9 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 				if err == nil {
 					isAdmin := isInstanceAdmin(db, key.UserID)
 					now := time.Now()
-					db.Model(&key).Update("last_used_at", now) //nolint:errcheck
+					if updateErr := db.Model(&key).Update("last_used_at", now).Error; updateErr != nil {
+						log.Printf("auth: board key touch error: %v", updateErr)
+					}
 					actor = routes.ActorInfo{
 						UserID:          key.UserID,
 						IsAgent:         false,
@@ -150,8 +152,11 @@ func resolveSessionCookieActor(r *http.Request, db *gorm.DB) (routes.ActorInfo, 
 // isInstanceAdmin reports whether the given userID holds the "instance_admin" role.
 func isInstanceAdmin(db *gorm.DB, userID string) bool {
 	var count int64
-	db.Model(&models.InstanceUserRole{}).
+	if err := db.Model(&models.InstanceUserRole{}).
 		Where("user_id = ? AND role = ?", userID, "instance_admin").
-		Count(&count)
+		Count(&count).Error; err != nil {
+		log.Printf("auth: instance admin check error for user %q: %v", userID, err)
+		return false
+	}
 	return count > 0
 }
