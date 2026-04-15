@@ -82,6 +82,8 @@ func Run() {
 		os.Exit(1)
 	}
 
+	InitTelemetry(cfg.Telemetry)
+
 	dsn := cfg.Database.ConnectionString
 	if envDSN := os.Getenv("DATABASE_URL"); envDSN != "" {
 		dsn = envDSN
@@ -102,6 +104,7 @@ func Run() {
 		DeploymentExposure: cfg.Server.Exposure,
 		AllowedHostnames:   cfg.Server.AllowedHostnames,
 		BindHost:           cfg.Server.Host,
+		Telemetry:          GetTelemetryClient(),
 	})
 
 	// Startup Recovery
