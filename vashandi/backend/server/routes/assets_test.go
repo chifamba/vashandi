@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"testing"
 
@@ -253,7 +254,10 @@ func TestUploadIssueAttachmentHandler_AcceptsZipUpload(t *testing.T) {
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", "bundle.zip")
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", `form-data; name="file"; filename="bundle.zip"`)
+	header.Set("Content-Type", "application/zip")
+	part, err := writer.CreatePart(header)
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
@@ -312,7 +316,10 @@ func TestUploadIssueAttachmentHandler_RejectsCrossCompanyIssue(t *testing.T) {
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", "bundle.zip")
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", `form-data; name="file"; filename="bundle.zip"`)
+	header.Set("Content-Type", "application/zip")
+	part, err := writer.CreatePart(header)
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}

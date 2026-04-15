@@ -20,22 +20,22 @@ func sha256hash(data []byte) [32]byte {
 }
 
 type issueAttachmentResponse struct {
-	ID             string    `json:"id"`
-	CompanyID      string    `json:"companyId"`
-	IssueID        string    `json:"issueId"`
-	IssueCommentID *string   `json:"issueCommentId"`
-	AssetID        string    `json:"assetId"`
-	Provider       string    `json:"provider"`
-	ObjectKey      string    `json:"objectKey"`
-	ContentType    string    `json:"contentType"`
-	ByteSize       int       `json:"byteSize"`
-	Sha256         string    `json:"sha256"`
-	OriginalFilename *string `json:"originalFilename"`
-	CreatedByAgentID *string `json:"createdByAgentId"`
-	CreatedByUserID  *string `json:"createdByUserId"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
-	ContentPath    string    `json:"contentPath"`
+	ID               string    `json:"id"`
+	CompanyID        string    `json:"companyId"`
+	IssueID          string    `json:"issueId"`
+	IssueCommentID   *string   `json:"issueCommentId"`
+	AssetID          string    `json:"assetId"`
+	Provider         string    `json:"provider"`
+	ObjectKey        string    `json:"objectKey"`
+	ContentType      string    `json:"contentType"`
+	ByteSize         int       `json:"byteSize"`
+	Sha256           string    `json:"sha256"`
+	OriginalFilename *string   `json:"originalFilename"`
+	CreatedByAgentID *string   `json:"createdByAgentId"`
+	CreatedByUserID  *string   `json:"createdByUserId"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+	ContentPath      string    `json:"contentPath"`
 }
 
 func buildIssueAttachmentResponse(attachment models.IssueAttachment, asset models.Asset) issueAttachmentResponse {
@@ -149,7 +149,7 @@ func (ir *IssueRoutes) CreateIssueHandler(w http.ResponseWriter, r *http.Request
 func (ir *IssueRoutes) TransitionIssueHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	companyID := r.URL.Query().Get("companyId") // Simplified for parity; in production this comes from context/payload
-	
+
 	var payload struct {
 		Status string `json:"status"`
 	}
@@ -170,122 +170,122 @@ func (ir *IssueRoutes) TransitionIssueHandler(w http.ResponseWriter, r *http.Req
 
 // UpdateIssueHandler updates an issue's fields.
 func (ir *IssueRoutes) UpdateIssueHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-if err := json.NewDecoder(r.Body).Decode(&issue); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-ir.db.WithContext(r.Context()).Save(&issue)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(issue)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if err := json.NewDecoder(r.Body).Decode(&issue); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ir.db.WithContext(r.Context()).Save(&issue)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(issue)
 }
 
 // DeleteIssueHandler soft-deletes an issue via hidden_at.
 func (ir *IssueRoutes) DeleteIssueHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-now := time.Now()
-issue.HiddenAt = &now
-ir.db.WithContext(r.Context()).Save(&issue)
-w.WriteHeader(http.StatusNoContent)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	now := time.Now()
+	issue.HiddenAt = &now
+	ir.db.WithContext(r.Context()).Save(&issue)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // AddIssueCommentHandler creates a comment on an issue.
 func (ir *IssueRoutes) AddIssueCommentHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-var comment models.IssueComment
-if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-comment.IssueID = id
-comment.CompanyID = issue.CompanyID
-if err := ir.db.WithContext(r.Context()).Create(&comment).Error; err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusCreated)
-json.NewEncoder(w).Encode(comment)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var comment models.IssueComment
+	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	comment.IssueID = id
+	comment.CompanyID = issue.CompanyID
+	if err := ir.db.WithContext(r.Context()).Create(&comment).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(comment)
 }
 
 // ListIssueCommentsHandler lists comments for an issue.
 func (ir *IssueRoutes) ListIssueCommentsHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var comments []models.IssueComment
-ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at ASC").Find(&comments)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(comments)
+	id := chi.URLParam(r, "id")
+	var comments []models.IssueComment
+	ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at ASC").Find(&comments)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comments)
 }
 
 // CreateWorkProductHandler creates a work product for an issue.
 func (ir *IssueRoutes) CreateWorkProductHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-var wp models.IssueWorkProduct
-if err := json.NewDecoder(r.Body).Decode(&wp); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-wp.IssueID = id
-wp.CompanyID = issue.CompanyID
-if err := ir.db.WithContext(r.Context()).Create(&wp).Error; err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusCreated)
-json.NewEncoder(w).Encode(wp)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var wp models.IssueWorkProduct
+	if err := json.NewDecoder(r.Body).Decode(&wp); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	wp.IssueID = id
+	wp.CompanyID = issue.CompanyID
+	if err := ir.db.WithContext(r.Context()).Create(&wp).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(wp)
 }
 
 // ListWorkProductsHandler lists work products for an issue.
 func (ir *IssueRoutes) ListWorkProductsHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var wps []models.IssueWorkProduct
-ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at DESC").Find(&wps)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(wps)
+	id := chi.URLParam(r, "id")
+	var wps []models.IssueWorkProduct
+	ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at DESC").Find(&wps)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(wps)
 }
 
 // BulkUpdateIssuesHandler handles bulk updates to issues.
 func (ir *IssueRoutes) BulkUpdateIssuesHandler(w http.ResponseWriter, r *http.Request) {
-companyID := chi.URLParam(r, "companyId")
-var body struct {
-IDs    []string               `json:"ids"`
-Update map[string]interface{} `json:"update"`
-}
-if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-if len(body.IDs) == 0 {
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]int{"updated": 0})
-return
-}
-result := ir.db.WithContext(r.Context()).Model(&models.Issue{}).
-Where("id IN ? AND company_id = ?", body.IDs, companyID).
-Updates(body.Update)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]int64{"updated": result.RowsAffected})
+	companyID := chi.URLParam(r, "companyId")
+	var body struct {
+		IDs    []string               `json:"ids"`
+		Update map[string]interface{} `json:"update"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"updated": 0})
+		return
+	}
+	result := ir.db.WithContext(r.Context()).Model(&models.Issue{}).
+		Where("id IN ? AND company_id = ?", body.IDs, companyID).
+		Updates(body.Update)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{"updated": result.RowsAffected})
 }
 
 // ReleaseIssueHandler clears the checkout lock fields on an issue.
@@ -804,8 +804,8 @@ func (ir *IssueRoutes) GetIssueHeartbeatContextHandler(w http.ResponseWriter, r 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"issue":        issue,
-		"activeRunId":  issue.ExecutionRunID,
+		"issue":         issue,
+		"activeRunId":   issue.ExecutionRunID,
 		"checkoutRunId": issue.CheckoutRunID,
 	})
 }
