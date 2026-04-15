@@ -10,10 +10,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const sqliteSharedCacheFlag = "1"
+
 func setupAccessServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dsn := fmt.Sprintf("file::memory:?cache=shared&%s=1", url.QueryEscape(t.Name()))
+	dsn := fmt.Sprintf("file::memory:?cache=shared&%s=%s", url.QueryEscape(t.Name()), sqliteSharedCacheFlag)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
