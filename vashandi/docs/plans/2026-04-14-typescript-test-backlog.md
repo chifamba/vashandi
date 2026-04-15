@@ -142,7 +142,7 @@ Inventory of existing Node/TypeScript tests across the monorepo and prioritised 
 | `redaction.test.ts` | Sensitive key and JWT redaction |
 | `routine-run-telemetry.test.ts` | Routine run telemetry emission |
 | `server-startup-feedback-export.test.ts` | Feedback export on startup |
-| `storage-local-provider.test.ts` | Round-trip bytes, cross-company block |
+| `storage-local-provider.test.ts` | Round-trip bytes, cross-company block — Go: `backend/server/storage/service_test.go` ✓ |
 | `telemetry-client-flush.test.ts` | Telemetry flush on shutdown |
 | `ui-branding.test.ts` | UI branding asset injection |
 | `worktree-config.test.ts` | Worktree configuration helpers |
@@ -376,6 +376,8 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [x] **`instance-settings` routes** — Go: `backend/server/routes/instance_settings_test.go`
   - Get/update general settings ✓
   - Get/update experimental settings ✓
+  - Board read vs instance-admin update gating ✓
+  - UI `/instance/settings/*` route parity ✓
 - [x] **`teams` routes** — Go: `backend/server/routes/teams_test.go`
   - List teams (company-scoped) ✓
   - Get team ✓

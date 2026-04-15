@@ -1,4 +1,5 @@
 import type { FeedbackDataSharingPreference } from "./feedback.js";
+import type { StorageConfig } from "../config-schema.js";
 
 export const DAILY_RETENTION_PRESETS = [3, 7, 14] as const;
 export const WEEKLY_RETENTION_PRESETS = [1, 2, 4] as const;
@@ -21,6 +22,7 @@ export interface InstanceGeneralSettings {
   keyboardShortcuts: boolean;
   feedbackDataSharingPreference: FeedbackDataSharingPreference;
   backupRetention: BackupRetentionPolicy;
+  storage?: StorageConfig;
 }
 
 export interface InstanceExperimentalSettings {
