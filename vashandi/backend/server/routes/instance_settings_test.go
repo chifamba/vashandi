@@ -186,8 +186,20 @@ func TestUpdateGeneralSettingsHandler_PersistsS3StorageConfigForUi(t *testing.T)
 	if !ok {
 		t.Fatalf("expected s3 config object, got %#v", storage["s3"])
 	}
-	if s3Config["bucket"] != "attachments" || s3Config["region"] != "af-south-1" || s3Config["endpoint"] != "https://minio.internal" || s3Config["prefix"] != "companies" || s3Config["forcePathStyle"] != true {
-		t.Fatalf("unexpected s3 config: %#v", s3Config)
+	if s3Config["bucket"] != "attachments" {
+		t.Fatalf("expected bucket attachments, got %#v", s3Config["bucket"])
+	}
+	if s3Config["region"] != "af-south-1" {
+		t.Fatalf("expected region af-south-1, got %#v", s3Config["region"])
+	}
+	if s3Config["endpoint"] != "https://minio.internal" {
+		t.Fatalf("expected endpoint https://minio.internal, got %#v", s3Config["endpoint"])
+	}
+	if s3Config["prefix"] != "companies" {
+		t.Fatalf("expected prefix companies, got %#v", s3Config["prefix"])
+	}
+	if s3Config["forcePathStyle"] != true {
+		t.Fatalf("expected forcePathStyle true, got %#v", s3Config["forcePathStyle"])
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/instance/settings/general", nil)
