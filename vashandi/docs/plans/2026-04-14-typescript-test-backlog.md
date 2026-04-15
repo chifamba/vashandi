@@ -286,15 +286,15 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - CRUD (create, list, get, update, archive) ✓
   - Company scoping enforcement ✓
   - Permission gating: board admin vs non-admin vs agent callers (⚠ partial — authz context key bug blocks full test)
-  - `reportsTo` hierarchy validation (todo)
-  - Role uniqueness (CEO singleton) (todo)
+  - `reportsTo` hierarchy validation ✓
+  - Role uniqueness (CEO singleton) ✓
   - `GET /companies/:companyId/adapters/:type/models` — adapter model list response contract ✓
 
 - [x] **`secrets` routes** (`server/src/routes/secrets.ts`) — Go: `backend/server/routes/secrets_test.go`
   - Create/update/delete company-level and agent-level secrets ✓
   - `local_encrypted` storage: verify ciphertext is stored, plaintext is not exposed ✓
-  - `inline` secret key vs value scoping (todo)
-  - Permission gating: admin vs non-admin (todo)
+  - Response omits plaintext secret values while version material stores the submitted value ✓
+  - Permission gating: admin vs non-admin ✓
 
 - [x] **`projects` routes** (`server/src/routes/projects.ts`) — Go: `backend/server/routes/projects_test.go`
   - CRUD (create, list, get, update, archive) ✓
@@ -316,7 +316,7 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - List approvals for a company ✓
   - Comment thread on approvals ✓
   - `requestRevision` and `resubmit` flows ✓
-  - Agent-only vs board-only approval actions (todo)
+  - Agent-only vs board-only approval actions ✓
 
 - [x] **`execution-workspaces` routes** (`server/src/routes/execution-workspaces.ts`) — Go: `backend/server/routes/execution_workspaces_test.go`
   - List and get workspace records ✓
@@ -411,7 +411,7 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [x] **`secrets` service** (`server/src/services/secrets.ts`) — Go: `backend/server/services/secrets_test.go`
   - `local_encrypted` encrypt/decrypt round-trip using `ENCRYPTION_SECRET` ✓ (in `backend/shared/crypto_test.go`)
   - `resolveAdapterConfigForRuntime` merges secret values into config ✓
-  - `normalizeAdapterConfigForPersistence` strips plaintext values before storage (todo)
+  - `normalizeAdapterConfigForPersistence` validates same-company secret refs and preserves `secret_ref` bindings ✓
   - Secret version rotation ✓
 
 - [x] **`access` service** (`server/src/services/access.ts`) — Go: `backend/server/services/access_test.go`

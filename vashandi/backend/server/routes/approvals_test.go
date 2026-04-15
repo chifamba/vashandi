@@ -196,6 +196,7 @@ func TestApproveHandler_SetsApprovedStatus(t *testing.T) {
 	router.Put("/approvals/{id}/approve", ApproveHandler(db, nil))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-2/approve", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -220,6 +221,7 @@ func TestApproveHandler_NotFound(t *testing.T) {
 	router.Put("/approvals/{id}/approve", ApproveHandler(db, nil))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/missing/approve", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -236,6 +238,7 @@ func TestRejectHandler_SetsRejectedStatus(t *testing.T) {
 	router.Put("/approvals/{id}/reject", RejectHandler(db))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-3/reject", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -260,6 +263,7 @@ func TestRejectHandler_NotFound(t *testing.T) {
 	router.Put("/approvals/{id}/reject", RejectHandler(db))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/missing/reject", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -276,6 +280,7 @@ func TestResubmitApprovalHandler_ResetsToPending(t *testing.T) {
 	router.Put("/approvals/{id}/resubmit", ResubmitApprovalHandler(db))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-4/resubmit", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -300,11 +305,80 @@ func TestResubmitApprovalHandler_NotFound(t *testing.T) {
 	router.Put("/approvals/{id}/resubmit", ResubmitApprovalHandler(db))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/missing/resubmit", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestApproveHandler_RejectsAgentActor(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+	db.Exec("INSERT INTO approvals (id, company_id, type, status, payload) VALUES ('appr-agent', 'comp-1', 'run', 'pending', '{}')")
+
+	router := chi.NewRouter()
+	router.Put("/approvals/{id}/approve", ApproveHandler(db, nil))
+
+	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-agent/approve", nil)
+	req = withAgentActorRequest(req, "agent-1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRejectHandler_RejectsAgentActor(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+	db.Exec("INSERT INTO approvals (id, company_id, type, status, payload) VALUES ('appr-agent', 'comp-1', 'run', 'pending', '{}')")
+
+	router := chi.NewRouter()
+	router.Put("/approvals/{id}/reject", RejectHandler(db))
+
+	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-agent/reject", nil)
+	req = withAgentActorRequest(req, "agent-1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestResubmitApprovalHandler_RejectsDifferentAgent(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+	db.Exec("INSERT INTO approvals (id, company_id, type, requested_by_agent_id, status, payload, decided_at) VALUES ('appr-5', 'comp-1', 'run', 'agent-owner', 'rejected', '{}', '2026-01-01')")
+
+	router := chi.NewRouter()
+	router.Put("/approvals/{id}/resubmit", ResubmitApprovalHandler(db))
+
+	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-5/resubmit", nil)
+	req = withAgentActorRequest(req, "agent-other")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestResubmitApprovalHandler_AllowsRequestingAgent(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+	db.Exec("INSERT INTO approvals (id, company_id, type, requested_by_agent_id, status, payload, decided_at) VALUES ('appr-6', 'comp-1', 'run', 'agent-owner', 'rejected', '{}', '2026-01-01')")
+
+	router := chi.NewRouter()
+	router.Put("/approvals/{id}/resubmit", ResubmitApprovalHandler(db))
+
+	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-6/resubmit", nil)
+	req = withAgentActorRequest(req, "agent-owner")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
 

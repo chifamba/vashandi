@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -104,6 +105,7 @@ func TestCreateSecretHandler_CompanyScoping(t *testing.T) {
 		"value":    "supersecret",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/companies/comp-abc/secrets", bytes.NewBuffer(body))
+	req = withBoardActorRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -134,6 +136,7 @@ func TestCreateSecretHandler_DefaultsToLocalEncrypted(t *testing.T) {
 		"name": "NO_PROVIDER_KEY",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/companies/comp-xyz/secrets", bytes.NewBuffer(body))
+	req = withBoardActorRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -160,6 +163,7 @@ func TestListSecretsHandler_CompanyScoping(t *testing.T) {
 	router.Get("/companies/{companyId}/secrets", ListSecretsHandler(db))
 
 	req := httptest.NewRequest(http.MethodGet, "/companies/comp-1/secrets", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -188,6 +192,7 @@ func TestRotateSecretHandler_IncrementsVersion(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"value": "newvalue"})
 	req := httptest.NewRequest(http.MethodPut, "/secrets/sec-1/rotate", bytes.NewBuffer(body))
+	req = withBoardActorRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -211,6 +216,7 @@ func TestRotateSecretHandler_NotFound(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"value": "v"})
 	req := httptest.NewRequest(http.MethodPut, "/secrets/nonexistent/rotate", bytes.NewBuffer(body))
+	req = withBoardActorRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -228,6 +234,7 @@ func TestDeleteSecretHandler(t *testing.T) {
 	router.Delete("/secrets/{id}", DeleteSecretHandler(db))
 
 	req := httptest.NewRequest(http.MethodDelete, "/secrets/del-sec", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -251,6 +258,7 @@ func TestUpdateSecretHandler(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"name": "NEW_NAME"})
 	req := httptest.NewRequest(http.MethodPut, "/secrets/upd-sec", bytes.NewBuffer(body))
+	req = withBoardActorRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -263,5 +271,53 @@ func TestUpdateSecretHandler(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&updated)
 	if updated.Name != "NEW_NAME" {
 		t.Errorf("expected updated Name 'NEW_NAME', got %q", updated.Name)
+	}
+}
+
+func TestCreateSecretHandler_StoresMaterialWithoutExposingValue(t *testing.T) {
+	db := setupSecretsTestDB(t)
+
+	router := chi.NewRouter()
+	router.Post("/companies/{companyId}/secrets", CreateSecretHandler(db))
+
+	body, _ := json.Marshal(map[string]string{
+		"name":  "SCOPED_KEY",
+		"value": "supersecret",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/secrets", bytes.NewBuffer(body))
+	req = withBoardActorRequest(req)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d; body: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "supersecret") {
+		t.Fatalf("expected response to omit plaintext secret value, got %s", w.Body.String())
+	}
+
+	var version models.CompanySecretVersion
+	if err := db.First(&version).Error; err != nil {
+		t.Fatalf("load version: %v", err)
+	}
+	if !bytes.Contains(version.Material, []byte("supersecret")) {
+		t.Fatalf("expected stored material to include provided value, got %s", string(version.Material))
+	}
+}
+
+func TestListSecretsHandler_RejectsAgentActor(t *testing.T) {
+	db := setupSecretsTestDB(t)
+
+	router := chi.NewRouter()
+	router.Get("/companies/{companyId}/secrets", ListSecretsHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/companies/comp-1/secrets", nil)
+	req = withAgentActorRequest(req, "agent-1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
