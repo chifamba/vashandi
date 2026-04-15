@@ -202,28 +202,54 @@ func ArchiveCompanyHandler(db *gorm.DB, memory services.MemoryAdapter) http.Hand
 	}
 }
 
-// ExportCompanyHandler — POST /companies/:id/exports
-// Stub: company export not yet implemented in the Go backend.
-func ExportCompanyHandler() http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusNotImplemented)
-json.NewEncoder(w).Encode(map[string]string{
-"status":  "export_not_implemented",
-"message": "Company export is not yet available in the Go backend",
-})
-}
+// PreviewExportCompanyHandler — POST /companies/:companyId/exports/preview
+// Stub: company export preview not yet implemented in the Go backend.
+func PreviewExportCompanyHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "export_preview_not_implemented",
+			"message": "Company export preview is not yet available in the Go backend",
+		})
+	}
 }
 
-// ImportCompanyHandler — POST /companies/:id/imports/apply
+// ExportCompanyHandler — POST /companies/:companyId/exports
+// Stub: company export not yet implemented in the Go backend.
+func ExportCompanyHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "export_not_implemented",
+			"message": "Company export is not yet available in the Go backend",
+		})
+	}
+}
+
+// PreviewImportCompanyHandler — POST /companies/:companyId/imports/preview
+// Stub: company import preview not yet implemented in the Go backend.
+func PreviewImportCompanyHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "import_preview_not_implemented",
+			"message": "Company import preview is not yet available in the Go backend",
+		})
+	}
+}
+
+// ImportCompanyHandler — POST /companies/:companyId/imports/apply
 // Stub: company import not yet implemented in the Go backend.
 func ImportCompanyHandler() http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusNotImplemented)
-json.NewEncoder(w).Encode(map[string]string{
-"status":  "import_not_implemented",
-"message": "Company import is not yet available in the Go backend",
-})
-}
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "import_not_implemented",
+			"message": "Company import is not yet available in the Go backend",
+		})
+	}
 }
