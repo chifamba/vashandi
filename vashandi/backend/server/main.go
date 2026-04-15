@@ -32,6 +32,13 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	opsSvc := services.NewWorkspaceOperationService(db)
 	heartbeatSvc := services.NewHeartbeatService(db, secretsSvc, activitySvc, opsSvc, nil, nil)
 
+	// Create the shared event hub and inject it into the router options and
+	// the heartbeat service so that run-status changes are broadcast to all
+	// connected WebSocket and SSE clients.
+	hub := realtime.NewHub()
+	routerOpts.Hub = hub
+	heartbeatSvc.Notify = hub.Publish
+
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
 	
 	r.Use(cors.Handler(cors.Options{

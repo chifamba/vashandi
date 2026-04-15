@@ -22,10 +22,20 @@ type RouterOptions struct {
 	// BetterAuth endpoints (sign-in, sign-out, etc.).  When nil those paths
 	// return 501 Not Implemented.
 	AuthHandler http.Handler
+
+	// Hub is the shared realtime event hub used for WebSocket live events and
+	// SSE badge streams. A new Hub is created automatically when nil.
+	Hub *realtime.Hub
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
 func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc *services.SecretService, heartbeatSvc *services.HeartbeatService, opts RouterOptions) *chi.Mux {
+	hub := opts.Hub
+	if hub == nil {
+		hub = realtime.NewHub()
+	}
+	deploymentMode := opts.DeploymentMode
+
 	r := chi.NewRouter()
 
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
@@ -438,7 +448,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Sidebar Badges
 		api.Get("/companies/{companyId}/sidebar-badges", routes.SidebarBadgesHandler(db))
-		api.Get("/companies/{companyId}/sidebar-badges/stream", routes.SidebarBadgesSSEHandler())
+		api.Get("/companies/{companyId}/sidebar-badges/stream", routes.SidebarBadgesSSEHandler(db, hub.Subscribe))
 
 		// Company Export/Import
 		api.Post("/companies/{companyId}/exports/preview", routes.PreviewExportCompanyHandler(db))
@@ -446,8 +456,8 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/companies/{companyId}/imports/preview", routes.PreviewImportCompanyHandler(db))
 		api.Post("/companies/{companyId}/imports/apply", routes.ImportCompanyHandler(db))
 
-		// Heartbeat Run SSE Events
-		api.Get("/heartbeat-runs/{runId}/events", routes.HeartbeatRunEventsSSEHandler())
+		// Heartbeat Run Events (REST endpoint — returns stored events from DB)
+		api.Get("/heartbeat-runs/{runId}/events", routes.ListHeartbeatRunEventsHandler(db))
 	})
 
 	return r
