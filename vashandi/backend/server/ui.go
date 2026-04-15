@@ -5,9 +5,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/chifamba/vashandi/vashandi/backend/shared"
 )
 
-// NewStaticUIHandler creates an http.Handler that serves a pre-built frontend
+// NewUIHandlerFromConfigForTest is the exported test shim for newUIHandlerFromConfig.
+func NewUIHandlerFromConfigForTest(uiMode string) http.Handler {
+	return newUIHandlerFromConfig(uiMode)
+}
 // SPA from distDir.  Static assets that exist on disk are served directly;
 // every other path falls back to index.html so that the client-side router can
 // handle it.  The index.html content is read and branded once at startup.
@@ -59,21 +64,29 @@ func DiscoverUIDistDir() string {
 	return ""
 }
 
-// newUIHandlerFromConfig discovers the UI dist directory and creates a static
-// UI handler when serveUI is true.  Returns nil (no UI serving) with a warning
-// when the dist directory cannot be found.
-func newUIHandlerFromConfig(serveUI bool) http.Handler {
-	if !serveUI {
+// newUIHandlerFromConfig returns an http.Handler for the given UIMode.
+// Returns nil when the mode does not require UI serving (API-only or ui-only
+// modes are handled elsewhere).  The caller is responsible for deciding whether
+// the returned handler is mounted on the main router or used as a standalone
+// server.
+func newUIHandlerFromConfig(uiMode string) http.Handler {
+	switch uiMode {
+	case shared.UIModeStatic, shared.UIModeUIOnly:
+		// Both modes need a static file handler; the distinction between them is
+		// enforced at the router level in SetupRouter / Run.
+	default:
+		// "" / "none" or any unrecognised value → no UI serving.
 		return nil
 	}
+
 	distDir := DiscoverUIDistDir()
 	if distDir == "" {
-		slog.Warn("serveUi is enabled but no UI dist directory was found; running in API-only mode")
+		slog.Warn("uiMode requires UI assets but no ui-dist directory was found; UI will not be served")
 		return nil
 	}
 	h, err := NewStaticUIHandler(distDir)
 	if err != nil {
-		slog.Warn("serveUi is enabled but failed to read UI dist", "dir", distDir, "error", err)
+		slog.Warn("uiMode requires UI assets but failed to read ui-dist", "dir", distDir, "error", err)
 		return nil
 	}
 	slog.Info("Serving UI from dist directory", "dir", distDir)

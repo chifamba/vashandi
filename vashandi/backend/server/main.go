@@ -18,7 +18,6 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
 )
-
 type App struct {
 	Router     *chi.Mux
 	DB         *gorm.DB
@@ -84,6 +83,14 @@ func Run() {
 		os.Exit(1)
 	}
 
+	// "ui-only" mode: serve the pre-built frontend SPA with no API routes and
+	// no database connection.  This lets operators run the UI as a standalone
+	// static file server while the API runs in a separate process.
+	if cfg.Server.UIMode == shared.UIModeUIOnly {
+		runUIOnly(cfg)
+		return
+	}
+
 	dsn := cfg.Database.ConnectionString
 	if envDSN := os.Getenv("DATABASE_URL"); envDSN != "" {
 		dsn = envDSN
@@ -101,7 +108,7 @@ func Run() {
 
 	app := NewApp(db, RouterOptions{
 		DeploymentMode: cfg.Server.DeploymentMode,
-		UIHandler:      newUIHandlerFromConfig(cfg.Server.ServeUi),
+		UIHandler:      newUIHandlerFromConfig(cfg.Server.UIMode),
 	})
 
 	// Startup Recovery
@@ -114,6 +121,35 @@ func Run() {
 
 	if err := app.Start(cfg.Server.Port); err != nil {
 		slog.Error("Server failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+// runUIOnly starts a lightweight static-file server for the pre-built frontend
+// SPA.  No API routes and no database connection are required.
+func runUIOnly(cfg *shared.PaperclipConfig) {
+	uiHandler := newUIHandlerFromConfig(shared.UIModeUIOnly)
+	if uiHandler == nil {
+		slog.Error("ui-only mode: no UI assets found; cannot start")
+		os.Exit(1)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/", uiHandler)
+
+	var handler http.Handler = mux
+	handler = cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "HEAD", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Content-Type"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	})(handler)
+
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	slog.Info("Starting UI-only server", "port", cfg.Server.Port)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		slog.Error("UI-only server failed", "error", err)
 		os.Exit(1)
 	}
 }

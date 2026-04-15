@@ -35,13 +35,27 @@ type LoggingConfig struct {
 	LogDir string `json:"logDir"`
 }
 
+// UIMode controls how the Go server handles non-API requests.
+//   - "" / "none"   → API-only; the frontend is served by another process.
+//   - "static"      → API + pre-built frontend SPA from ui-dist/.
+//   - "ui-only"     → Static frontend only; no API routes and no database
+//                     connection required.  Useful when the frontend and
+//                     backend run as separate processes.
+type UIMode = string
+
+const (
+	UIModeNone   UIMode = "none"
+	UIModeStatic UIMode = "static"
+	UIModeUIOnly UIMode = "ui-only"
+)
+
 type ServerConfig struct {
 	DeploymentMode   string   `json:"deploymentMode" validate:"oneof=local_trusted authenticated"`
 	Exposure         string   `json:"exposure" validate:"oneof=private public"`
 	Host             string   `json:"host"`
 	Port             int      `json:"port" validate:"min=1,max=65535"`
 	AllowedHostnames []string `json:"allowedHostnames" validate:"omitempty,dive,min=1"`
-	ServeUi          bool     `json:"serveUi"`
+	UIMode           UIMode   `json:"uiMode"`
 }
 
 type AuthConfig struct {

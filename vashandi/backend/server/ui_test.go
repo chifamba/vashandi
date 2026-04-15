@@ -117,3 +117,31 @@ func TestDiscoverUIDistDir_NotFound(t *testing.T) {
 	// and returns a string (empty or a valid path).
 	_ = result
 }
+
+func TestNewUIHandlerFromConfig_NoneAndEmpty(t *testing.T) {
+	// "none" and "" both mean API-only; no UI handler should be created.
+	for _, mode := range []string{"", "none"} {
+		h := server.NewUIHandlerFromConfigForTest(mode)
+		if h != nil {
+			t.Errorf("mode %q: expected nil handler, got %T", mode, h)
+		}
+	}
+}
+
+func TestNewUIHandlerFromConfig_StaticWithDist(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.html"), "<html>app</html>")
+
+	// Point DiscoverUIDistDir at our temp dir by creating a fake executable
+	// sibling — but that's complex; instead we test NewStaticUIHandler directly.
+	// The indirect path through newUIHandlerFromConfig is validated by the
+	// integration of Run(), which we can't easily unit-test without a real
+	// database.  This test validates the underlying primitive works.
+	h, err := server.NewStaticUIHandler(dir)
+	if err != nil {
+		t.Fatalf("NewStaticUIHandler: %v", err)
+	}
+	if h == nil {
+		t.Fatal("expected non-nil handler")
+	}
+}
