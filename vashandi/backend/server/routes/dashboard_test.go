@@ -131,6 +131,7 @@ func TestDashboardHandler_CompanyScoping(t *testing.T) {
 	router.Get("/companies/{companyId}/dashboard", DashboardHandler(db))
 
 	req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/dashboard", nil)
+	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "user"}))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -188,6 +189,7 @@ func TestDashboardHandler_EmptyCompany(t *testing.T) {
 	router.Get("/companies/{companyId}/dashboard", DashboardHandler(db))
 
 	req := httptest.NewRequest(http.MethodGet, "/companies/empty-comp/dashboard", nil)
+	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "user"}))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -214,6 +216,7 @@ func TestPlatformMetricsHandler(t *testing.T) {
 	db.Exec("INSERT INTO heartbeat_runs (id, company_id, agent_id, status, task_id) VALUES ('r3', 'comp-a', 'a1', 'completed', 't3')")
 
 	req := httptest.NewRequest(http.MethodGet, "/platform/metrics", nil)
+	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "user"}))
 	w := httptest.NewRecorder()
 
 	PlatformMetricsHandler(db)(w, req)
@@ -231,4 +234,78 @@ func TestPlatformMetricsHandler(t *testing.T) {
 	if metrics.ActiveRuns != 1 {
 		t.Errorf("expected 1 active run, got %d", metrics.ActiveRuns)
 	}
+}
+
+func TestDashboardHandler_Forbidden(t *testing.T) {
+	db := setupDashboardTestDB(t)
+
+	router := chi.NewRouter()
+	router.Get("/companies/{companyId}/dashboard", DashboardHandler(db))
+
+	t.Run("anonymous actor is forbidden", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/dashboard", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403, got %d", w.Code)
+		}
+	})
+
+	t.Run("agent from different company is forbidden", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/dashboard", nil)
+		req = req.WithContext(WithActor(req.Context(), ActorInfo{
+			AgentID:   "agent-1",
+			CompanyID: "comp-b",
+			IsAgent:   true,
+			ActorType: "agent",
+		}))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403, got %d", w.Code)
+		}
+	})
+
+	t.Run("agent from same company is allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/dashboard", nil)
+		req = req.WithContext(WithActor(req.Context(), ActorInfo{
+			AgentID:   "agent-1",
+			CompanyID: "comp-a",
+			IsAgent:   true,
+			ActorType: "agent",
+		}))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+	})
+}
+
+func TestPlatformMetricsHandler_Forbidden(t *testing.T) {
+	db := setupDashboardTestDB(t)
+
+	t.Run("anonymous actor is forbidden", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/platform/metrics", nil)
+		w := httptest.NewRecorder()
+		PlatformMetricsHandler(db)(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403, got %d", w.Code)
+		}
+	})
+
+	t.Run("agent actor is forbidden", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/platform/metrics", nil)
+		req = req.WithContext(WithActor(req.Context(), ActorInfo{
+			AgentID:   "agent-1",
+			CompanyID: "comp-a",
+			IsAgent:   true,
+			ActorType: "agent",
+		}))
+		w := httptest.NewRecorder()
+		PlatformMetricsHandler(db)(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403, got %d", w.Code)
+		}
+	})
 }
