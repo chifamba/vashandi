@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
@@ -645,7 +646,7 @@ func (m *WorkspaceRuntimeManager) spawnService(
 			if current.Status == RuntimeServiceStatusRunning {
 				current.Status = RuntimeServiceStatusFailed
 				current.HealthStatus = "unhealthy"
-				current.StoppedAt = strPtr(time.Now().UTC().Format(time.RFC3339))
+				current.StoppedAt = runtimeStrPtr(time.Now().UTC().Format(time.RFC3339))
 			}
 			delete(m.byID, id)
 			if reuseKey != nil && m.byReuseKey[*reuseKey] == id {
@@ -834,8 +835,8 @@ func (m *WorkspaceRuntimeManager) persistRecord(ctx context.Context, rec *Runtim
 		ScopeType:            rec.ScopeType,
 		ScopeID:              rec.ScopeID,
 		ReuseKey:             rec.ReuseKey,
-		Command:              strPtr(rec.Command),
-		Cwd:                  strPtr(rec.Cwd),
+		Command:              runtimeStrPtr(rec.Command),
+		Cwd:                  runtimeStrPtr(rec.Cwd),
 		URL:                  rec.URL,
 		Provider:             rec.Provider,
 		ProviderRef:          rec.ProviderRef,
@@ -854,7 +855,7 @@ func (m *WorkspaceRuntimeManager) persistRecord(ctx context.Context, rec *Runtim
 		FirstOrCreate(&row).Error
 }
 
-func strPtr(s string) *string {
+func runtimeStrPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
