@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"gorm.io/gorm"
 
+	"github.com/chifamba/vashandi/vashandi/backend/server/realtime"
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
@@ -65,6 +66,11 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	// Plugin UI static
 	r.Get("/_plugins/{pluginId}/ui/*", routes.PluginUIStaticHandler(db))
+
+	// Live-events WebSocket — GET /api/companies/{companyId}/events/ws
+	// Path matches the Node.js server and the UI client expectations.
+	// Auth is handled inside the handler (bearer token, ?token= query param, or local_trusted mode).
+	r.Get("/api/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode))
 
 	// API v1 Routes
 	r.Route("/api/v1", func(api chi.Router) {

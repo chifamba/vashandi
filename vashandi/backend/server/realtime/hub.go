@@ -1,67 +1,86 @@
 package realtime
 
 import (
-
+	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
-// Hub maintains the set of active clients and broadcasts messages to the clients.
+// Hub maintains per-company sets of active WebSocket clients and provides a
+// Publish method for broadcasting live events to all subscribers of a company.
 type Hub struct {
-	// Registered clients.
-	clients map[*Client]bool
-
-	// Inbound messages from the clients.
-	broadcast chan []byte
-
-	// Register requests from the clients.
-	register chan *Client
-
-	// Unregister requests from clients.
-	unregister chan *Client
+	mu      sync.RWMutex
+	clients map[string]map[*Client]bool // companyID → set of clients
 }
 
-// Client is a middleman between the websocket connection and the hub.
-type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
-}
-
+// NewHub creates a ready-to-use Hub. No background goroutine is needed; all
+// operations are protected by a read-write mutex.
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
+		clients: make(map[string]map[*Client]bool),
 	}
 }
 
-func (h *Hub) Run() {
-	for {
+// Publish sends data to every client subscribed to companyID.
+// Slow clients whose send buffer is full are disconnected.
+// It is safe to call Publish concurrently with other Hub operations.
+func (h *Hub) Publish(companyID string, data []byte) {
+	h.mu.RLock()
+	company := h.clients[companyID]
+	snapshot := make([]*Client, 0, len(company))
+	for c := range company {
+		snapshot = append(snapshot, c)
+	}
+	h.mu.RUnlock()
+
+	for _, c := range snapshot {
 		select {
-		case client := <-h.register:
-			h.clients[client] = true
-		case client := <-h.unregister:
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
-			}
-		case message := <-h.broadcast:
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
-			}
+		case c.send <- data:
+			// delivered
+		case <-c.done:
+			// client is being disconnected; skip
+		default:
+			// Buffer full — disconnect the slow client.
+			h.unregister(c)
 		}
 	}
 }
 
-// Placeholder for websocket upgrader
+func (h *Hub) register(c *Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.clients[c.companyID] == nil {
+		h.clients[c.companyID] = make(map[*Client]bool)
+	}
+	h.clients[c.companyID][c] = true
+}
+
+// unregister removes the client from the hub and signals it to disconnect.
+// Calling unregister more than once for the same client is safe.
+func (h *Hub) unregister(c *Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	company, ok := h.clients[c.companyID]
+	if !ok {
+		return
+	}
+	if _, exists := company[c]; !exists {
+		return
+	}
+	delete(company, c)
+	c.disconnect()
+	if len(company) == 0 {
+		delete(h.clients, c.companyID)
+	}
+}
+
+// Upgrader is the shared gorilla/websocket upgrader.
+// CheckOrigin always returns true because the server's CORS middleware handles
+// origin policy for regular HTTP requests; WebSocket upgrade requests go through
+// our own auth layer before the connection is accepted.
 var Upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }

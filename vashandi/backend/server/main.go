@@ -14,14 +14,16 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/chifamba/vashandi/vashandi/backend/server/realtime"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
 )
 
 type App struct {
-	Router    *chi.Mux
-	DB        *gorm.DB
-	Heartbeat *services.HeartbeatService
+	Router     *chi.Mux
+	DB         *gorm.DB
+	Heartbeat  *services.HeartbeatService
+	LiveEvents *realtime.Hub
 }
 
 func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
@@ -42,9 +44,10 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	}))
 
 	return &App{
-		Router:    r,
-		DB:        db,
-		Heartbeat: heartbeatSvc,
+		Router:     r,
+		DB:         db,
+		Heartbeat:  heartbeatSvc,
+		LiveEvents: hub,
 	}
 }
 
