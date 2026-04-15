@@ -21,7 +21,7 @@ type SecretService struct {
 	Activity *ActivityService
 }
 
-func createPlainBinding(value interface{}) map[string]interface{} {
+func formatPlainBinding(value interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"type":  "plain",
 		"value": fmt.Sprintf("%v", value),
@@ -177,12 +177,12 @@ func (s *SecretService) NormalizeAdapterConfigForPersistence(ctx context.Context
 	for key, rawBinding := range env {
 		switch binding := rawBinding.(type) {
 		case string:
-			normalizedEnv[key] = createPlainBinding(binding)
+			normalizedEnv[key] = formatPlainBinding(binding)
 		case map[string]interface{}:
 			bindingType, _ := binding["type"].(string)
 			switch bindingType {
 			case "", "plain":
-				normalizedEnv[key] = createPlainBinding(binding["value"])
+				normalizedEnv[key] = formatPlainBinding(binding["value"])
 			case "secret_ref":
 				secretID, _ := binding["secretId"].(string)
 				if strings.TrimSpace(secretID) == "" {

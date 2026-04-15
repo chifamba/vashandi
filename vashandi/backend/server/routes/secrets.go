@@ -21,7 +21,10 @@ func ListSecretProvidersHandler() http.HandlerFunc {
 func ListSecretsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
-		if !requireBoard(w, r) || !requireCompanyAccess(w, r, companyID) {
+		if !requireBoard(w, r) {
+			return
+		}
+		if !requireCompanyAccess(w, r, companyID) {
 			return
 		}
 		var secrets []models.CompanySecret
@@ -34,7 +37,10 @@ func ListSecretsHandler(db *gorm.DB) http.HandlerFunc {
 func CreateSecretHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
-		if !requireBoard(w, r) || !requireCompanyAccess(w, r, companyID) {
+		if !requireBoard(w, r) {
+			return
+		}
+		if !requireCompanyAccess(w, r, companyID) {
 			return
 		}
 		var body struct {

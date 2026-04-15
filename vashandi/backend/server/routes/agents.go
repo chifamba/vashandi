@@ -146,11 +146,11 @@ func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.Handler
 		}
 
 		if err := validateUniqueAgentRole(db, companyID, agent.ID, agent.Role); err != nil {
-			http.Error(w, "company already has a CEO agent", http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if err := validateAgentReportsTo(db, companyID, agent.ID, agent.ReportsTo); err != nil {
-			http.Error(w, "invalid reportsTo relationship", http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -259,7 +259,7 @@ func UpdateAgentHandler(db *gorm.DB) http.HandlerFunc {
 
 		if role, ok := updates["role"].(string); ok {
 			if err := validateUniqueAgentRole(db, agent.CompanyID, agent.ID, role); err != nil {
-				http.Error(w, "company already has a CEO agent", http.StatusBadRequest)
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 		}
@@ -275,7 +275,7 @@ func UpdateAgentHandler(db *gorm.DB) http.HandlerFunc {
 				return
 			}
 			if err := validateAgentReportsTo(db, agent.CompanyID, agent.ID, reportsTo); err != nil {
-				http.Error(w, "invalid reportsTo relationship", http.StatusBadRequest)
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 		}
