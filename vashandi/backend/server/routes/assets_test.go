@@ -3,6 +3,7 @@ package routes
 import (
 	"bytes"
 	"encoding/json"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -17,8 +18,8 @@ import (
 
 func setupAssetsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dbName := "file:assets_" + url.QueryEscape(t.Name()) + "?mode=memory&cache=shared"
-	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	dbURI := "file:assets_" + url.QueryEscape(t.Name()) + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dbURI), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -80,6 +81,20 @@ func setupAssetsTestDB(t *testing.T) *gorm.DB {
 
 	db.Exec("INSERT INTO companies (id, name) VALUES ('comp-a', 'Alpha')")
 	return db
+}
+
+func assertDispositionFilename(t *testing.T, headerValue, expectedDisposition, expectedFilename string) {
+	t.Helper()
+	disposition, params, err := mime.ParseMediaType(headerValue)
+	if err != nil {
+		t.Fatalf("parse content disposition %q: %v", headerValue, err)
+	}
+	if disposition != expectedDisposition {
+		t.Fatalf("expected disposition %q, got %q", expectedDisposition, disposition)
+	}
+	if params["filename"] != expectedFilename {
+		t.Fatalf("expected filename %q, got %q", expectedFilename, params["filename"])
+	}
 }
 
 // ---------- GetAssetHandler ----------
@@ -180,9 +195,7 @@ func TestGetAttachmentContentHandler_Found(t *testing.T) {
 	if got := w.Header().Get("Content-Type"); got != "text/plain" {
 		t.Fatalf("expected content type text/plain, got %q", got)
 	}
-	if got := w.Header().Get("Content-Disposition"); got != `attachment; filename="attachment"` && got != "attachment; filename=attachment" {
-		t.Fatalf("expected attachment disposition, got %q", got)
-	}
+	assertDispositionFilename(t, w.Header().Get("Content-Disposition"), "attachment", "attachment")
 	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Fatalf("expected nosniff header, got %q", got)
 	}
@@ -358,9 +371,7 @@ func TestGetAttachmentContentHandler_HTMLDownloadSetsNosniff(t *testing.T) {
 	if got := w.Header().Get("Content-Type"); got != "text/html" {
 		t.Fatalf("expected text/html, got %q", got)
 	}
-	if got := w.Header().Get("Content-Disposition"); got != `attachment; filename="report.html"` && got != "attachment; filename=report.html" {
-		t.Fatalf("expected attachment content disposition, got %q", got)
-	}
+	assertDispositionFilename(t, w.Header().Get("Content-Disposition"), "attachment", "report.html")
 	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Fatalf("expected nosniff, got %q", got)
 	}
@@ -381,7 +392,5 @@ func TestGetAttachmentContentHandler_ImageStaysInline(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if got := w.Header().Get("Content-Disposition"); got != `inline; filename="preview.png"` && got != "inline; filename=preview.png" {
-		t.Fatalf("expected inline content disposition, got %q", got)
-	}
+	assertDispositionFilename(t, w.Header().Get("Content-Disposition"), "inline", "preview.png")
 }
