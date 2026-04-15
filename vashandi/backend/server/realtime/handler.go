@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -71,6 +72,7 @@ func (h *Hub) LiveEventsHandler(db *gorm.DB, deploymentMode string) http.Handler
 			companyID: companyID,
 			conn:      conn,
 			send:      make(chan []byte, 256),
+			done:      make(chan struct{}),
 		}
 		h.register(client)
 
@@ -100,9 +102,10 @@ func resolveTokenActor(db *gorm.DB, token string) routes.ActorInfo {
 
 	// Update last-used timestamp asynchronously so the upgrade is not delayed.
 	go func() {
+		now := time.Now()
 		if updateErr := db.Model(&models.AgentAPIKey{}).
 			Where("id = ?", key.ID).
-			Update("last_used_at", gorm.Expr("NOW()")).Error; updateErr != nil {
+			Update("last_used_at", now).Error; updateErr != nil {
 			slog.Warn("ws: failed to update agent key last_used_at", "error", updateErr)
 		}
 	}()

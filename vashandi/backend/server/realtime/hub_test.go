@@ -50,6 +50,16 @@ func newTestRouter(db *gorm.DB, deploymentMode string) (*Hub, *chi.Mux) {
 	return hub, r
 }
 
+// readWithTimeout reads a single WebSocket message, retrying until the deadline.
+// This avoids relying on an arbitrary sleep to wait for the writePump goroutine.
+func readWithTimeout(t *testing.T, conn *websocket.Conn, timeout time.Duration) ([]byte, error) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	conn.SetReadDeadline(deadline)
+	_, msg, err := conn.ReadMessage()
+	return msg, err
+}
+
 // TestLiveEventsHandler_LocalTrusted verifies that in local_trusted mode an
 // anonymous WebSocket client is accepted and receives published events.
 func TestLiveEventsHandler_LocalTrusted(t *testing.T) {
@@ -65,17 +75,12 @@ func TestLiveEventsHandler_LocalTrusted(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Give the hub's writePump goroutine a moment to start so the buffered
-	// message is forwarded promptly to the WebSocket connection.
-	time.Sleep(10 * time.Millisecond)
-
 	// Publish an event.
 	event := map[string]any{"type": "agent.status", "companyId": "company-1"}
 	data, _ := json.Marshal(event)
 	hub.Publish("company-1", data)
 
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, msg, err := conn.ReadMessage()
+	msg, err := readWithTimeout(t, conn, 2*time.Second)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -132,16 +137,12 @@ func TestLiveEventsHandler_EventsNotLeakedAcrossCompanies(t *testing.T) {
 	}
 	defer connB.Close()
 
-	// Give both writePump goroutines a moment to start.
-	time.Sleep(10 * time.Millisecond)
-
 	// Publish only to company-A.
 	data, _ := json.Marshal(map[string]any{"type": "heartbeat.run.status"})
 	hub.Publish("company-A", data)
 
 	// company-A client should receive the event.
-	connA.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, msg, err := connA.ReadMessage()
+	msg, err := readWithTimeout(t, connA, 2*time.Second)
 	if err != nil {
 		t.Fatalf("company-A read: %v", err)
 	}

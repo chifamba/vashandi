@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -26,7 +27,17 @@ type Client struct {
 	hub       *Hub
 	companyID string
 	conn      *websocket.Conn
+	// send carries outbound messages. It is never closed by the hub; instead the
+	// hub closes done to signal the client goroutines to exit, avoiding the
+	// send-to-closed-channel race.
 	send      chan []byte
+	done      chan struct{} // closed once via closeOnce to signal disconnect
+	closeOnce sync.Once
+}
+
+// disconnect signals the client goroutines to exit. Safe to call multiple times.
+func (c *Client) disconnect() {
+	c.closeOnce.Do(func() { close(c.done) })
 }
 
 // readPump drains incoming messages and monitors ping/pong liveness.
@@ -69,20 +80,20 @@ func (c *Client) writePump() {
 
 	for {
 		select {
-		case message, ok := <-c.send:
+		case message := <-c.send:
 			if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 				slog.Debug("ws: set write deadline failed", "error", err)
-				return
-			}
-			if !ok {
-				// Hub closed the channel.
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				slog.Warn("ws: write error", "company", c.companyID, "error", err)
 				return
 			}
+
+		case <-c.done:
+			// Hub signalled disconnect; send a close frame and exit.
+			_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			return
 
 		case <-ticker.C:
 			if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {

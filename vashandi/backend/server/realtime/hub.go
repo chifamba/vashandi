@@ -24,6 +24,7 @@ func NewHub() *Hub {
 
 // Publish sends data to every client subscribed to companyID.
 // Slow clients whose send buffer is full are disconnected.
+// It is safe to call Publish concurrently with other Hub operations.
 func (h *Hub) Publish(companyID string, data []byte) {
 	h.mu.RLock()
 	company := h.clients[companyID]
@@ -36,6 +37,9 @@ func (h *Hub) Publish(companyID string, data []byte) {
 	for _, c := range snapshot {
 		select {
 		case c.send <- data:
+			// delivered
+		case <-c.done:
+			// client is being disconnected; skip
 		default:
 			// Buffer full — disconnect the slow client.
 			h.unregister(c)
@@ -52,7 +56,7 @@ func (h *Hub) register(c *Client) {
 	h.clients[c.companyID][c] = true
 }
 
-// unregister removes the client from the hub and closes its send channel.
+// unregister removes the client from the hub and signals it to disconnect.
 // Calling unregister more than once for the same client is safe.
 func (h *Hub) unregister(c *Client) {
 	h.mu.Lock()
@@ -65,7 +69,7 @@ func (h *Hub) unregister(c *Client) {
 		return
 	}
 	delete(company, c)
-	close(c.send)
+	c.disconnect()
 	if len(company) == 0 {
 		delete(h.clients, c.companyID)
 	}
