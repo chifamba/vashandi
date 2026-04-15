@@ -678,9 +678,9 @@ func buildFeedbackTraceResponse(row feedbackTraceRow, includePayload bool) feedb
 	if includePayload {
 		payload = row.PayloadSnapshot
 	}
-	targetSummary := row.TargetSummary
-	if len(targetSummary) == 0 {
-		targetSummary = nil
+	var targetSummary interface{}
+	if len(row.TargetSummary) > 0 {
+		targetSummary = row.TargetSummary
 	}
 	var redactionSummary interface{}
 	if len(row.RedactionSummary) > 0 {
