@@ -570,8 +570,9 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
 - [x] **`assets` routes** — Go: `backend/server/routes/assets_test.go`
   - GetAssetHandler (found, not-found) ✓
   - GetAssetContentHandler (found, not-found) ✓
-  - GetAttachmentContentHandler (found, not-found) ✓
-  - DeleteAttachmentHandler ✓
+  - UploadIssueAttachmentHandler (zip upload contract, issue/company mismatch) ✓
+  - GetAttachmentContentHandler (found, not-found, HTML download nosniff, image inline disposition) ✓
+  - DeleteAttachmentHandler (success, not-found, `{ ok: true }` contract) ✓
 - [x] **`plugin-ui-static` routes** — Go: `backend/server/routes/plugin_ui_static_test.go`
   - Plugin UI serving by plugin key ✓
   - Ready-status enforcement ✓
@@ -738,7 +739,7 @@ The following Go test files were created as equivalents to the TypeScript backlo
 | `backend/server/routes/memory_test.go` | MemoryBindingsHandler (empty array, content type), MemoryOperationsHandler (empty array, content type) |
 | `backend/server/routes/chat_test.go` | CeoChatIngestionHandler (bad body, ingested status), RegisterChatRoutes |
 | `backend/server/routes/handoff_test.go` | HandoffIssueHandler (success with assignee update, not-found, bad body, handoff markdown stored) |
-| `backend/server/routes/assets_test.go` | GetAssetHandler (found/not-found), GetAssetContentHandler (found/not-found), GetAttachmentContentHandler (found/not-found), DeleteAttachmentHandler |
+| `backend/server/routes/assets_test.go` | GetAssetHandler (found/not-found), GetAssetContentHandler (found/not-found), UploadIssueAttachmentHandler (zip upload, issue/company mismatch), GetAttachmentContentHandler (found/not-found, HTML nosniff, image inline), DeleteAttachmentHandler (success/not-found, `{ ok: true }`) |
 | `backend/server/routes/plugin_ui_static_test.go` | Plugin UI static serving by plugin key, ready-status/UI-entrypoint enforcement, symlink traversal blocking, ETag 304 handling, immutable hashed asset caching |
 
 **Bug fix applied:**

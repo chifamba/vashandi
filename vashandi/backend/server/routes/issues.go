@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
@@ -16,6 +18,76 @@ import (
 
 func sha256hash(data []byte) [32]byte {
 	return sha256.Sum256(data)
+}
+
+type issueAttachmentResponse struct {
+	ID               string    `json:"id"`
+	CompanyID        string    `json:"companyId"`
+	IssueID          string    `json:"issueId"`
+	IssueCommentID   *string   `json:"issueCommentId"`
+	AssetID          string    `json:"assetId"`
+	Provider         string    `json:"provider"`
+	ObjectKey        string    `json:"objectKey"`
+	ContentType      string    `json:"contentType"`
+	ByteSize         int       `json:"byteSize"`
+	Sha256           string    `json:"sha256"`
+	OriginalFilename *string   `json:"originalFilename"`
+	CreatedByAgentID *string   `json:"createdByAgentId"`
+	CreatedByUserID  *string   `json:"createdByUserId"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+	ContentPath      string    `json:"contentPath"`
+}
+
+func buildIssueAttachmentResponse(attachment models.IssueAttachment, asset models.Asset) issueAttachmentResponse {
+	return issueAttachmentResponse{
+		ID:               attachment.ID,
+		CompanyID:        attachment.CompanyID,
+		IssueID:          attachment.IssueID,
+		IssueCommentID:   attachment.IssueCommentID,
+		AssetID:          attachment.AssetID,
+		Provider:         asset.Provider,
+		ObjectKey:        asset.ObjectKey,
+		ContentType:      asset.ContentType,
+		ByteSize:         asset.ByteSize,
+		Sha256:           asset.Sha256,
+		OriginalFilename: asset.OriginalFilename,
+		CreatedByAgentID: asset.CreatedByAgentID,
+		CreatedByUserID:  asset.CreatedByUserID,
+		CreatedAt:        attachment.CreatedAt,
+		UpdatedAt:        attachment.UpdatedAt,
+		ContentPath:      fmt.Sprintf("/api/attachments/%s/content", attachment.ID),
+	}
+}
+
+func attachmentDisposition(contentType string) string {
+	if strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return "inline"
+	}
+	return "attachment"
+}
+
+func sanitizeAttachmentFilename(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == '\\' || r == '"' || r == '\'' {
+			return -1
+		}
+		return r
+	}, name)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "attachment"
+	}
+	return name
+}
+
+func buildAttachmentContentDisposition(disposition, filename string) string {
+	if value := mime.FormatMediaType(disposition, map[string]string{
+		"filename": sanitizeAttachmentFilename(filename),
+	}); value != "" {
+		return value
+	}
+	return disposition
 }
 
 // IssueRoutes handles HTTP requests for issues
@@ -101,7 +173,7 @@ func (ir *IssueRoutes) CreateIssueHandler(w http.ResponseWriter, r *http.Request
 func (ir *IssueRoutes) TransitionIssueHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	companyID := r.URL.Query().Get("companyId") // Simplified for parity; in production this comes from context/payload
-	
+
 	var payload struct {
 		Status string `json:"status"`
 	}
@@ -122,122 +194,122 @@ func (ir *IssueRoutes) TransitionIssueHandler(w http.ResponseWriter, r *http.Req
 
 // UpdateIssueHandler updates an issue's fields.
 func (ir *IssueRoutes) UpdateIssueHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-if err := json.NewDecoder(r.Body).Decode(&issue); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-ir.db.WithContext(r.Context()).Save(&issue)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(issue)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if err := json.NewDecoder(r.Body).Decode(&issue); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ir.db.WithContext(r.Context()).Save(&issue)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(issue)
 }
 
 // DeleteIssueHandler soft-deletes an issue via hidden_at.
 func (ir *IssueRoutes) DeleteIssueHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-now := time.Now()
-issue.HiddenAt = &now
-ir.db.WithContext(r.Context()).Save(&issue)
-w.WriteHeader(http.StatusNoContent)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	now := time.Now()
+	issue.HiddenAt = &now
+	ir.db.WithContext(r.Context()).Save(&issue)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // AddIssueCommentHandler creates a comment on an issue.
 func (ir *IssueRoutes) AddIssueCommentHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-var comment models.IssueComment
-if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-comment.IssueID = id
-comment.CompanyID = issue.CompanyID
-if err := ir.db.WithContext(r.Context()).Create(&comment).Error; err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusCreated)
-json.NewEncoder(w).Encode(comment)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var comment models.IssueComment
+	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	comment.IssueID = id
+	comment.CompanyID = issue.CompanyID
+	if err := ir.db.WithContext(r.Context()).Create(&comment).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(comment)
 }
 
 // ListIssueCommentsHandler lists comments for an issue.
 func (ir *IssueRoutes) ListIssueCommentsHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var comments []models.IssueComment
-ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at ASC").Find(&comments)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(comments)
+	id := chi.URLParam(r, "id")
+	var comments []models.IssueComment
+	ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at ASC").Find(&comments)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comments)
 }
 
 // CreateWorkProductHandler creates a work product for an issue.
 func (ir *IssueRoutes) CreateWorkProductHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var issue models.Issue
-if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-var wp models.IssueWorkProduct
-if err := json.NewDecoder(r.Body).Decode(&wp); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-wp.IssueID = id
-wp.CompanyID = issue.CompanyID
-if err := ir.db.WithContext(r.Context()).Create(&wp).Error; err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusCreated)
-json.NewEncoder(w).Encode(wp)
+	id := chi.URLParam(r, "id")
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var wp models.IssueWorkProduct
+	if err := json.NewDecoder(r.Body).Decode(&wp); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	wp.IssueID = id
+	wp.CompanyID = issue.CompanyID
+	if err := ir.db.WithContext(r.Context()).Create(&wp).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(wp)
 }
 
 // ListWorkProductsHandler lists work products for an issue.
 func (ir *IssueRoutes) ListWorkProductsHandler(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var wps []models.IssueWorkProduct
-ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at DESC").Find(&wps)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(wps)
+	id := chi.URLParam(r, "id")
+	var wps []models.IssueWorkProduct
+	ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("created_at DESC").Find(&wps)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(wps)
 }
 
 // BulkUpdateIssuesHandler handles bulk updates to issues.
 func (ir *IssueRoutes) BulkUpdateIssuesHandler(w http.ResponseWriter, r *http.Request) {
-companyID := chi.URLParam(r, "companyId")
-var body struct {
-IDs    []string               `json:"ids"`
-Update map[string]interface{} `json:"update"`
-}
-if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-if len(body.IDs) == 0 {
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]int{"updated": 0})
-return
-}
-result := ir.db.WithContext(r.Context()).Model(&models.Issue{}).
-Where("id IN ? AND company_id = ?", body.IDs, companyID).
-Updates(body.Update)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]int64{"updated": result.RowsAffected})
+	companyID := chi.URLParam(r, "companyId")
+	var body struct {
+		IDs    []string               `json:"ids"`
+		Update map[string]interface{} `json:"update"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"updated": 0})
+		return
+	}
+	result := ir.db.WithContext(r.Context()).Model(&models.Issue{}).
+		Where("id IN ? AND company_id = ?", body.IDs, companyID).
+		Updates(body.Update)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{"updated": result.RowsAffected})
 }
 
 // ReleaseIssueHandler clears the checkout lock fields on an issue.
@@ -464,19 +536,48 @@ func (ir *IssueRoutes) ListIssueAttachmentsHandler(w http.ResponseWriter, r *htt
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	assetIDs := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		assetIDs = append(assetIDs, attachment.AssetID)
+	}
+	assetsByID := map[string]models.Asset{}
+	if len(assetIDs) > 0 {
+		var assets []models.Asset
+		if err := ir.db.WithContext(r.Context()).Where("id IN ?", assetIDs).Find(&assets).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for _, asset := range assets {
+			assetsByID[asset.ID] = asset
+		}
+	}
+	responses := make([]issueAttachmentResponse, 0, len(attachments))
+	for _, attachment := range attachments {
+		asset, ok := assetsByID[attachment.AssetID]
+		if !ok {
+			continue
+		}
+		responses = append(responses, buildIssueAttachmentResponse(attachment, asset))
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(attachments)
+	json.NewEncoder(w).Encode(responses)
 }
 
 // DeleteAttachmentHandler deletes an issue attachment by ID.
 func DeleteAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		attachmentID := chi.URLParam(r, "attachmentId")
-		if err := db.WithContext(r.Context()).Delete(&models.IssueAttachment{}, "id = ?", attachmentID).Error; err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		result := db.WithContext(r.Context()).Delete(&models.IssueAttachment{}, "id = ?", attachmentID)
+		if result.Error != nil {
+			http.Error(w, result.Error.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		if result.RowsAffected == 0 {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}
 }
 
@@ -738,8 +839,8 @@ func (ir *IssueRoutes) GetIssueHeartbeatContextHandler(w http.ResponseWriter, r 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"issue":        issue,
-		"activeRunId":  issue.ExecutionRunID,
+		"issue":         issue,
+		"activeRunId":   issue.ExecutionRunID,
 		"checkoutRunId": issue.CheckoutRunID,
 	})
 }
@@ -768,6 +869,19 @@ func UploadIssueAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
 		issueID := chi.URLParam(r, "issueId")
+		var issue models.Issue
+		if err := db.WithContext(r.Context()).First(&issue, "id = ?", issueID).Error; err != nil {
+			if err != gorm.ErrRecordNotFound {
+				http.Error(w, "Failed to load issue", http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, "Issue not found", http.StatusNotFound)
+			return
+		}
+		if issue.CompanyID != companyID {
+			http.Error(w, "Issue does not belong to company", http.StatusUnprocessableEntity)
+			return
+		}
 		if err := r.ParseMultipartForm(10 << 20); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -778,9 +892,22 @@ func UploadIssueAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		defer file.Close()
-		data, _ := io.ReadAll(file)
+		data, err := io.ReadAll(file)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		hash := fmt.Sprintf("%x", sha256hash(data))
 		fname := header.Filename
+		actor := GetActorInfo(r)
+		var createdByUserID *string
+		if actor.UserID != "" {
+			createdByUserID = &actor.UserID
+		}
+		var createdByAgentID *string
+		if actor.AgentID != "" {
+			createdByAgentID = &actor.AgentID
+		}
 		asset := models.Asset{
 			CompanyID:        companyID,
 			Provider:         "local",
@@ -789,6 +916,8 @@ func UploadIssueAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 			ByteSize:         len(data),
 			Sha256:           hash,
 			OriginalFilename: &fname,
+			CreatedByAgentID: createdByAgentID,
+			CreatedByUserID:  createdByUserID,
 		}
 		if err := db.WithContext(r.Context()).Create(&asset).Error; err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -805,10 +934,7 @@ func UploadIssueAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"attachment": attachment,
-			"asset":      asset,
-		})
+		json.NewEncoder(w).Encode(buildIssueAttachmentResponse(attachment, asset))
 	}
 }
 
@@ -826,9 +952,19 @@ func GetAttachmentContentHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "Asset not found", http.StatusNotFound)
 			return
 		}
-		// Return asset metadata; actual file serving requires storage backend integration
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(asset)
+		contentType := asset.ContentType
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		filename := "attachment"
+		if asset.OriginalFilename != nil && *asset.OriginalFilename != "" {
+			filename = sanitizeAttachmentFilename(*asset.OriginalFilename)
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "private, max-age=60")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Disposition", buildAttachmentContentDisposition(attachmentDisposition(contentType), filename))
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
@@ -838,4 +974,3 @@ func derefStr(s *string) string {
 	}
 	return *s
 }
-
