@@ -572,6 +572,12 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - GetAssetContentHandler (found, not-found) ✓
   - GetAttachmentContentHandler (found, not-found) ✓
   - DeleteAttachmentHandler ✓
+- [x] **`plugin-ui-static` routes** — Go: `backend/server/routes/plugin_ui_static_test.go`
+  - Plugin UI serving by plugin key ✓
+  - Ready-status enforcement ✓
+  - UI entrypoint declaration enforcement ✓
+  - Symlink/path traversal blocking ✓
+  - ETag revalidation and immutable hashed asset caching ✓
 
 ---
 
@@ -733,6 +739,7 @@ The following Go test files were created as equivalents to the TypeScript backlo
 | `backend/server/routes/chat_test.go` | CeoChatIngestionHandler (bad body, ingested status), RegisterChatRoutes |
 | `backend/server/routes/handoff_test.go` | HandoffIssueHandler (success with assignee update, not-found, bad body, handoff markdown stored) |
 | `backend/server/routes/assets_test.go` | GetAssetHandler (found/not-found), GetAssetContentHandler (found/not-found), GetAttachmentContentHandler (found/not-found), DeleteAttachmentHandler |
+| `backend/server/routes/plugin_ui_static_test.go` | Plugin UI static serving by plugin key, ready-status/UI-entrypoint enforcement, symlink traversal blocking, ETag 304 handling, immutable hashed asset caching |
 
 **Bug fix applied:**
 
