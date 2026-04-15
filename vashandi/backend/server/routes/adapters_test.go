@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -242,5 +244,173 @@ func TestDeleteAdapterHandler(t *testing.T) {
 	db.Raw("SELECT status FROM plugins WHERE plugin_key = 'custom'").Scan(&status)
 	if status != "uninstalled" {
 		t.Errorf("expected status 'uninstalled', got %q", status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GetAdapterUIParserHandler tests
+// ---------------------------------------------------------------------------
+
+// writeAdapterPackage creates a minimal adapter package directory with a
+// package.json and optional ui-parser.js in a temp directory. Returns the
+// package directory path.
+func writeAdapterPackage(t *testing.T, pkgJSON string, uiParserContent string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(pkgJSON), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+	if uiParserContent != "" {
+		distDir := filepath.Join(dir, "dist")
+		if err := os.MkdirAll(distDir, 0o755); err != nil {
+			t.Fatalf("mkdir dist: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(distDir, "ui-parser.js"), []byte(uiParserContent), 0o644); err != nil {
+			t.Fatalf("write ui-parser.js: %v", err)
+		}
+	}
+	return dir
+}
+
+func TestGetAdapterUIParserHandler_NotFound_NoPlugin(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+	router := chi.NewRouter()
+	router.Get("/adapters/{type}/ui-parser.js", GetAdapterUIParserHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters/my-ext/ui-parser.js", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetAdapterUIParserHandler_NotFound_NoPackagePath(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status) VALUES ('p1', 'my-ext', 'my-ext-pkg', '1.0.0', '{}', 'installed')")
+
+	router := chi.NewRouter()
+	router.Get("/adapters/{type}/ui-parser.js", GetAdapterUIParserHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters/my-ext/ui-parser.js", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetAdapterUIParserHandler_NotFound_NoUIParserExport(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+	pkgJSON := `{"name":"my-ext","version":"1.0.0"}`
+	pkgDir := writeAdapterPackage(t, pkgJSON, "")
+
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status, package_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"p1", "my-ext", "my-ext-pkg", "1.0.0", "{}", "installed", pkgDir)
+
+	router := chi.NewRouter()
+	router.Get("/adapters/{type}/ui-parser.js", GetAdapterUIParserHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters/my-ext/ui-parser.js", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetAdapterUIParserHandler_ServesJS(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+	parserSrc := `export function parseStdoutLine(line, ts) { return []; }`
+	pkgJSON := `{"name":"my-ext","version":"1.0.0","exports":{"./ui-parser":"./dist/ui-parser.js"}}`
+	pkgDir := writeAdapterPackage(t, pkgJSON, parserSrc)
+
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status, package_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"p1", "my-ext", "my-ext-pkg", "1.0.0", "{}", "installed", pkgDir)
+
+	router := chi.NewRouter()
+	router.Get("/adapters/{type}/ui-parser.js", GetAdapterUIParserHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters/my-ext/ui-parser.js", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/javascript") {
+		t.Errorf("expected application/javascript content-type, got %q", ct)
+	}
+	if body := w.Body.String(); body != parserSrc {
+		t.Errorf("expected parser source %q, got %q", parserSrc, body)
+	}
+}
+
+func TestGetAdapterUIParserHandler_PluginPrefixStripped(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+	parserSrc := `export function parseStdoutLine(line, ts) { return []; }`
+	pkgJSON := `{"name":"my-ext","version":"1.0.0","exports":{"./ui-parser":"./dist/ui-parser.js"}}`
+	pkgDir := writeAdapterPackage(t, pkgJSON, parserSrc)
+
+	// plugin_key stored without "plugin:" prefix.
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status, package_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"p1", "my-ext", "my-ext-pkg", "1.0.0", "{}", "installed", pkgDir)
+
+	router := chi.NewRouter()
+	router.Get("/adapters/{type}/ui-parser.js", GetAdapterUIParserHandler(db))
+
+	// Request with "plugin:" prefix as the UI would send.
+	req := httptest.NewRequest(http.MethodGet, "/adapters/plugin:my-ext/ui-parser.js", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetAdapterUIParserHandler_UnsupportedContractVersion(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+	parserSrc := `export function parseStdoutLine(line, ts) { return []; }`
+	pkgJSON := `{"name":"my-ext","version":"1.0.0","exports":{"./ui-parser":"./dist/ui-parser.js"},"paperclip":{"adapterUiParser":"99.0"}}`
+	pkgDir := writeAdapterPackage(t, pkgJSON, parserSrc)
+
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status, package_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"p1", "my-ext", "my-ext-pkg", "1.0.0", "{}", "installed", pkgDir)
+
+	router := chi.NewRouter()
+	router.Get("/adapters/{type}/ui-parser.js", GetAdapterUIParserHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters/my-ext/ui-parser.js", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unsupported contract version, got %d", w.Code)
+	}
+}
+
+func TestGetAdapterUIParserHandler_UninstalledPlugin(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+	parserSrc := `export function parseStdoutLine(line, ts) { return []; }`
+	pkgJSON := `{"name":"my-ext","version":"1.0.0","exports":{"./ui-parser":"./dist/ui-parser.js"}}`
+	pkgDir := writeAdapterPackage(t, pkgJSON, parserSrc)
+
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status, package_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"p1", "my-ext", "my-ext-pkg", "1.0.0", "{}", "uninstalled", pkgDir)
+
+	router := chi.NewRouter()
+	router.Get("/adapters/{type}/ui-parser.js", GetAdapterUIParserHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters/my-ext/ui-parser.js", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for uninstalled plugin, got %d", w.Code)
 	}
 }
