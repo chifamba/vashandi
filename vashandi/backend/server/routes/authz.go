@@ -27,6 +27,12 @@ type ActorInfo struct {
 	IsInstanceAdmin bool
 	// ActorType is one of "user", "agent", "system", "board", "anonymous"
 	ActorType string
+	// ActorSource identifies how the actor was authenticated.
+	// Board actors: "local_implicit" (local_trusted mode), "session" (cookie session),
+	// or "board_key" (bearer board API key).
+	// Agent actors: "agent_key" (bearer agent API key).
+	// Anonymous actors: "".
+	ActorSource string
 }
 
 // GetActorInfo extracts the ActorInfo stored by the server's ActorMiddleware.
