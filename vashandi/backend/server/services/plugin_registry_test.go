@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -11,7 +13,8 @@ import (
 
 func setupPluginRegistryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&svc_plugin_registry=1"), &gorm.Config{})
+	dsn := fmt.Sprintf("file::memory:?cache=shared&%s=1", url.QueryEscape(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -22,11 +25,17 @@ func setupPluginRegistryTestDB(t *testing.T) *gorm.DB {
 	db.Exec(`CREATE TABLE plugins (
 		id text PRIMARY KEY,
 		plugin_key text NOT NULL UNIQUE,
+		package_name text NOT NULL DEFAULT '',
 		status text NOT NULL DEFAULT 'pending',
 		version text,
+		api_version integer NOT NULL DEFAULT 1,
+		categories text NOT NULL DEFAULT '[]',
 		hash text,
+		install_order integer,
+		package_path text,
 		last_error text,
-		manifest_json json,
+		manifest_json text,
+		installed_at datetime DEFAULT CURRENT_TIMESTAMP,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
