@@ -66,6 +66,16 @@ func attachmentDisposition(contentType string) string {
 	return "attachment"
 }
 
+func sanitizeAttachmentFilename(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
+	return strings.ReplaceAll(name, `"`, "")
+}
+
 // IssueRoutes handles HTTP requests for issues
 type IssueRoutes struct {
 	db      *gorm.DB
@@ -512,15 +522,26 @@ func (ir *IssueRoutes) ListIssueAttachmentsHandler(w http.ResponseWriter, r *htt
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	responses := make([]issueAttachmentResponse, 0, len(attachments))
+	assetIDs := make([]string, 0, len(attachments))
 	for _, attachment := range attachments {
-		var asset models.Asset
-		if err := ir.db.WithContext(r.Context()).First(&asset, "id = ?", attachment.AssetID).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				continue
-			}
+		assetIDs = append(assetIDs, attachment.AssetID)
+	}
+	assetsByID := map[string]models.Asset{}
+	if len(assetIDs) > 0 {
+		var assets []models.Asset
+		if err := ir.db.WithContext(r.Context()).Where("id IN ?", assetIDs).Find(&assets).Error; err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		for _, asset := range assets {
+			assetsByID[asset.ID] = asset
+		}
+	}
+	responses := make([]issueAttachmentResponse, 0, len(attachments))
+	for _, attachment := range attachments {
+		asset, ok := assetsByID[attachment.AssetID]
+		if !ok {
+			continue
 		}
 		responses = append(responses, buildIssueAttachmentResponse(attachment, asset))
 	}
@@ -919,7 +940,7 @@ func GetAttachmentContentHandler(db *gorm.DB) http.HandlerFunc {
 		}
 		filename := "attachment"
 		if asset.OriginalFilename != nil && *asset.OriginalFilename != "" {
-			filename = strings.ReplaceAll(*asset.OriginalFilename, `"`, "")
+			filename = sanitizeAttachmentFilename(*asset.OriginalFilename)
 		}
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", asset.ByteSize))
