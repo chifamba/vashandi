@@ -11,14 +11,38 @@ import (
 func TestActorMiddleware(t *testing.T) {
 	tests := []struct {
 		name           string
+		deploymentMode string
 		authHeader     string
 		expectedUserID string
 		expectedSystem bool
 		expectedAgent  bool
 		expectedType   string
+		expectedAdmin  bool
 	}{
+		// ── local_trusted mode ─────────────────────────────────────────────────
 		{
-			name:           "No Auth Header",
+			name:           "local_trusted: no header → board actor",
+			deploymentMode: "local_trusted",
+			authHeader:     "",
+			expectedUserID: "local-board",
+			expectedAgent:  false,
+			expectedType:   "board",
+			expectedAdmin:  true,
+		},
+		{
+			name:           "local_trusted: any bearer token still board actor",
+			deploymentMode: "local_trusted",
+			authHeader:     "Bearer pcp_board_sometoken",
+			expectedUserID: "local-board",
+			expectedAgent:  false,
+			expectedType:   "board",
+			expectedAdmin:  true,
+		},
+
+		// ── authenticated mode ─────────────────────────────────────────────────
+		{
+			name:           "authenticated: No Auth Header → anonymous",
+			deploymentMode: "authenticated",
 			authHeader:     "",
 			expectedUserID: "",
 			expectedSystem: false,
@@ -26,7 +50,8 @@ func TestActorMiddleware(t *testing.T) {
 			expectedType:   "anonymous",
 		},
 		{
-			name:           "Non-prefixed token is anonymous",
+			name:           "authenticated: Non-prefixed token is anonymous",
+			deploymentMode: "authenticated",
 			authHeader:     "Bearer system",
 			expectedUserID: "",
 			expectedSystem: false,
@@ -34,7 +59,8 @@ func TestActorMiddleware(t *testing.T) {
 			expectedType:   "anonymous",
 		},
 		{
-			name:           "Non-prefixed user token is anonymous",
+			name:           "authenticated: Non-prefixed user token is anonymous",
+			deploymentMode: "authenticated",
 			authHeader:     "Bearer user123",
 			expectedUserID: "",
 			expectedSystem: false,
@@ -42,7 +68,8 @@ func TestActorMiddleware(t *testing.T) {
 			expectedType:   "anonymous",
 		},
 		{
-			name:           "Invalid Bearer Format",
+			name:           "authenticated: Invalid Bearer Format",
+			deploymentMode: "authenticated",
 			authHeader:     "Basic user:pass",
 			expectedUserID: "",
 			expectedSystem: false,
@@ -50,7 +77,8 @@ func TestActorMiddleware(t *testing.T) {
 			expectedType:   "anonymous",
 		},
 		{
-			name:           "Board token with nil DB stays anonymous",
+			name:           "authenticated: Board token with nil DB stays anonymous",
+			deploymentMode: "authenticated",
 			authHeader:     "Bearer pcp_board_sometoken",
 			expectedUserID: "",
 			expectedSystem: false,
@@ -58,12 +86,24 @@ func TestActorMiddleware(t *testing.T) {
 			expectedType:   "anonymous",
 		},
 		{
-			name:           "Agent token with nil DB stays anonymous",
+			name:           "authenticated: Agent token with nil DB stays anonymous",
+			deploymentMode: "authenticated",
 			authHeader:     "Bearer pcp_agent_sometoken",
 			expectedUserID: "",
 			expectedSystem: false,
 			expectedAgent:  false,
 			expectedType:   "anonymous",
+		},
+
+		// ── default / empty mode (treated as local_trusted) ───────────────────
+		{
+			name:           "empty mode defaults to local_trusted",
+			deploymentMode: "",
+			authHeader:     "",
+			expectedUserID: "local-board",
+			expectedAgent:  false,
+			expectedType:   "board",
+			expectedAdmin:  true,
 		},
 	}
 
@@ -77,7 +117,7 @@ func TestActorMiddleware(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// Pass nil db — no DB lookups are performed in these unit tests.
-			handler := ActorMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := ActorMiddleware(nil, AuthMiddlewareOptions{DeploymentMode: tt.deploymentMode})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				actor, ok := r.Context().Value(routes.ActorKey).(routes.ActorInfo)
 				if !ok {
 					t.Fatalf("Expected routes.ActorInfo in context")
@@ -98,9 +138,14 @@ func TestActorMiddleware(t *testing.T) {
 				if actor.ActorType != tt.expectedType {
 					t.Errorf("Expected ActorType %q, got %q", tt.expectedType, actor.ActorType)
 				}
+
+				if actor.IsInstanceAdmin != tt.expectedAdmin {
+					t.Errorf("Expected IsInstanceAdmin %v, got %v", tt.expectedAdmin, actor.IsInstanceAdmin)
+				}
 			}))
 
 			handler.ServeHTTP(rr, req)
 		})
 	}
 }
+

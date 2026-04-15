@@ -26,15 +26,13 @@ type App struct {
 	LiveEvents *realtime.Hub
 }
 
-func NewApp(db *gorm.DB, deploymentMode string) *App {
+func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	activitySvc := services.NewActivityService(db)
 	secretsSvc := services.NewSecretService(db, activitySvc)
 	opsSvc := services.NewWorkspaceOperationService(db)
 	heartbeatSvc := services.NewHeartbeatService(db, secretsSvc, activitySvc, opsSvc, nil, nil)
 
-	hub := realtime.NewHub()
-
-	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, hub, deploymentMode)
+	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
 	
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
@@ -97,7 +95,7 @@ func Run() {
 		os.Exit(1)
 	}
 
-	app := NewApp(db, cfg.Server.DeploymentMode)
+	app := NewApp(db, RouterOptions{DeploymentMode: cfg.Server.DeploymentMode})
 
 	// Startup Recovery
 	if app.Heartbeat != nil {
