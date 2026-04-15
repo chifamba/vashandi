@@ -290,6 +290,17 @@ func TestGetCompanyStatsHandler(t *testing.T) {
 	}
 }
 
+func TestPreviewExportCompanyHandler_NotImplemented(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/exports/preview", nil)
+	w := httptest.NewRecorder()
+
+	PreviewExportCompanyHandler()(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("expected 501, got %d", w.Code)
+	}
+}
+
 func TestExportCompanyHandler_NotImplemented(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/exports", nil)
 	w := httptest.NewRecorder()
@@ -306,6 +317,17 @@ func TestImportCompanyHandler_NotImplemented(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	ImportCompanyHandler()(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("expected 501, got %d", w.Code)
+	}
+}
+
+func TestPreviewImportCompanyHandler_NotImplemented(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/imports/preview", nil)
+	w := httptest.NewRecorder()
+
+	PreviewImportCompanyHandler()(w, req)
 
 	if w.Code != http.StatusNotImplemented {
 		t.Errorf("expected 501, got %d", w.Code)

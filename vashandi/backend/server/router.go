@@ -384,7 +384,9 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/companies/{companyId}/sidebar-badges/stream", routes.SidebarBadgesSSEHandler())
 
 		// Company Export/Import
+		api.Post("/companies/{companyId}/exports/preview", routes.PreviewExportCompanyHandler())
 		api.Post("/companies/{companyId}/exports", routes.ExportCompanyHandler())
+		api.Post("/companies/{companyId}/imports/preview", routes.PreviewImportCompanyHandler())
 		api.Post("/companies/{companyId}/imports/apply", routes.ImportCompanyHandler())
 
 		// Heartbeat Run SSE Events
