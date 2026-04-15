@@ -21,6 +21,13 @@ type SecretService struct {
 	Activity *ActivityService
 }
 
+func normalizePlainBinding(value interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"type":  "plain",
+		"value": fmt.Sprintf("%v", value),
+	}
+}
+
 func NewSecretService(db *gorm.DB, activity *ActivityService) *SecretService {
 	return &SecretService{
 		DB:       db,
@@ -170,15 +177,12 @@ func (s *SecretService) NormalizeAdapterConfigForPersistence(ctx context.Context
 	for key, rawBinding := range env {
 		switch binding := rawBinding.(type) {
 		case string:
-			normalizedEnv[key] = map[string]interface{}{"type": "plain", "value": binding}
+			normalizedEnv[key] = normalizePlainBinding(binding)
 		case map[string]interface{}:
 			bindingType, _ := binding["type"].(string)
 			switch bindingType {
 			case "", "plain":
-				normalizedEnv[key] = map[string]interface{}{
-					"type":  "plain",
-					"value": fmt.Sprintf("%v", binding["value"]),
-				}
+				normalizedEnv[key] = normalizePlainBinding(binding["value"])
 			case "secret_ref":
 				secretID, _ := binding["secretId"].(string)
 				if strings.TrimSpace(secretID) == "" {

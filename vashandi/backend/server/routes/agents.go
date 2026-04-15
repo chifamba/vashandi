@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -122,28 +121,21 @@ func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.Handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
 
-		payload, err := io.ReadAll(r.Body)
-		if err != nil {
+		var body struct {
+			models.Agent
+			ReportsToID    *string `json:"reportsToId"`
+			ReportsToAlias *string `json:"reportsTo"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		var agent models.Agent
-		if err := json.Unmarshal(payload, &agent); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		var aliases struct {
-			ReportsToID *string `json:"reportsToId"`
-			ReportsTo   *string `json:"reportsTo"`
-		}
-		if err := json.Unmarshal(payload, &aliases); err == nil {
-			switch {
-			case aliases.ReportsToID != nil:
-				agent.ReportsTo = aliases.ReportsToID
-			case aliases.ReportsTo != nil:
-				agent.ReportsTo = aliases.ReportsTo
-			}
+		agent := body.Agent
+		switch {
+		case body.ReportsToID != nil:
+			agent.ReportsTo = body.ReportsToID
+		case body.ReportsToAlias != nil:
+			agent.ReportsTo = body.ReportsToAlias
 		}
 		agent.CompanyID = companyID
 
