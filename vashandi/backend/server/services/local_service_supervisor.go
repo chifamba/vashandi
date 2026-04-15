@@ -183,8 +183,17 @@ func safeReadRegistryRecord(filePath string) (*LocalServiceRegistryRecord, error
 	return &rec, nil
 }
 
+// LocalServiceListFilter allows callers to narrow down ListLocalServiceRegistryRecords results.
+type LocalServiceListFilter struct {
+	// ProfileKind, when non-empty, restricts results to records with a matching ProfileKind.
+	ProfileKind string
+	// Metadata, when non-nil, restricts results to records whose Metadata map contains
+	// every key-value pair in this map (values are compared with ==).
+	Metadata map[string]interface{}
+}
+
 // ListLocalServiceRegistryRecords lists all valid records, optionally filtered.
-func ListLocalServiceRegistryRecords(profileKind string) ([]*LocalServiceRegistryRecord, error) {
+func ListLocalServiceRegistryRecords(filter *LocalServiceListFilter) ([]*LocalServiceRegistryRecord, error) {
 	dir := getRuntimeServicesDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -203,8 +212,22 @@ func ListLocalServiceRegistryRecords(profileKind string) ([]*LocalServiceRegistr
 		if rec == nil {
 			continue
 		}
-		if profileKind != "" && rec.ProfileKind != profileKind {
-			continue
+		if filter != nil {
+			if filter.ProfileKind != "" && rec.ProfileKind != filter.ProfileKind {
+				continue
+			}
+			if filter.Metadata != nil {
+				matched := true
+				for k, v := range filter.Metadata {
+					if rec.Metadata == nil || rec.Metadata[k] != v {
+						matched = false
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+			}
 		}
 		records = append(records, rec)
 	}
@@ -213,6 +236,70 @@ func ListLocalServiceRegistryRecords(profileKind string) ([]*LocalServiceRegistr
 		return records[i].ServiceKey < records[j].ServiceKey
 	})
 	return records, nil
+}
+
+// FindLocalServiceRegistryRecordByRuntimeServiceID looks up a registry record by its
+// RuntimeServiceID, optionally restricted to a specific profileKind.
+//
+// If the recorded PID is no longer alive, it attempts to recover by finding the
+// process that currently owns the service's port. If that too fails the stale
+// record is removed and nil is returned. The function also verifies that the
+// process command still looks like what was recorded.
+func FindLocalServiceRegistryRecordByRuntimeServiceID(input struct {
+	RuntimeServiceID string
+	ProfileKind      string
+}) (*LocalServiceRegistryRecord, error) {
+	var filter *LocalServiceListFilter
+	if input.ProfileKind != "" {
+		filter = &LocalServiceListFilter{ProfileKind: input.ProfileKind}
+	}
+	records, err := ListLocalServiceRegistryRecords(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	var record *LocalServiceRegistryRecord
+	for _, r := range records {
+		if r.RuntimeServiceID != nil && *r.RuntimeServiceID == input.RuntimeServiceID {
+			record = r
+			break
+		}
+	}
+	if record == nil {
+		return nil, nil
+	}
+
+	candidate := record
+	if !IsPidAlive(candidate.PID) {
+		var ownerPID int
+		if candidate.Port != nil && *candidate.Port > 0 {
+			ownerPID = ReadLocalServicePortOwner(*candidate.Port)
+		}
+		if ownerPID <= 0 {
+			_ = RemoveLocalServiceRegistryRecord(candidate.ServiceKey)
+			return nil, nil
+		}
+		// Recover: update the record with the discovered PID.
+		pgid := ownerPID
+		if candidate.ProcessGroupID != nil && IsPidAlive(*candidate.ProcessGroupID) {
+			pgid = *candidate.ProcessGroupID
+		}
+		updated := *candidate
+		updated.PID = ownerPID
+		updated.ProcessGroupID = &pgid
+		updated.LastSeenAt = time.Now().UTC().Format(time.RFC3339)
+		if err := WriteLocalServiceRegistryRecord(&updated); err != nil {
+			return nil, err
+		}
+		candidate = &updated
+	}
+
+	if !IsLikelyMatchingCommand(candidate) {
+		_ = RemoveLocalServiceRegistryRecord(record.ServiceKey)
+		return nil, nil
+	}
+
+	return candidate, nil
 }
 
 // TouchLocalServiceRegistryRecord updates the lastSeenAt timestamp and optional fields.
