@@ -34,10 +34,14 @@ func DashboardHandler(db *gorm.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		companyID := chi.URLParam(r, "companyId")
 
-		// Authorization stub: In a full implementation, we'd verify the user/agent has access to companyID
 		if companyID == "" {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "companyId is required"})
+			return
+		}
+
+		if err := AssertCompanyAccess(r, companyID); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
 
@@ -93,7 +97,11 @@ type PlatformMetrics struct {
 func PlatformMetricsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		// Board-only authorization stub
+
+		if err := AssertBoard(r); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
 
 		var metrics PlatformMetrics
 
