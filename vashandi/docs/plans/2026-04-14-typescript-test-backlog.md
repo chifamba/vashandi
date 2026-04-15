@@ -411,14 +411,14 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - `normalizeAdapterConfigForPersistence` strips plaintext values before storage (todo)
   - Secret version rotation ✓
 
-- [ ] **`access` service** (`server/src/services/access.ts`)
+- [x] **`access` service** (`server/src/services/access.ts`) — Go: `backend/server/services/access_test.go`
   - `canUser` permission evaluation
   - `hasPermission` with explicit grants
   - `ensureMembership` throws on non-members
   - Company-scoped membership lookup
   - Instance admin bypass
 
-- [ ] **`agents` service** (`server/src/services/agents.ts`)
+- [x] **`agents` service** (`server/src/services/agents.ts`) — Go: `backend/server/services/agents_test.go`
   - Create with automatic membership grant
   - `resolveByReference` — by id, by name, by shortname
   - Deduplication of agent names within a company
@@ -453,17 +453,17 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - ListPlugins: empty, installed-only filter ✓
   - GetPluginManifest: found, not-found, invalid JSON ✓
   - UpdatePluginStatus: status change, activity logging ✓
-- [ ] **`goals` service** — CRUD, completion transitions, project linkage
-- [ ] **`projects` service** — CRUD, archived project filtering, workspace defaults
-- [ ] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
-- [ ] **`issue-approvals` service** — linking approvals to issues, listing issues pending approval
-- [ ] **`issue-assignment-wakeup` service** — wakeup logic when an assignee changes
+- [x] **`goals` service** — CRUD, completion transitions, project linkage
+- [x] **`projects` service** — CRUD, archived project filtering, workspace defaults
+- [x] **`finance` service** (`server/src/services/finance.ts`) — debit/credit ledger, summary by biller/kind
+- [x] **`issue-approvals` service** — linking approvals to issues, listing issues pending approval
+- [x] **`issue-assignment-wakeup` service** — wakeup logic when an assignee changes
 - [x] **`workspace-operations` service** — operation log writes, idempotency — Go: `backend/server/services/workspace_operations_test.go`
   - CreateRecorder ✓
   - Begin (create operation record) ✓
   - Finish success/error ✓ (⚠ 2 skipped on SQLite due to UUID PK generation — will pass on PostgreSQL)
   - Multiple sequential operations ✓
-- [ ] **`workspace-runtime-read-model` service** — derived workspace status from events
+- [x] **`workspace-runtime-read-model` service** — derived workspace status from events
 - [x] **`workspaces` service** — workspace directory resolution — Go: `backend/server/services/workspaces_test.go`
   - deriveRepoNameFromURL: https with/without .git, ssh, bare name, empty, nested path ✓
 - [x] **`run-log-store` service** — append and list run log entries — Go: `backend/server/services/run_log_store_test.go`
@@ -473,25 +473,25 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Non-existent file ✓
   - Default base path ✓
   - Multiple runs ✓
-- [ ] **`cron` service** — nextRunAt computation, routine trigger firing cadence
+- [x] **`cron` service** — nextRunAt computation, routine trigger firing cadence
 
 #### P2
 
-- [ ] **`live-events` service** — SSE fan-out per company, client subscribe/unsubscribe
-- [ ] **`openbrain-client` service** — context compile request, token budget handling, graceful fallback when OpenBrain is unavailable
+- [x] **`live-events` service** — SSE fan-out per company, client subscribe/unsubscribe
+- [x] **`openbrain-client` service** — context compile request, token budget handling, graceful fallback when OpenBrain is unavailable
 - [x] **`memory-adapter` service** — InjectContextIntoPrompt, xmlEscape, stringMapToAny — Go: `backend/server/services/memory_adapter_test.go`
   - InjectContextIntoPrompt: empty XML passthrough, XML injection with agent_memory wrapper ✓
   - xmlEscape: ampersand, angle brackets, quotes, empty ✓
   - stringMapToAny: populated map, empty map ✓
 - [ ] **`dashboard` service** — stats aggregation
-- [ ] **`plugin-lifecycle` service** — install/uninstall state machine
-- [ ] **`plugin-manifest-validator` service** — schema validation, capability allow-list
-- [ ] **`plugin-config-validator` service** — config schema enforcement
-- [ ] **`plugin-capability-validator` service** — capability intersection checks
-- [ ] **`plugin-host-services` service** — tool dispatch, job scheduling delegation
-- [ ] **`plugin-job-coordinator` service** — job queue ordering and concurrency
-- [ ] **`plugin-registry` service** — installed plugin lookup
-- [ ] **`plugin-loader` service** — dynamic module loading, sandbox setup
+- [x] **`plugin-lifecycle` service** — install/uninstall state machine
+- [x] **`plugin-manifest-validator` service** — schema validation, capability allow-list
+- [x] **`plugin-config-validator` service** — config schema enforcement
+- [x] **`plugin-capability-validator` service** — capability intersection checks
+- [x] **`plugin-host-services` service** — tool dispatch, job scheduling delegation
+- [x] **`plugin-job-coordinator` service** — job queue ordering and concurrency — Go: `backend/server/services/plugin_job_coordinator_test.go`
+- [x] **`plugin-registry` service** — installed plugin lookup — Go: `backend/server/services/plugin_registry_test.go`
+- [x] **`plugin-loader` service** — dynamic module loading, sandbox setup — Go: `backend/server/services/plugin_loader_test.go`
 - [x] **`activity-log` service** — `logActivity` deduplication, payload shape, company scoping — Go: `backend/server/services/activity_test.go`
   - Log with basic fields ✓
   - Log with details JSON ✓
@@ -499,9 +499,9 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - List with company scoping ✓
   - List with entity type filter ✓
   - Default and custom limit ✓
-- [ ] **`feedback-redaction` service** — PII stripping from feedback bundles
-- [ ] **`github-fetch` service** — authenticated GitHub API calls, rate-limit handling
-- [ ] **`default-agent-instructions` service** — template expansion
+- [x] **`feedback-redaction` service** — PII stripping from feedback bundles — Go: `backend/server/services/feedback_redaction_test.go`
+- [x] **`github-fetch` service** — authenticated GitHub API calls, rate-limit handling — Go: `backend/server/services/github_fetch_test.go`
+- [x] **`default-agent-instructions` service** — template expansion — Go: `backend/server/services/default_agent_instructions_test.go`
 
 ---
 
