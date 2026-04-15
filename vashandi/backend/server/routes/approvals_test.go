@@ -356,7 +356,8 @@ func TestResubmitApprovalHandler_RejectsDifferentAgent(t *testing.T) {
 	router.Put("/approvals/{id}/resubmit", ResubmitApprovalHandler(db))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-5/resubmit", nil)
-	req = withAgentActorRequest(req, "agent-other")
+	// agent-other is in the same company but is not the requesting agent
+	req = withAgentActorForCompanyRequest(req, "agent-other", "comp-1")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -373,7 +374,8 @@ func TestResubmitApprovalHandler_AllowsRequestingAgent(t *testing.T) {
 	router.Put("/approvals/{id}/resubmit", ResubmitApprovalHandler(db))
 
 	req := httptest.NewRequest(http.MethodPut, "/approvals/appr-6/resubmit", nil)
-	req = withAgentActorRequest(req, "agent-owner")
+	// agent-owner is in comp-1 and is the requesting agent for appr-6
+	req = withAgentActorForCompanyRequest(req, "agent-owner", "comp-1")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
