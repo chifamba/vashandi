@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -18,14 +19,14 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
 
-func validateAgentReportsTo(db *gorm.DB, companyID, agentID string, reportsTo *string) error {
-	if reportsTo == nil || strings.TrimSpace(*reportsTo) == "" {
+func validateAgentReportsTo(db *gorm.DB, companyID, agentID string, reportsToID *string) error {
+	if reportsToID == nil || strings.TrimSpace(*reportsToID) == "" {
 		return nil
 	}
 
-	parentID := strings.TrimSpace(*reportsTo)
+	parentID := strings.TrimSpace(*reportsToID)
 	if agentID != "" && parentID == agentID {
-		return gorm.ErrInvalidData
+		return fmt.Errorf("agent cannot report to itself")
 	}
 
 	var parent models.Agent
@@ -33,7 +34,7 @@ func validateAgentReportsTo(db *gorm.DB, companyID, agentID string, reportsTo *s
 		return err
 	}
 	if parent.CompanyID != companyID {
-		return gorm.ErrInvalidData
+		return fmt.Errorf("parent agent must belong to the same company")
 	}
 
 	seen := map[string]struct{}{parentID: {}}
@@ -41,10 +42,10 @@ func validateAgentReportsTo(db *gorm.DB, companyID, agentID string, reportsTo *s
 	for current != nil && strings.TrimSpace(*current) != "" {
 		currentID := strings.TrimSpace(*current)
 		if currentID == agentID {
-			return gorm.ErrInvalidData
+			return fmt.Errorf("reporting hierarchy cycle detected")
 		}
 		if _, ok := seen[currentID]; ok {
-			return gorm.ErrInvalidData
+			return fmt.Errorf("reporting hierarchy cycle detected")
 		}
 		seen[currentID] = struct{}{}
 
@@ -53,7 +54,7 @@ func validateAgentReportsTo(db *gorm.DB, companyID, agentID string, reportsTo *s
 			return err
 		}
 		if next.CompanyID != companyID {
-			return gorm.ErrInvalidData
+			return fmt.Errorf("parent agent must belong to the same company")
 		}
 		current = next.ReportsTo
 	}
@@ -75,7 +76,7 @@ func validateUniqueAgentRole(db *gorm.DB, companyID, agentID, role string) error
 		return err
 	}
 	if count > 0 {
-		return gorm.ErrDuplicatedKey
+		return fmt.Errorf("company already has a CEO agent")
 	}
 	return nil
 }
