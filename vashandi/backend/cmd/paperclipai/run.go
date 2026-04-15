@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/chifamba/vashandi/vashandi/backend/server"
 )
 
 var runCmd = &cobra.Command{
@@ -11,11 +14,14 @@ var runCmd = &cobra.Command{
 	Short: "Run the Paperclip server",
 	Long:  `Starts the Paperclip background server, connecting to the configured database and listening on the specified port.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(" paperclipai run ")
-		fmt.Println("-----------------")
-		// Temporary stub for server boot. When porting config logic is ready, this will initialize `backend/server.SetupRouter` and `http.ListenAndServe`.
-		fmt.Println("Starting Paperclip Server... (Stubbed)")
-		fmt.Println("Listening on http://127.0.0.1:3100 (Stubbed)")
+		configDir, _ := cmd.Flags().GetString("config")
+		if configDir != "" {
+			if err := os.Setenv("PAPERCLIP_HOME", configDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to set PAPERCLIP_HOME: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		server.Run()
 	},
 }
 
