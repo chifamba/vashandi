@@ -50,7 +50,7 @@ func (s *PluginRegistryService) List(ctx context.Context, includeUninstalled boo
 	if !includeUninstalled {
 		query = query.Where("status != ?", "uninstalled")
 	}
-	err := query.Order("created_at DESC").Find(&plugins).Error
+	err := query.Order("install_order ASC, installed_at DESC").Find(&plugins).Error
 	return plugins, err
 }
 
