@@ -44,6 +44,14 @@ type RouterOptions struct {
 	// Telemetry is the active telemetry client. When non-nil, route handlers
 	// emit events to the ingest endpoint. Pass nil to disable tracking.
 	Telemetry *telemetry.Client
+
+	// PluginWorkerManager manages Node.js plugin worker processes. When nil,
+	// the worker-dependent routes return 501 Not Implemented.
+	PluginWorkerManager *services.PluginWorkerManager
+
+	// PluginStreamBus receives stream notifications from plugin workers for
+	// SSE fan-out. When nil, the stream bridge route returns 501.
+	PluginStreamBus *services.PluginStreamBus
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
@@ -57,7 +65,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	r := chi.NewRouter()
 
-	issueRoutes := routes.NewIssueRoutes(db, activitySvc, tc)
+	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
 	costSvc := services.NewCostService(db)
 	runtimeMgr := services.NewWorkspaceRuntimeManager(db)
 
@@ -94,7 +102,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	// Auth routes — registered before the /api/v1 block so that more-specific
 	// paths (get-session) take precedence over the wildcard catch-all.
-	r.Get("/api/auth/get-session", routes.GetSessionHandler())
+	r.Get("/api/auth/get-session", routes.GetSessionHandler(db))
 	if opts.AuthHandler != nil {
 		r.Handle("/api/auth/*", opts.AuthHandler)
 	} else {
@@ -139,8 +147,8 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/plugins", routes.ListPluginsHandler(db, activitySvc))
 		api.Get("/plugins/examples", routes.GetPluginExamplesHandler())
 		api.Get("/plugins/ui-contributions", routes.GetPluginUIContributionsHandler(db))
-		api.Get("/plugins/tools", routes.GetPluginToolsHandler())
-		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler())
+		api.Get("/plugins/tools", routes.GetPluginToolsHandler(db))
+		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler(db, opts.PluginWorkerManager))
 		api.Post("/plugins/install", routes.InstallPluginHandler(db, activitySvc))
 		// Per-plugin routes
 		api.Get("/plugins/{pluginId}", routes.GetPluginHandler(db))
@@ -152,15 +160,15 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/plugins/{pluginId}/upgrade", routes.UpgradePluginHandler(db, activitySvc))
 		api.Get("/plugins/{pluginId}/config", routes.GetPluginConfigHandler(db))
 		api.Post("/plugins/{pluginId}/config", routes.SetPluginConfigHandler(db, activitySvc))
-		api.Post("/plugins/{pluginId}/config/test", routes.TestPluginConfigHandler())
-		api.Post("/plugins/{pluginId}/bridge/data", routes.PluginBridgeDataHandler())
-		api.Post("/plugins/{pluginId}/bridge/action", routes.PluginBridgeActionHandler())
-		api.Get("/plugins/{pluginId}/bridge/stream/{channel}", routes.PluginBridgeStreamHandler())
-		api.Post("/plugins/{pluginId}/data/{key}", routes.PluginDataByKeyHandler())
-		api.Post("/plugins/{pluginId}/actions/{key}", routes.PluginActionByKeyHandler())
+		api.Post("/plugins/{pluginId}/config/test", routes.TestPluginConfigHandler(db, opts.PluginWorkerManager))
+		api.Post("/plugins/{pluginId}/bridge/data", routes.PluginBridgeDataHandler(db, opts.PluginWorkerManager))
+		api.Post("/plugins/{pluginId}/bridge/action", routes.PluginBridgeActionHandler(db, opts.PluginWorkerManager))
+		api.Get("/plugins/{pluginId}/bridge/stream/{channel}", routes.PluginBridgeStreamHandler(db, opts.PluginWorkerManager, opts.PluginStreamBus))
+		api.Post("/plugins/{pluginId}/data/{key}", routes.PluginDataByKeyHandler(db, opts.PluginWorkerManager))
+		api.Post("/plugins/{pluginId}/actions/{key}", routes.PluginActionByKeyHandler(db, opts.PluginWorkerManager))
 		api.Get("/plugins/{pluginId}/jobs", routes.GetPluginJobsHandler(db))
 		api.Get("/plugins/{pluginId}/jobs/{jobId}/runs", routes.GetPluginJobRunsHandler(db))
-		api.Post("/plugins/{pluginId}/jobs/{jobId}/trigger", routes.TriggerPluginJobHandler())
+		api.Post("/plugins/{pluginId}/jobs/{jobId}/trigger", routes.TriggerPluginJobHandler(db, opts.PluginWorkerManager))
 		api.Post("/plugins/{pluginId}/webhooks/{endpointKey}", routes.WebhookIngestionHandler(db))
 		api.Get("/plugins/{pluginId}/dashboard", routes.GetPluginDashboardHandler(db))
 
@@ -245,7 +253,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/agents/{id}/resume", routes.ResumeAgentHandler(db))
 		api.Post("/agents/{id}/terminate", routes.TerminateAgentHandler(db))
 		api.Post("/agents/{id}/wakeup", routes.WakeupAgentHandler(db))
-		api.Post("/agents/{id}/heartbeat/invoke", routes.InvokeAgentHeartbeatHandler(db, tc))
+		api.Post("/agents/{id}/heartbeat/invoke", routes.InvokeAgentHeartbeatHandler(db))
 		api.Post("/agents/{id}/claude-login", routes.AgentClaudeLoginHandler(db))
 		api.Get("/agents/{id}/runtime-state", routes.GetAgentRuntimeStateHandler(db))
 		api.Post("/agents/{id}/runtime-state/reset-session", routes.ResetAgentSessionHandler(db))
@@ -303,7 +311,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Goals Routes
 		api.Get("/companies/{companyId}/goals", routes.ListGoalsHandler(db))
-		api.Post("/companies/{companyId}/goals", routes.CreateGoalHandler(db, tc))
+		api.Post("/companies/{companyId}/goals", routes.CreateGoalHandler(db))
 		api.Get("/goals/{id}", routes.GetGoalHandler(db))
 		api.Patch("/goals/{id}", routes.UpdateGoalHandler(db))
 		api.Delete("/goals/{id}", routes.DeleteGoalHandler(db))
@@ -393,7 +401,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Company Skills Routes
 		api.Get("/companies/{companyId}/skills", routes.ListCompanySkillsHandler(db))
-		api.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db, tc))
+		api.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}", routes.GetCompanySkillHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}/update-status", routes.GetCompanySkillUpdateStatusHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}/files", routes.GetCompanySkillFilesHandler(db))
@@ -459,7 +467,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Project Routes
 		api.Get("/companies/{companyId}/projects", routes.ListProjectsHandler(db))
-		api.Post("/companies/{companyId}/projects", routes.CreateProjectHandler(db, tc))
+		api.Post("/companies/{companyId}/projects", routes.CreateProjectHandler(db))
 		api.Get("/projects/{id}", routes.GetProjectHandler(db))
 		api.Patch("/projects/{id}", routes.UpdateProjectHandler(db))
 		api.Delete("/projects/{id}", routes.DeleteProjectHandler(db))
@@ -471,7 +479,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Routine Routes
 		api.Get("/companies/{companyId}/routines", routes.ListRoutinesHandler(db))
-		api.Post("/companies/{companyId}/routines", routes.CreateRoutineHandler(db, tc))
+		api.Post("/companies/{companyId}/routines", routes.CreateRoutineHandler(db))
 		api.Get("/routines/{id}", routes.GetRoutineHandler(db))
 		api.Patch("/routines/{id}", routes.UpdateRoutineHandler(db))
 		api.Delete("/routines/{id}", routes.DeleteRoutineHandler(db))

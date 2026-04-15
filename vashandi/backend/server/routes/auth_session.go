@@ -3,6 +3,10 @@ package routes
 import (
 	"encoding/json"
 	"net/http"
+
+	"gorm.io/gorm"
+
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
 // sessionResponse mirrors the shape returned by Node.js /api/auth/get-session
@@ -26,7 +30,7 @@ type sessionUser struct {
 // GetSessionHandler returns session information for the authenticated actor.
 // It mirrors the /api/auth/get-session endpoint in the Node.js server so that
 // the UI can determine whether a board session is active.
-func GetSessionHandler() http.HandlerFunc {
+func GetSessionHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		actor := GetActorInfo(r)
 		if actor.ActorType != "board" || actor.UserID == "" {
@@ -36,10 +40,28 @@ func GetSessionHandler() http.HandlerFunc {
 			return
 		}
 
-		var name *string
-		if actor.UserID == "local-board" {
-			s := "Local Board"
-			name = &s
+		var user models.User
+		if err := db.Where("id = ?", actor.UserID).First(&user).Error; err != nil {
+			// fallback for local-board or missing user
+			var namePtr *string
+			if actor.UserID == "local-board" {
+				s := "Local Board"
+				namePtr = &s
+			}
+			resp := sessionResponse{
+				Session: &sessionInfo{
+					ID:     "paperclip:board:" + actor.UserID,
+					UserID: actor.UserID,
+				},
+				User: &sessionUser{
+					ID:    actor.UserID,
+					Email: nil,
+					Name:  namePtr,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			return
 		}
 
 		resp := sessionResponse{
@@ -48,9 +70,9 @@ func GetSessionHandler() http.HandlerFunc {
 				UserID: actor.UserID,
 			},
 			User: &sessionUser{
-				ID:    actor.UserID,
-				Email: nil,
-				Name:  name,
+				ID:    user.ID,
+				Email: &user.Email,
+				Name:  &user.Name,
 			},
 		}
 

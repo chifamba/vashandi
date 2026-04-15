@@ -19,11 +19,12 @@ import (
 )
 
 type App struct {
-	Router     *chi.Mux
-	DB         *gorm.DB
-	Heartbeat  *services.HeartbeatService
-	Scheduler  *services.RoutineSchedulerService
-	LiveEvents *realtime.Hub
+	Router              *chi.Mux
+	DB                  *gorm.DB
+	Heartbeat           *services.HeartbeatService
+	Scheduler           *services.RoutineSchedulerService
+	LiveEvents          *realtime.Hub
+	PluginWorkerManager *services.PluginWorkerManager
 }
 
 func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
@@ -39,17 +40,32 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	routerOpts.Hub = hub
 	heartbeatSvc.Notify = hub.Publish
 
+	// Create the plugin stream bus (SSE fan-out for worker stream notifications).
+	streamBus := services.NewPluginStreamBus()
+	routerOpts.PluginStreamBus = streamBus
+
+	// Create the plugin worker manager that spawns Node.js plugin processes.
+	pluginWorkerManager := services.NewPluginWorkerManager(services.PluginWorkerManagerOptions{
+		DB:        db,
+		StreamBus: streamBus,
+		ActivityLog: func(ctx context.Context, entry services.LogEntry) (string, error) {
+			return activitySvc.Log(ctx, entry)
+		},
+	})
+	routerOpts.PluginWorkerManager = pluginWorkerManager
+
 	issueSvc := services.NewIssueService(db, activitySvc)
 	schedulerSvc := services.NewRoutineSchedulerService(db, heartbeatSvc, issueSvc, activitySvc)
 
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
 
 	return &App{
-		Router:     r,
-		DB:         db,
-		Heartbeat:  heartbeatSvc,
-		Scheduler:  schedulerSvc,
-		LiveEvents: hub,
+		Router:              r,
+		DB:                  db,
+		Heartbeat:           heartbeatSvc,
+		Scheduler:           schedulerSvc,
+		LiveEvents:          hub,
+		PluginWorkerManager: pluginWorkerManager,
 	}
 }
 
@@ -99,11 +115,13 @@ func Run() {
 		os.Exit(1)
 	}
 
+	authHandler := NewBetterAuthHandler(db)
 	app := NewApp(db, RouterOptions{
 		DeploymentMode:     cfg.Server.DeploymentMode,
 		DeploymentExposure: cfg.Server.Exposure,
 		AllowedHostnames:   cfg.Server.AllowedHostnames,
 		BindHost:           cfg.Server.Host,
+		AuthHandler:        authHandler,
 		Telemetry:          GetTelemetryClient(),
 	})
 
@@ -119,6 +137,12 @@ func Run() {
 	if app.Scheduler != nil {
 		slog.Info("Starting routine cron scheduler")
 		services.StartRoutineScheduler(context.Background(), app.Scheduler, 60_000)
+	}
+
+	// Start plugin workers for all ready plugins.
+	if app.PluginWorkerManager != nil {
+		slog.Info("Starting plugin workers for ready plugins")
+		go app.PluginWorkerManager.StartReadyPlugins(context.Background())
 	}
 
 	// Start the feedback export flusher (mirrors the Node.js 5-second timer).
