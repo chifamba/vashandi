@@ -2,9 +2,14 @@ package routes
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -17,10 +22,15 @@ import (
 // setupAgentsCRUDTestDB creates an isolated in-memory SQLite database for agent CRUD tests.
 func setupAgentsCRUDTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&agents_crud=1"), &gorm.Config{})
+	dbName := fmt.Sprintf("file:agents_crud_%s?mode=memory&cache=shared", url.QueryEscape(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	db.Exec("DROP TABLE IF EXISTS agent_api_keys")
+	db.Exec("DROP TABLE IF EXISTS agent_config_revisions")
+	db.Exec("DROP TABLE IF EXISTS agent_task_sessions")
+	db.Exec("DROP TABLE IF EXISTS agent_runtime_state")
 	db.Exec("DROP TABLE IF EXISTS agents")
 	db.Exec(`CREATE TABLE agents (
 		id text PRIMARY KEY,
@@ -45,6 +55,58 @@ func setupAgentsCRUDTestDB(t *testing.T) *gorm.DB {
 		created_at datetime,
 		updated_at datetime,
 		deleted_at datetime
+	)`)
+	db.Exec(`CREATE TABLE agent_runtime_state (
+		agent_id text PRIMARY KEY,
+		company_id text NOT NULL,
+		adapter_type text NOT NULL,
+		session_id text,
+		state_json text NOT NULL DEFAULT '{}',
+		last_run_id text,
+		last_run_status text,
+		total_input_tokens integer NOT NULL DEFAULT 0,
+		total_output_tokens integer NOT NULL DEFAULT 0,
+		total_cached_input_tokens integer NOT NULL DEFAULT 0,
+		total_cost_cents integer NOT NULL DEFAULT 0,
+		last_error text,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE agent_task_sessions (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		agent_id text NOT NULL,
+		adapter_type text NOT NULL,
+		task_key text NOT NULL,
+		session_params_json text DEFAULT '{}',
+		session_display_id text,
+		last_run_id text,
+		last_error text,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE agent_config_revisions (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		agent_id text NOT NULL,
+		created_by_agent_id text,
+		created_by_user_id text,
+		source text NOT NULL DEFAULT 'patch',
+		rolled_back_from_revision_id text,
+		changed_keys text NOT NULL DEFAULT '[]',
+		before_config text NOT NULL,
+		after_config text NOT NULL,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE agent_api_keys (
+		id text PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+		agent_id text NOT NULL,
+		company_id text NOT NULL,
+		name text NOT NULL,
+		key_hash text NOT NULL,
+		last_used_at datetime,
+		revoked_at datetime,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
 	return db
 }
@@ -313,5 +375,92 @@ func TestResumeAgentHandler(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&agent)
 	if agent.Status != "active" {
 		t.Errorf("expected Status 'active', got %q", agent.Status)
+	}
+}
+
+func TestGetAgentAPIKeysHandler_StripsSensitiveFields(t *testing.T) {
+	db := setupAgentsCRUDTestDB(t)
+	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('api-ag', 'comp-1', 'API Agent', 'general', 'process', '{}', '{}', '{}')")
+	db.Exec("INSERT INTO agent_api_keys (id, agent_id, company_id, name, key_hash) VALUES ('key-1', 'api-ag', 'comp-1', 'Primary', 'hash-1')")
+	db.Exec("INSERT INTO agent_api_keys (id, agent_id, company_id, name, key_hash, revoked_at) VALUES ('key-2', 'api-ag', 'comp-1', 'Revoked', 'hash-2', CURRENT_TIMESTAMP)")
+
+	router := chi.NewRouter()
+	router.Get("/agents/{id}/keys", GetAgentAPIKeysHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/agents/api-ag/keys", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var keys []map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&keys); err != nil {
+		t.Fatalf("decode keys: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected only active keys, got %d", len(keys))
+	}
+	if _, ok := keys[0]["keyHash"]; ok {
+		t.Fatal("expected response to omit keyHash")
+	}
+	if _, ok := keys[0]["KeyHash"]; ok {
+		t.Fatal("expected response to omit KeyHash")
+	}
+}
+
+func TestCreateAndRevokeAgentAPIKeyHandler(t *testing.T) {
+	db := setupAgentsCRUDTestDB(t)
+	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('api-create', 'comp-1', 'API Agent', 'general', 'process', '{}', '{}', '{}')")
+
+	router := chi.NewRouter()
+	router.Post("/agents/{id}/keys", CreateAgentAPIKeyHandler(db))
+	router.Delete("/agents/{id}/keys/{keyId}", RevokeAgentAPIKeyHandler(db))
+
+	createReq := httptest.NewRequest(http.MethodPost, "/agents/api-create/keys", bytes.NewBufferString(`{"name":"CLI key"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRes := httptest.NewRecorder()
+	router.ServeHTTP(createRes, createReq)
+
+	if createRes.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d; body: %s", createRes.Code, createRes.Body.String())
+	}
+
+	var created map[string]string
+	if err := json.NewDecoder(createRes.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	token := created["token"]
+	if !strings.HasPrefix(token, "pcp_agent_") {
+		t.Fatalf("expected generated agent token, got %q", token)
+	}
+
+	sum := sha256.Sum256([]byte(token))
+	expectedHash := hex.EncodeToString(sum[:])
+
+	var stored models.AgentAPIKey
+	if err := db.First(&stored, "id = ?", created["id"]).Error; err != nil {
+		t.Fatalf("load stored key: %v", err)
+	}
+	if stored.KeyHash != expectedHash {
+		t.Fatalf("expected stored hash %q, got %q", expectedHash, stored.KeyHash)
+	}
+	if stored.RevokedAt != nil {
+		t.Fatal("expected new API key to be active")
+	}
+
+	revokeReq := httptest.NewRequest(http.MethodDelete, "/agents/api-create/keys/"+created["id"], nil)
+	revokeRes := httptest.NewRecorder()
+	router.ServeHTTP(revokeRes, revokeReq)
+	if revokeRes.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d; body: %s", revokeRes.Code, revokeRes.Body.String())
+	}
+
+	if err := db.First(&stored, "id = ?", created["id"]).Error; err != nil {
+		t.Fatalf("reload stored key: %v", err)
+	}
+	if stored.RevokedAt == nil {
+		t.Fatal("expected revoked_at to be set")
 	}
 }
