@@ -12,8 +12,19 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
 
+// RouterOptions configures the router beyond the basic service dependencies.
+type RouterOptions struct {
+	// DeploymentMode is "local_trusted" (default) or "authenticated".
+	DeploymentMode string
+
+	// AuthHandler is an optional handler mounted at /api/auth/* to serve
+	// BetterAuth endpoints (sign-in, sign-out, etc.).  When nil those paths
+	// return 501 Not Implemented.
+	AuthHandler http.Handler
+}
+
 // SetupRouter initializes the chi router with common middleware and routes
-func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc *services.SecretService, heartbeatSvc *services.HeartbeatService) *chi.Mux {
+func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc *services.SecretService, heartbeatSvc *services.HeartbeatService, opts RouterOptions) *chi.Mux {
 	r := chi.NewRouter()
 
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
@@ -24,7 +35,20 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(ActorMiddleware(db))
+	r.Use(ActorMiddleware(db, AuthMiddlewareOptions{DeploymentMode: opts.DeploymentMode}))
+
+	// Auth routes — registered before the /api/v1 block so that more-specific
+	// paths (get-session) take precedence over the wildcard catch-all.
+	r.Get("/api/auth/get-session", routes.GetSessionHandler())
+	if opts.AuthHandler != nil {
+		r.Handle("/api/auth/*", opts.AuthHandler)
+	} else {
+		r.HandleFunc("/api/auth/*", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotImplemented)
+			json.NewEncoder(w).Encode(map[string]string{"error": "auth handler not configured"}) //nolint:errcheck
+		})
+	}
 
 	// Routes
 	r.Get("/health", routes.HealthHandler(db))
