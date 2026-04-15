@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
@@ -13,7 +14,9 @@ import (
 
 func setupPluginsRouteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&plugins_route_test=1"), &gorm.Config{})
+	// Use test name as part of DSN to ensure isolation.
+	dsn := "file::memory:?cache=shared&plugins_route_test_" + strings.ReplaceAll(t.Name(), "/", "_") + "=1"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -55,6 +58,7 @@ func TestListPluginsHandler_Empty(t *testing.T) {
 	activity := services.NewActivityService(db)
 
 	req := httptest.NewRequest(http.MethodGet, "/plugins", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 
 	ListPluginsHandler(db, activity)(w, req)
@@ -80,6 +84,7 @@ func TestListPluginsHandler_WithPlugins(t *testing.T) {
 	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status) VALUES ('p2', 'removed', 'removed-plugin', '1.0.0', '{}', 'uninstalled')")
 
 	req := httptest.NewRequest(http.MethodGet, "/plugins", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 
 	ListPluginsHandler(db, activity)(w, req)
@@ -89,7 +94,7 @@ func TestListPluginsHandler_WithPlugins(t *testing.T) {
 	}
 
 	var plugins []interface{}
-	json.NewDecoder(w.Body).Decode(&plugins)
+	json.NewDecoder(w.Body).Decode(&plugins) //nolint:errcheck
 	if len(plugins) != 1 {
 		t.Errorf("expected 1 installed plugin, got %d", len(plugins))
 	}
@@ -100,6 +105,7 @@ func TestListPluginsHandler_ContentType(t *testing.T) {
 	activity := services.NewActivityService(db)
 
 	req := httptest.NewRequest(http.MethodGet, "/plugins", nil)
+	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 
 	ListPluginsHandler(db, activity)(w, req)
@@ -109,3 +115,118 @@ func TestListPluginsHandler_ContentType(t *testing.T) {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
 	}
 }
+
+func TestListPluginsHandler_Unauthenticated(t *testing.T) {
+	db := setupPluginsRouteTestDB(t)
+	activity := services.NewActivityService(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/plugins", nil)
+	// No actor set — should get 403.
+	w := httptest.NewRecorder()
+
+	ListPluginsHandler(db, activity)(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for unauthenticated request, got %d", w.Code)
+	}
+}
+
+func TestListPluginsHandler_StatusFilter(t *testing.T) {
+	db := setupPluginsRouteTestDB(t)
+	activity := services.NewActivityService(db)
+
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status) VALUES ('p1', 'slack', 'slack-plugin', '1.0.0', '{}', 'ready')")
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status) VALUES ('p2', 'github', 'gh-plugin', '1.0.0', '{}', 'disabled')")
+
+	req := httptest.NewRequest(http.MethodGet, "/plugins?status=ready", nil)
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+
+	ListPluginsHandler(db, activity)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var plugins []interface{}
+	json.NewDecoder(w.Body).Decode(&plugins) //nolint:errcheck
+	if len(plugins) != 1 {
+		t.Errorf("expected 1 ready plugin, got %d", len(plugins))
+	}
+}
+
+func TestListPluginsHandler_InvalidStatusFilter(t *testing.T) {
+	db := setupPluginsRouteTestDB(t)
+	activity := services.NewActivityService(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/plugins?status=bogus", nil)
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+
+	ListPluginsHandler(db, activity)(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid status filter, got %d", w.Code)
+	}
+}
+
+func TestGetPluginExamplesHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/plugins/examples", nil)
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+
+	GetPluginExamplesHandler()(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var examples []interface{}
+	if err := json.NewDecoder(w.Body).Decode(&examples); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(examples) == 0 {
+		t.Errorf("expected at least one bundled example")
+	}
+}
+
+func TestGetPluginHealthHandler(t *testing.T) {
+	db := setupPluginsRouteTestDB(t)
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status) VALUES ('ph1', 'healthy.plugin', 'healthy-pkg', '1.0.0', '{\"id\":\"healthy.plugin\"}', 'ready')")
+
+	req := httptest.NewRequest(http.MethodGet, "/plugins/ph1/health", nil)
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+
+	// Use a chi router context so chi.URLParam works.
+	chiCtx := newChiCtxWithParams(req, map[string]string{"pluginId": "ph1"})
+	GetPluginHealthHandler(db)(w, chiCtx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if result["healthy"] != true {
+		t.Errorf("expected healthy=true for ready plugin")
+	}
+}
+
+func TestGetPluginHandler_NotFound(t *testing.T) {
+	db := setupPluginsRouteTestDB(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/plugins/nonexistent", nil)
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+
+	chiCtx := newChiCtxWithParams(req, map[string]string{"pluginId": "nonexistent"})
+	GetPluginHandler(db)(w, chiCtx)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+

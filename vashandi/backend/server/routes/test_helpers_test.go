@@ -1,6 +1,11 @@
 package routes
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+)
 
 func withBoardActorRequest(req *http.Request) *http.Request {
 	return req.WithContext(WithActor(req.Context(), ActorInfo{
@@ -27,4 +32,15 @@ func withAgentActorForCompanyRequest(req *http.Request, agentID, companyID strin
 		IsAgent:   true,
 		ActorType: "agent",
 	}))
+}
+
+// newChiCtxWithParams wraps a request so that chi.URLParam resolves the given
+// key→value pairs. Use this in unit tests that call handlers directly (without
+// going through a real chi router).
+func newChiCtxWithParams(r *http.Request, params map[string]string) *http.Request {
+	rctx := chi.NewRouteContext()
+	for k, v := range params {
+		rctx.URLParams.Add(k, v)
+	}
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
