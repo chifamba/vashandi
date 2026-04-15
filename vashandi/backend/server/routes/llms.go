@@ -42,12 +42,13 @@ return func(w http.ResponseWriter, r *http.Request) {
 adapterType := chi.URLParam(r, "adapterType")
 w.Header().Set("Content-Type", "text/plain")
 descriptions := map[string]string{
-"claude":    "Anthropic Claude: supports streaming, tool use, large context windows.",
-"codex":     "OpenAI Codex/GPT-4o: supports function calling, streaming, vision.",
-"gemini":    "Google Gemini: supports streaming, function calling, multimodal.",
-"cursor":    "Cursor: AI code editor with diff-based workflow.",
-"windsurf":  "Windsurf: AI code editor with cascade agents.",
-"aider":     "Aider: CLI-based AI pair programming tool.",
+"claude":         "Anthropic Claude: supports streaming, tool use, large context windows.",
+"codex":          "OpenAI Codex/GPT-4o: supports function calling, streaming, vision.",
+"gemini":         "Google Gemini: supports streaming, function calling, multimodal.",
+"cursor":         "Cursor: AI code editor with diff-based workflow.",
+"windsurf":       "Windsurf: AI code editor with cascade agents.",
+"aider":          "Aider: CLI-based AI pair programming tool.",
+"opencode_local": "OpenCode (local): runs OpenCode CLI as a local subprocess with provider/model routing and session resume.",
 }
 if desc, ok := descriptions[adapterType]; ok {
 fmt.Fprintln(w, desc)
