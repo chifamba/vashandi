@@ -411,12 +411,12 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - `normalizeAdapterConfigForPersistence` strips plaintext values before storage (todo)
   - Secret version rotation ✓
 
-- [ ] **`access` service** (`server/src/services/access.ts`)
-  - `canUser` permission evaluation
-  - `hasPermission` with explicit grants
-  - `ensureMembership` throws on non-members
-  - Company-scoped membership lookup
-  - Instance admin bypass
+- [x] **`access` service** (`server/src/services/access.ts`) — Go: `backend/server/services/access_test.go`
+  - `canUser` permission evaluation ✓
+  - `hasPermission` with explicit grants ✓
+  - `ensureMembership` upserts membership state ✓
+  - Company-scoped membership lookup ✓
+  - Instance admin bypass ✓
 
 - [ ] **`agents` service** (`server/src/services/agents.ts`)
   - Create with automatic membership grant
