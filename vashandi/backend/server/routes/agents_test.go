@@ -71,7 +71,6 @@ func (m *mockMemoryAdapter) ListProposals(_ context.Context, _ string) ([]map[st
 }
 func (m *mockMemoryAdapter) ResolveProposal(_ context.Context, _, _, _ string) error { return nil }
 
-
 func setupTestDB(t *testing.T) *gorm.DB {
 	// Use unique in-memory db per test
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -79,8 +78,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
 
-    // AutoMigrate is better, we'll try to use sqlite compatible struct or just provide fake types
-    db.Exec("DROP TABLE IF EXISTS agents;")
+	// AutoMigrate is better, we'll try to use sqlite compatible struct or just provide fake types
+	db.Exec("DROP TABLE IF EXISTS agents;")
 	err = db.Exec(`CREATE TABLE agents (
         id text PRIMARY KEY,
         company_id text,
@@ -139,7 +138,7 @@ func TestCreateAgentHandlerWebhook(t *testing.T) {
 	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, &mockMemoryAdapter{baseURL: mockServer.URL}))
 
 	agentData := map[string]string{
-        "id": "agent-123",
+		"id":   "agent-123",
 		"name": "Test Agent",
 		"role": "Assistant",
 	}
@@ -248,4 +247,53 @@ type roundTripperFunc struct {
 
 func (r *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return r.fn(req)
+}
+
+func TestGetAdapterModelsHandler_ReturnsAdapterModelArray(t *testing.T) {
+	router := chi.NewRouter()
+	router.Get("/companies/{companyId}/adapters/{type}/models", GetAdapterModelsHandler(nil))
+
+	req := httptest.NewRequest(http.MethodGet, "/companies/comp-1/adapters/codex/models", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected Content-Type application/json, got %q", got)
+	}
+
+	var models []map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&models); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(models) == 0 {
+		t.Fatal("expected non-empty model list")
+	}
+	if models[0]["id"] == "" || models[0]["label"] == "" {
+		t.Fatalf("expected adapter model objects with id and label, got %#v", models[0])
+	}
+}
+
+func TestGetAdapterModelsHandler_UnknownAdapterReturnsEmptyArray(t *testing.T) {
+	router := chi.NewRouter()
+	router.Get("/companies/{companyId}/adapters/{type}/models", GetAdapterModelsHandler(nil))
+
+	req := httptest.NewRequest(http.MethodGet, "/companies/comp-1/adapters/unknown/models", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var models []map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&models); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("expected empty array for unknown adapter, got %#v", models)
+	}
 }

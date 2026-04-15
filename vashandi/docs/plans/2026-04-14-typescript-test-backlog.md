@@ -288,7 +288,7 @@ Priority: **P0** = critical path / high risk, **P1** = important, **P2** = nice 
   - Permission gating: board admin vs non-admin vs agent callers (⚠ partial — authz context key bug blocks full test)
   - `reportsTo` hierarchy validation (todo)
   - Role uniqueness (CEO singleton) (todo)
-  - `GET /agents/:id/models` — model list delegation to adapter (todo)
+  - `GET /companies/:companyId/adapters/:type/models` — adapter model list response contract ✓
 
 - [x] **`secrets` routes** (`server/src/routes/secrets.ts`) — Go: `backend/server/routes/secrets_test.go`
   - Create/update/delete company-level and agent-level secrets ✓
