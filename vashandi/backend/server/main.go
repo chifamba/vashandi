@@ -2,16 +2,20 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
+	"github.com/chifamba/vashandi/vashandi/backend/shared"
 )
 
 type App struct {
@@ -50,6 +54,22 @@ func (a *App) Start(port int) error {
 	return http.ListenAndServe(addr, a.Router)
 }
 
+// LoadConfig reads the PaperclipConfig from the instance root config.json.
+// The DATABASE_URL environment variable overrides the config's database connection string.
+func LoadConfig() (*shared.PaperclipConfig, error) {
+	instanceRoot := shared.ResolvePaperclipInstanceRoot()
+	configFile := filepath.Join(instanceRoot, "config.json")
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return nil, fmt.Errorf("could not read config file %s: %w", configFile, err)
+	}
+	var cfg shared.PaperclipConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("could not parse config file: %w", err)
+	}
+	return &cfg, nil
+}
+
 func Run() {
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -57,9 +77,20 @@ func Run() {
 		os.Exit(1)
 	}
 
-	// Initialize DB (simplified for now, assumes DB setup logic elsewhere)
-	// In production, this would use cfg.Database connection details
-	var db *gorm.DB 
+	dsn := cfg.Database.ConnectionString
+	if envDSN := os.Getenv("DATABASE_URL"); envDSN != "" {
+		dsn = envDSN
+	}
+	if dsn == "" {
+		slog.Error("No database connection string configured; set database.connectionString in config or DATABASE_URL env var")
+		os.Exit(1)
+	}
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
+	}
 
 	app := NewApp(db)
 
