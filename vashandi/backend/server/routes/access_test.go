@@ -70,9 +70,18 @@ func setupAccessTestDB(t *testing.T) *gorm.DB {
 		status text NOT NULL DEFAULT 'pending_approval',
 		request_ip text NOT NULL DEFAULT '127.0.0.1',
 		requesting_user_id text,
+		request_email_snapshot text,
 		agent_name text,
 		adapter_type text,
+		capabilities text,
+		agent_defaults_payload text DEFAULT '{}',
+		claim_secret_hash text,
+		claim_secret_expires_at datetime,
+		claim_secret_consumed_at datetime,
+		created_agent_id text,
+		approved_by_user_id text,
 		approved_at datetime,
+		rejected_by_user_id text,
 		rejected_at datetime,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
@@ -187,9 +196,9 @@ func TestCLIAuthChallengeHandler_Create(t *testing.T) {
 	db := setupAccessTestDB(t)
 
 	challengeBody, _ := json.Marshal(map[string]string{
-		"id":              "ch-1",
-		"secret_hash":     "abc123",
-		"command":         "auth",
+		"id":               "ch-1",
+		"secret_hash":      "abc123",
+		"command":          "auth",
 		"pending_key_hash": "keyhash",
 		"pending_key_name": "my-laptop",
 	})

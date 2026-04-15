@@ -99,7 +99,7 @@ func setupAgentsCRUDTestDB(t *testing.T) *gorm.DB {
 		created_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
 	db.Exec(`CREATE TABLE agent_api_keys (
-		id text PRIMARY KEY,
+		id text PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		agent_id text NOT NULL,
 		company_id text NOT NULL,
 		name text NOT NULL,

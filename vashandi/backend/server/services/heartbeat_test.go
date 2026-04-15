@@ -71,7 +71,7 @@ func (m *heartbeatTestMemory) ResolveProposal(context.Context, string, string, s
 
 func setupHeartbeatServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dbName := fmt.Sprintf("file::memory:?cache=shared&heartbeat_svc_%s=1", url.QueryEscape(t.Name()))
+	dbName := fmt.Sprintf("file:heartbeat_svc_%s?mode=memory&cache=shared", url.QueryEscape(t.Name()))
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -89,15 +89,24 @@ func setupHeartbeatServiceTestDB(t *testing.T) *gorm.DB {
 		company_id text NOT NULL,
 		name text NOT NULL,
 		role text NOT NULL DEFAULT 'general',
+		title text,
+		icon text,
 		status text NOT NULL DEFAULT 'idle',
+		reports_to text,
+		capabilities text,
 		adapter_type text NOT NULL DEFAULT 'process',
 		adapter_config text NOT NULL DEFAULT '{}',
 		runtime_config text NOT NULL DEFAULT '{}',
 		budget_monthly_cents integer NOT NULL DEFAULT 0,
 		spent_monthly_cents integer NOT NULL DEFAULT 0,
+		pause_reason text,
+		paused_at datetime,
 		permissions text NOT NULL DEFAULT '{}',
+		last_heartbeat_at datetime,
+		metadata text,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
-		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+		deleted_at datetime
 	)`)
 	db.Exec(`CREATE TABLE heartbeat_runs (
 		id text PRIMARY KEY,
@@ -136,7 +145,7 @@ func setupHeartbeatServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
 	db.Exec(`CREATE TABLE workspace_operations (
-		id text PRIMARY KEY,
+		id text PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		company_id text NOT NULL,
 		execution_workspace_id text,
 		heartbeat_run_id text,
@@ -160,7 +169,7 @@ func setupHeartbeatServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
 	db.Exec(`CREATE TABLE cost_events (
-		id text PRIMARY KEY,
+		id text PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		company_id text NOT NULL,
 		agent_id text NOT NULL,
 		issue_id text,
