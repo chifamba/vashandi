@@ -6,45 +6,37 @@ import (
 	"net/http"
 )
 
-// actorContextKey is the context key used by the auth middleware.
-type actorContextKey string
+// actorContextKeyType is an unexported struct used as the context key type for
+// ActorInfo. Using a package-specific struct prevents collisions with keys from
+// other packages that happen to use the same underlying string or int value.
+type actorContextKeyType struct{}
 
-const actorKey actorContextKey = "actor"
+// ActorKey is the context key under which ActorInfo is stored.
+// It is exported so that the server middleware (which imports this package)
+// can store the actor under the same key, avoiding the type-mismatch bug that
+// caused GetActorInfo to always fall back to header parsing.
+var ActorKey = actorContextKeyType{}
 
 // ActorInfo carries identity information set by the auth middleware.
 type ActorInfo struct {
 	UserID          string
 	AgentID         string
+	CompanyID       string
 	IsSystem        bool
 	IsAgent         bool
 	IsInstanceAdmin bool
-	// ActorType is one of "user", "agent", "system", "board"
+	// ActorType is one of "user", "agent", "system", "board", "anonymous"
 	ActorType string
 }
 
 // GetActorInfo extracts the ActorInfo stored by the server's ActorMiddleware.
-// It uses reflection-free retrieval: the middleware stores under the key "actor"
-// as a string-keyed context value. We re-implement a compatible lookup here to
-// avoid an import cycle between the routes and server packages.
+// It reads directly from the context using the exported ActorKey; the
+// middleware is responsible for always setting a value so there is no fallback.
 func GetActorInfo(r *http.Request) ActorInfo {
-	if v := r.Context().Value(actorKey); v != nil {
+	if v := r.Context().Value(ActorKey); v != nil {
 		if ai, ok := v.(ActorInfo); ok {
 			return ai
 		}
-	}
-	// Fallback: derive actor from Authorization header.
-	return actorFromHeader(r)
-}
-
-func actorFromHeader(r *http.Request) ActorInfo {
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		return ActorInfo{ActorType: "anonymous"}
-	}
-	const prefix = "Bearer "
-	if len(auth) > len(prefix) {
-		token := auth[len(prefix):]
-		return ActorInfo{UserID: token, ActorType: "board"}
 	}
 	return ActorInfo{ActorType: "anonymous"}
 }
@@ -66,7 +58,6 @@ func AssertBoard(r *http.Request) error {
 }
 
 // AssertInstanceAdmin returns an error unless the actor holds instance-admin rights.
-// In the current stub implementation, any board actor is treated as an instance admin.
 func AssertInstanceAdmin(r *http.Request) error {
 	actor := GetActorInfo(r)
 	if actor.IsSystem {
@@ -85,25 +76,30 @@ func AssertInstanceAdmin(r *http.Request) error {
 }
 
 // AssertCompanyAccess returns an error unless the actor has access to the given company.
-// Agents are only allowed access to their own company; board actors are allowed everywhere.
+// Agents may only access their own company; board and system actors are allowed everywhere.
 func AssertCompanyAccess(r *http.Request, companyID string) error {
 	actor := GetActorInfo(r)
 	if actor.IsSystem {
 		return nil
 	}
-	if actor.IsAgent && actor.AgentID == "" {
-		return fmt.Errorf("agent actor has no AgentID set")
-	}
-	// Board actors are considered to have access to all companies.
 	if !actor.IsAgent {
+		// Board actors have cross-company access.
+		if actor.UserID == "" {
+			return fmt.Errorf("unauthenticated: no actor identity found")
+		}
 		return nil
 	}
-	// For agents we would typically validate the company membership here.
-	// For now we allow all authenticated agents.
+	// Agent actors are scoped to a single company.
+	if actor.AgentID == "" {
+		return fmt.Errorf("agent actor has no AgentID set")
+	}
+	if actor.CompanyID != companyID {
+		return fmt.Errorf("agent not authorized for company %q", companyID)
+	}
 	return nil
 }
 
 // WithActor stores an ActorInfo in the context (useful for tests).
 func WithActor(ctx context.Context, actor ActorInfo) context.Context {
-	return context.WithValue(ctx, actorKey, actor)
+	return context.WithValue(ctx, ActorKey, actor)
 }

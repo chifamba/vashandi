@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 )
 
 func TestActorMiddleware(t *testing.T) {
@@ -13,6 +15,7 @@ func TestActorMiddleware(t *testing.T) {
 		expectedUserID string
 		expectedSystem bool
 		expectedAgent  bool
+		expectedType   string
 	}{
 		{
 			name:           "No Auth Header",
@@ -20,6 +23,7 @@ func TestActorMiddleware(t *testing.T) {
 			expectedUserID: "",
 			expectedSystem: false,
 			expectedAgent:  false,
+			expectedType:   "anonymous",
 		},
 		{
 			name:           "Non-prefixed token is anonymous",
@@ -27,6 +31,7 @@ func TestActorMiddleware(t *testing.T) {
 			expectedUserID: "",
 			expectedSystem: false,
 			expectedAgent:  false,
+			expectedType:   "anonymous",
 		},
 		{
 			name:           "Non-prefixed user token is anonymous",
@@ -34,6 +39,7 @@ func TestActorMiddleware(t *testing.T) {
 			expectedUserID: "",
 			expectedSystem: false,
 			expectedAgent:  false,
+			expectedType:   "anonymous",
 		},
 		{
 			name:           "Invalid Bearer Format",
@@ -41,6 +47,7 @@ func TestActorMiddleware(t *testing.T) {
 			expectedUserID: "",
 			expectedSystem: false,
 			expectedAgent:  false,
+			expectedType:   "anonymous",
 		},
 		{
 			name:           "Board token with nil DB stays anonymous",
@@ -48,6 +55,7 @@ func TestActorMiddleware(t *testing.T) {
 			expectedUserID: "",
 			expectedSystem: false,
 			expectedAgent:  false,
+			expectedType:   "anonymous",
 		},
 		{
 			name:           "Agent token with nil DB stays anonymous",
@@ -55,6 +63,7 @@ func TestActorMiddleware(t *testing.T) {
 			expectedUserID: "",
 			expectedSystem: false,
 			expectedAgent:  false,
+			expectedType:   "anonymous",
 		},
 	}
 
@@ -69,9 +78,9 @@ func TestActorMiddleware(t *testing.T) {
 
 			// Pass nil db — no DB lookups are performed in these unit tests.
 			handler := ActorMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				actor, ok := r.Context().Value(ActorContextKey).(ActorInfo)
+				actor, ok := r.Context().Value(routes.ActorKey).(routes.ActorInfo)
 				if !ok {
-					t.Fatalf("Expected ActorInfo in context")
+					t.Fatalf("Expected routes.ActorInfo in context")
 				}
 
 				if actor.UserID != tt.expectedUserID {
@@ -84,6 +93,10 @@ func TestActorMiddleware(t *testing.T) {
 
 				if actor.IsAgent != tt.expectedAgent {
 					t.Errorf("Expected IsAgent %v, got %v", tt.expectedAgent, actor.IsAgent)
+				}
+
+				if actor.ActorType != tt.expectedType {
+					t.Errorf("Expected ActorType %q, got %q", tt.expectedType, actor.ActorType)
 				}
 			}))
 
