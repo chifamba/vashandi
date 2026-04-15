@@ -264,6 +264,48 @@ func TestCreateAgentHandler_BadBody(t *testing.T) {
 	}
 }
 
+func TestCreateAgentHandler_RejectsCrossCompanyReportsTo(t *testing.T) {
+	db := setupAgentsCRUDTestDB(t)
+	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('parent-2', 'comp-2', 'Parent', 'general', 'process', '{}', '{}', '{}')")
+
+	router := chi.NewRouter()
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil))
+
+	body, _ := json.Marshal(map[string]string{
+		"name":        "Child",
+		"reportsToId": "parent-2",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/agents", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateAgentHandler_RejectsSecondCEO(t *testing.T) {
+	db := setupAgentsCRUDTestDB(t)
+	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('ceo-1', 'comp-1', 'CEO One', 'ceo', 'process', '{}', '{}', '{}')")
+
+	router := chi.NewRouter()
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil))
+
+	body, _ := json.Marshal(map[string]string{
+		"name": "CEO Two",
+		"role": "ceo",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/agents", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestUpdateAgentHandler_UpdatesName(t *testing.T) {
 	db := setupAgentsCRUDTestDB(t)
 	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('upd-ag', 'comp-1', 'Old Name', 'general', 'process', '{}', '{}', '{}')")
@@ -302,6 +344,44 @@ func TestUpdateAgentHandler_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateAgentHandler_RejectsReportsToCycle(t *testing.T) {
+	db := setupAgentsCRUDTestDB(t)
+	db.Exec("INSERT INTO agents (id, company_id, name, role, reports_to, adapter_type, adapter_config, runtime_config, permissions) VALUES ('manager', 'comp-1', 'Manager', 'general', NULL, 'process', '{}', '{}', '{}')")
+	db.Exec("INSERT INTO agents (id, company_id, name, role, reports_to, adapter_type, adapter_config, runtime_config, permissions) VALUES ('child', 'comp-1', 'Child', 'general', 'manager', 'process', '{}', '{}', '{}')")
+
+	router := chi.NewRouter()
+	router.Patch("/agents/{id}", UpdateAgentHandler(db))
+
+	body, _ := json.Marshal(map[string]string{"reportsToId": "child"})
+	req := httptest.NewRequest(http.MethodPatch, "/agents/manager", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateAgentHandler_RejectsPromotingSecondCEO(t *testing.T) {
+	db := setupAgentsCRUDTestDB(t)
+	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('ceo-1', 'comp-1', 'CEO One', 'ceo', 'process', '{}', '{}', '{}')")
+	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('eng-1', 'comp-1', 'Engineer', 'general', 'process', '{}', '{}', '{}')")
+
+	router := chi.NewRouter()
+	router.Patch("/agents/{id}", UpdateAgentHandler(db))
+
+	body, _ := json.Marshal(map[string]string{"role": "ceo"})
+	req := httptest.NewRequest(http.MethodPatch, "/agents/eng-1", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
 

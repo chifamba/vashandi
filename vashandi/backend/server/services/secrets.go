@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
@@ -146,4 +147,67 @@ func (s *SecretService) ResolveAdapterConfigForRuntime(ctx context.Context, comp
 		return nil, err
 	}
 	return result.(map[string]interface{}), nil
+}
+
+// NormalizeAdapterConfigForPersistence keeps env bindings as references and validates secret ownership.
+func (s *SecretService) NormalizeAdapterConfigForPersistence(ctx context.Context, companyID string, config map[string]interface{}) (map[string]interface{}, error) {
+	normalized := make(map[string]interface{}, len(config))
+	for key, value := range config {
+		normalized[key] = value
+	}
+
+	rawEnv, ok := config["env"]
+	if !ok {
+		return normalized, nil
+	}
+
+	env, ok := rawEnv.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("env must be an object")
+	}
+
+	normalizedEnv := make(map[string]interface{}, len(env))
+	for key, rawBinding := range env {
+		switch binding := rawBinding.(type) {
+		case string:
+			normalizedEnv[key] = map[string]interface{}{"type": "plain", "value": binding}
+		case map[string]interface{}:
+			bindingType, _ := binding["type"].(string)
+			switch bindingType {
+			case "", "plain":
+				normalizedEnv[key] = map[string]interface{}{
+					"type":  "plain",
+					"value": fmt.Sprintf("%v", binding["value"]),
+				}
+			case "secret_ref":
+				secretID, _ := binding["secretId"].(string)
+				if strings.TrimSpace(secretID) == "" {
+					return nil, fmt.Errorf("secret_ref binding missing secretId for key %s", key)
+				}
+				var secret models.CompanySecret
+				if err := s.DB.WithContext(ctx).
+					Where("id = ? AND company_id = ?", secretID, companyID).
+					First(&secret).Error; err != nil {
+					return nil, fmt.Errorf("failed to validate secret %s: %w", key, err)
+				}
+
+				version := binding["version"]
+				if version == nil || version == "" {
+					version = "latest"
+				}
+				normalizedEnv[key] = map[string]interface{}{
+					"type":     "secret_ref",
+					"secretId": secretID,
+					"version":  version,
+				}
+			default:
+				return nil, fmt.Errorf("unsupported env binding type %q for key %s", bindingType, key)
+			}
+		default:
+			return nil, fmt.Errorf("invalid env binding for key %s", key)
+		}
+	}
+
+	normalized["env"] = normalizedEnv
+	return normalized, nil
 }

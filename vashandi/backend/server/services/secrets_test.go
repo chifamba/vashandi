@@ -152,6 +152,56 @@ func TestResolveAdapterConfigForRuntime_NestedPlainValues(t *testing.T) {
 	}
 }
 
+func TestNormalizeAdapterConfigForPersistence_PreservesSecretReferences(t *testing.T) {
+	db := setupSecretsServiceTestDB(t)
+	db.Exec("INSERT INTO company_secrets (id, company_id, name, provider, latest_version) VALUES ('sec-1', 'comp-1', 'API_KEY', 'local_encrypted', 2)")
+	svc := NewSecretService(db, nil)
+
+	config := map[string]interface{}{
+		"model": "gpt-4.1",
+		"env": map[string]interface{}{
+			"API_KEY": map[string]interface{}{
+				"type":     "secret_ref",
+				"secretId": "sec-1",
+			},
+			"MODE": "safe",
+		},
+	}
+
+	result, err := svc.NormalizeAdapterConfigForPersistence(context.Background(), "comp-1", config)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	env := result["env"].(map[string]interface{})
+	apiKey := env["API_KEY"].(map[string]interface{})
+	if apiKey["type"] != "secret_ref" || apiKey["secretId"] != "sec-1" || apiKey["version"] != "latest" {
+		t.Fatalf("expected normalized secret ref with latest version, got %#v", apiKey)
+	}
+	mode := env["MODE"].(map[string]interface{})
+	if mode["type"] != "plain" || mode["value"] != "safe" {
+		t.Fatalf("expected normalized plain binding, got %#v", mode)
+	}
+}
+
+func TestNormalizeAdapterConfigForPersistence_RejectsCrossCompanySecret(t *testing.T) {
+	db := setupSecretsServiceTestDB(t)
+	db.Exec("INSERT INTO company_secrets (id, company_id, name, provider, latest_version) VALUES ('sec-2', 'comp-2', 'API_KEY', 'local_encrypted', 1)")
+	svc := NewSecretService(db, nil)
+
+	_, err := svc.NormalizeAdapterConfigForPersistence(context.Background(), "comp-1", map[string]interface{}{
+		"env": map[string]interface{}{
+			"API_KEY": map[string]interface{}{
+				"type":     "secret_ref",
+				"secretId": "sec-2",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected cross-company secret validation error")
+	}
+}
+
 func TestGenerateOpenBrainToken_Structure(t *testing.T) {
 	db := setupSecretsServiceTestDB(t)
 	svc := NewSecretService(db, nil)

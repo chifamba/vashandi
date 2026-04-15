@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +18,68 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
+
+func validateAgentReportsTo(db *gorm.DB, companyID, agentID string, reportsTo *string) error {
+	if reportsTo == nil || strings.TrimSpace(*reportsTo) == "" {
+		return nil
+	}
+
+	parentID := strings.TrimSpace(*reportsTo)
+	if agentID != "" && parentID == agentID {
+		return gorm.ErrInvalidData
+	}
+
+	var parent models.Agent
+	if err := db.Select("id", "company_id", "reports_to").First(&parent, "id = ?", parentID).Error; err != nil {
+		return err
+	}
+	if parent.CompanyID != companyID {
+		return gorm.ErrInvalidData
+	}
+
+	seen := map[string]struct{}{parentID: {}}
+	current := parent.ReportsTo
+	for current != nil && strings.TrimSpace(*current) != "" {
+		currentID := strings.TrimSpace(*current)
+		if currentID == agentID {
+			return gorm.ErrInvalidData
+		}
+		if _, ok := seen[currentID]; ok {
+			return gorm.ErrInvalidData
+		}
+		seen[currentID] = struct{}{}
+
+		var next models.Agent
+		if err := db.Select("id", "company_id", "reports_to").First(&next, "id = ?", currentID).Error; err != nil {
+			return err
+		}
+		if next.CompanyID != companyID {
+			return gorm.ErrInvalidData
+		}
+		current = next.ReportsTo
+	}
+
+	return nil
+}
+
+func validateUniqueAgentRole(db *gorm.DB, companyID, agentID, role string) error {
+	if !strings.EqualFold(strings.TrimSpace(role), "ceo") {
+		return nil
+	}
+
+	var count int64
+	query := db.Model(&models.Agent{}).Where("company_id = ? AND lower(role) = ?", companyID, "ceo")
+	if agentID != "" {
+		query = query.Where("id <> ?", agentID)
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return gorm.ErrDuplicatedKey
+	}
+	return nil
+}
 
 // ListAgentsHandler returns a list of agents for a company
 func ListAgentsHandler(db *gorm.DB) http.HandlerFunc {
@@ -59,16 +122,43 @@ func CreateAgentHandler(db *gorm.DB, memory services.MemoryAdapter) http.Handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
 
-		var agent models.Agent
-		if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+
+		var agent models.Agent
+		if err := json.Unmarshal(payload, &agent); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var aliases struct {
+			ReportsToID *string `json:"reportsToId"`
+			ReportsTo   *string `json:"reportsTo"`
+		}
+		if err := json.Unmarshal(payload, &aliases); err == nil {
+			switch {
+			case aliases.ReportsToID != nil:
+				agent.ReportsTo = aliases.ReportsToID
+			case aliases.ReportsTo != nil:
+				agent.ReportsTo = aliases.ReportsTo
+			}
 		}
 		agent.CompanyID = companyID
 
 		// Default permissions to an empty object if not provided to satisfy not-null constraints
 		if len(agent.Permissions) == 0 {
 			agent.Permissions = []byte("{}")
+		}
+
+		if err := validateUniqueAgentRole(db, companyID, agent.ID, agent.Role); err != nil {
+			http.Error(w, "company already has a CEO agent", http.StatusBadRequest)
+			return
+		}
+		if err := validateAgentReportsTo(db, companyID, agent.ID, agent.ReportsTo); err != nil {
+			http.Error(w, "invalid reportsTo relationship", http.StatusBadRequest)
+			return
 		}
 
 		if err := db.Create(&agent).Error; err != nil {
@@ -145,6 +235,9 @@ func UpdateAgentHandler(db *gorm.DB) http.HandlerFunc {
 		if v, ok := body["name"]; ok {
 			updates["name"] = v
 		}
+		if v, ok := body["role"]; ok {
+			updates["role"] = v
+		}
 		if v, ok := body["reportsToId"]; ok {
 			updates["reports_to"] = v
 		}
@@ -169,6 +262,29 @@ func UpdateAgentHandler(db *gorm.DB) http.HandlerFunc {
 			}
 			merged, _ := json.Marshal(existing)
 			updates["runtime_config"] = datatypes.JSON(merged)
+		}
+
+		if role, ok := updates["role"].(string); ok {
+			if err := validateUniqueAgentRole(db, agent.CompanyID, agent.ID, role); err != nil {
+				http.Error(w, "company already has a CEO agent", http.StatusBadRequest)
+				return
+			}
+		}
+		if reportsToRaw, ok := updates["reports_to"]; ok {
+			var reportsTo *string
+			switch v := reportsToRaw.(type) {
+			case string:
+				reportsTo = &v
+			case nil:
+				reportsTo = nil
+			default:
+				http.Error(w, "invalid reportsTo relationship", http.StatusBadRequest)
+				return
+			}
+			if err := validateAgentReportsTo(db, agent.CompanyID, agent.ID, reportsTo); err != nil {
+				http.Error(w, "invalid reportsTo relationship", http.StatusBadRequest)
+				return
+			}
 		}
 
 		if len(updates) > 0 {

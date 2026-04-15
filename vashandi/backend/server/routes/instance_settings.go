@@ -88,6 +88,14 @@ func requireBoard(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+func requireCompanyAccess(w http.ResponseWriter, r *http.Request, companyID string) bool {
+	if err := AssertCompanyAccess(r, companyID); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func requireInstanceAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if err := AssertInstanceAdmin(r); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
