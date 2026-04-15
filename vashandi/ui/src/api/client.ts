@@ -1,4 +1,6 @@
-const BASE = "/api";
+import { getApiBaseUrl } from "../lib/runtime-config";
+
+const BASE = getApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;

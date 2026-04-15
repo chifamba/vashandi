@@ -61,6 +61,63 @@ func TestApplyUIBranding_WithWorktreeEnv(t *testing.T) {
 	}
 }
 
+func TestApplyUIBranding_APIBaseURLInjected(t *testing.T) {
+	t.Setenv("PAPERCLIP_IN_WORKTREE", "")
+	t.Setenv("PAPERCLIP_API_BASE_URL", "https://api.example.com")
+
+	const originalHTML = `<html><head>` +
+		`<!-- PAPERCLIP_FAVICON_START -->` +
+		`<!-- PAPERCLIP_FAVICON_END -->` +
+		`<!-- PAPERCLIP_RUNTIME_BRANDING_START -->` +
+		`<!-- PAPERCLIP_RUNTIME_BRANDING_END -->` +
+		`</head><body>app</body></html>`
+
+	result := string(server.ApplyUIBranding([]byte(originalHTML)))
+
+	if !containsStr(result, `name="paperclip-api-base-url"`) {
+		t.Errorf("expected api-base-url meta tag in result, got: %s", result)
+	}
+	if !containsStr(result, `content="https://api.example.com"`) {
+		t.Errorf("expected api-base-url content in result, got: %s", result)
+	}
+}
+
+func TestApplyUIBranding_APIBaseURLTrailingSlashStripped(t *testing.T) {
+	t.Setenv("PAPERCLIP_IN_WORKTREE", "")
+	t.Setenv("PAPERCLIP_API_BASE_URL", "https://api.example.com/")
+
+	const originalHTML = `<html><head>` +
+		`<!-- PAPERCLIP_RUNTIME_BRANDING_START -->` +
+		`<!-- PAPERCLIP_RUNTIME_BRANDING_END -->` +
+		`</head><body>app</body></html>`
+
+	result := string(server.ApplyUIBranding([]byte(originalHTML)))
+
+	// Trailing slash should be stripped.
+	if containsStr(result, `content="https://api.example.com/"`) {
+		t.Errorf("trailing slash should be stripped, got: %s", result)
+	}
+	if !containsStr(result, `content="https://api.example.com"`) {
+		t.Errorf("expected stripped content in result, got: %s", result)
+	}
+}
+
+func TestApplyUIBranding_APIBaseURLNotSetNoMeta(t *testing.T) {
+	t.Setenv("PAPERCLIP_IN_WORKTREE", "")
+	t.Setenv("PAPERCLIP_API_BASE_URL", "")
+
+	const originalHTML = `<html><head>` +
+		`<!-- PAPERCLIP_RUNTIME_BRANDING_START -->` +
+		`<!-- PAPERCLIP_RUNTIME_BRANDING_END -->` +
+		`</head><body>app</body></html>`
+
+	result := string(server.ApplyUIBranding([]byte(originalHTML)))
+
+	if containsStr(result, "paperclip-api-base-url") {
+		t.Errorf("unexpected api-base-url meta when env var is empty, got: %s", result)
+	}
+}
+
 func containsStr(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && func() bool {
 		for i := 0; i <= len(haystack)-len(needle); i++ {

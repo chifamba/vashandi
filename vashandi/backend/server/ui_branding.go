@@ -223,18 +223,33 @@ func renderFaviconLinks(branding worktreeUiBranding) string {
 }
 
 func renderRuntimeBrandingMeta(branding worktreeUiBranding) string {
-	if !branding.Enabled || branding.Name == "" || branding.Color == "" || branding.TextColor == "" {
-		return ""
+	var parts []string
+
+	// In ui-only mode (or any mode) the operator may set PAPERCLIP_API_BASE_URL
+	// to tell the frontend where the backend API is hosted.  The value is
+	// injected as a <meta> tag so that the pre-built SPA can read it at runtime
+	// without requiring a rebuild.
+	if apiBase := nonEmpty(os.Getenv("PAPERCLIP_API_BASE_URL")); apiBase != "" {
+		normalized := strings.TrimRight(apiBase, "/")
+		parts = append(parts, fmt.Sprintf(
+			`<meta name="paperclip-api-base-url" content="%s" />`,
+			escapeHTMLAttr(normalized),
+		))
 	}
-	return fmt.Sprintf(
-		`<meta name="paperclip-worktree-enabled" content="true" />
+
+	if branding.Enabled && branding.Name != "" && branding.Color != "" && branding.TextColor != "" {
+		parts = append(parts, fmt.Sprintf(
+			`<meta name="paperclip-worktree-enabled" content="true" />
 <meta name="paperclip-worktree-name" content="%s" />
 <meta name="paperclip-worktree-color" content="%s" />
 <meta name="paperclip-worktree-text-color" content="%s" />`,
-		escapeHTMLAttr(branding.Name),
-		escapeHTMLAttr(branding.Color),
-		escapeHTMLAttr(branding.TextColor),
-	)
+			escapeHTMLAttr(branding.Name),
+			escapeHTMLAttr(branding.Color),
+			escapeHTMLAttr(branding.TextColor),
+		))
+	}
+
+	return strings.Join(parts, "\n")
 }
 
 func replaceMarkedBlock(html, startMarker, endMarker, content string) string {
