@@ -7,34 +7,64 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Hub maintains per-company sets of active WebSocket clients and provides a
-// Publish method for broadcasting live events to all subscribers of a company.
+// Hub maintains per-company sets of active WebSocket clients and SSE subscribers
+// and provides a Publish method for broadcasting live events to all of them.
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[string]map[*Client]bool // companyID → set of clients
+	mu             sync.RWMutex
+	clients        map[string]map[*Client]bool    // companyID → set of WS clients
+	sseSubscribers map[string]map[chan []byte]bool // companyID → set of SSE channels
 }
 
 // NewHub creates a ready-to-use Hub. No background goroutine is needed; all
 // operations are protected by a read-write mutex.
 func NewHub() *Hub {
 	return &Hub{
-		clients: make(map[string]map[*Client]bool),
+		clients:        make(map[string]map[*Client]bool),
+		sseSubscribers: make(map[string]map[chan []byte]bool),
 	}
 }
 
-// Publish sends data to every client subscribed to companyID.
-// Slow clients whose send buffer is full are disconnected.
+// Subscribe registers an SSE listener for events published to companyID.
+// It returns a receive-only channel and a cancel function. The caller must
+// invoke cancel (e.g. via defer) to avoid leaking the subscription.
+func (h *Hub) Subscribe(companyID string) (<-chan []byte, func()) {
+	ch := make(chan []byte, 64)
+	h.mu.Lock()
+	if h.sseSubscribers[companyID] == nil {
+		h.sseSubscribers[companyID] = make(map[chan []byte]bool)
+	}
+	h.sseSubscribers[companyID][ch] = true
+	h.mu.Unlock()
+
+	cancel := func() {
+		h.mu.Lock()
+		delete(h.sseSubscribers[companyID], ch)
+		if len(h.sseSubscribers[companyID]) == 0 {
+			delete(h.sseSubscribers, companyID)
+		}
+		h.mu.Unlock()
+	}
+	return ch, cancel
+}
+
+// Publish sends data to every WebSocket client and SSE subscriber for companyID.
+// Slow WebSocket clients whose send buffer is full are disconnected.
+// Slow SSE subscribers are skipped (their buffered channel will eventually drain).
 // It is safe to call Publish concurrently with other Hub operations.
 func (h *Hub) Publish(companyID string, data []byte) {
 	h.mu.RLock()
 	company := h.clients[companyID]
-	snapshot := make([]*Client, 0, len(company))
+	wsSnapshot := make([]*Client, 0, len(company))
 	for c := range company {
-		snapshot = append(snapshot, c)
+		wsSnapshot = append(wsSnapshot, c)
+	}
+	sseSnapshot := make([]chan []byte, 0, len(h.sseSubscribers[companyID]))
+	for ch := range h.sseSubscribers[companyID] {
+		sseSnapshot = append(sseSnapshot, ch)
 	}
 	h.mu.RUnlock()
 
-	for _, c := range snapshot {
+	for _, c := range wsSnapshot {
 		select {
 		case c.send <- data:
 			// delivered
@@ -43,6 +73,15 @@ func (h *Hub) Publish(companyID string, data []byte) {
 		default:
 			// Buffer full — disconnect the slow client.
 			h.unregister(c)
+		}
+	}
+
+	for _, ch := range sseSnapshot {
+		select {
+		case ch <- data:
+			// delivered
+		default:
+			// Slow SSE subscriber — skip this event rather than blocking.
 		}
 	}
 }

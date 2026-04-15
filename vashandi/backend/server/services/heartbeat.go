@@ -44,6 +44,11 @@ type HeartbeatService struct {
 	Ops        *WorkspaceOperationService
 	Memory     MemoryAdapter
 
+	// Notify, when non-nil, is called after a run's status changes so that
+	// the live-events hub can broadcast the update to connected clients.
+	// The companyID and a JSON-encoded event payload are passed as arguments.
+	Notify func(companyID string, data []byte)
+
 	// In-memory process tracking
 	runningProcesses   map[string]*ProcessHandle
 	runningProcessesMu sync.RWMutex
@@ -374,6 +379,9 @@ func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.Hear
 	}
 	s.DB.WithContext(ctx).Save(run)
 
+	// Broadcast the run status change to any live-events subscribers.
+	s.publishRunStatus(run)
+
 	// notify OpenBrain
 	go func() {
 		summary := fmt.Sprintf("Run %s completed for agent %s on task %s", run.ID, run.AgentID, run.TaskID)
@@ -395,6 +403,26 @@ func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.Hear
 
 	s.resumeNextRun(run.AgentID)
 	return err
+}
+
+// publishRunStatus broadcasts a heartbeat.run.status event via Notify (if set).
+func (s *HeartbeatService) publishRunStatus(run *models.HeartbeatRun) {
+	if s.Notify == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"type":      "heartbeat.run.status",
+		"companyId": run.CompanyID,
+		"payload": map[string]interface{}{
+			"runId":   run.ID,
+			"agentId": run.AgentID,
+			"status":  run.Status,
+		},
+	})
+	if err != nil {
+		return
+	}
+	s.Notify(run.CompanyID, payload)
 }
 
 // resumeNextRun picks up the next queued run for the agent and starts it.
