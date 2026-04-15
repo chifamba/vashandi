@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"testing"
@@ -20,30 +21,28 @@ func setupPluginRegistryTestDB(t *testing.T) *gorm.DB {
 	}
 
 	db.Exec("DROP TABLE IF EXISTS plugins")
-	db.Exec("DROP TABLE IF EXISTS plugin_configs")
+	db.Exec("DROP TABLE IF EXISTS plugin_config")
 
 	db.Exec(`CREATE TABLE plugins (
 		id text PRIMARY KEY,
 		plugin_key text NOT NULL UNIQUE,
 		package_name text NOT NULL DEFAULT '',
 		status text NOT NULL DEFAULT 'pending',
-		version text,
+		version text NOT NULL DEFAULT '',
 		api_version integer NOT NULL DEFAULT 1,
 		categories text NOT NULL DEFAULT '[]',
-		hash text,
 		install_order integer,
 		package_path text,
 		last_error text,
-		manifest_json text,
+		manifest_json text NOT NULL DEFAULT '{}',
 		installed_at datetime DEFAULT CURRENT_TIMESTAMP,
-		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
 
-	db.Exec(`CREATE TABLE plugin_configs (
+	db.Exec(`CREATE TABLE plugin_config (
 		id text PRIMARY KEY,
 		plugin_id text NOT NULL UNIQUE,
-		config_json json,
+		config_json json NOT NULL DEFAULT '{}',
 		last_error text,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP,
@@ -53,28 +52,30 @@ func setupPluginRegistryTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestPluginRegistryService_ListGetInstallUninstall(t *testing.T) {
+func TestPluginRegistryService_ListGetRegisterUninstall(t *testing.T) {
 	db := setupPluginRegistryTestDB(t)
 	svc := NewPluginRegistryService(db)
 	ctx := context.Background()
 
-	// Install plugin directly using SQL since our mock service models are incomplete
-	db.Exec("INSERT INTO plugins (id, plugin_key, status, version) VALUES ('plugin-1', 'com.test.1', 'pending', '1.0')")
+	// Insert a plugin directly via SQL for initial state.
+	db.Exec("INSERT INTO plugins (id, plugin_key, status, version, manifest_json) VALUES ('plugin-1', 'com.test.1', 'pending', '1.0', '{}')")
 
-	// Try to install duplicate key
-	_, err := svc.Install(ctx, InstallPluginInput{
-		PluginKey: "com.test.1", // Same key
-		Version:   "2.0",
+	// Registering with the same key should update (not error), transitioning to pending.
+	_, err := svc.Register(ctx, RegisterPluginInput{
+		PluginKey:   "com.test.1",
+		PackageName: "test-pkg",
+		Version:     "2.0",
+		ManifestRaw: json.RawMessage(`{"id":"com.test.1"}`),
 	})
-	if err == nil {
-		t.Errorf("expected error for duplicate plugin key")
+	if err != nil {
+		t.Fatalf("Register on existing key should update, got error: %v", err)
 	}
 
-	// Add another plugin directly
-	db.Exec("INSERT INTO plugins (id, plugin_key, status) VALUES ('plugin-2', 'com.test.2', 'uninstalled')")
+	// Add another plugin (uninstalled).
+	db.Exec("INSERT INTO plugins (id, plugin_key, status, version, manifest_json) VALUES ('plugin-2', 'com.test.2', 'uninstalled', '1.0', '{}')")
 
-	// List without uninstalled
-	plugins, err := svc.List(ctx, false)
+	// ListInstalled should exclude uninstalled.
+	plugins, err := svc.ListInstalled(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,28 +86,28 @@ func TestPluginRegistryService_ListGetInstallUninstall(t *testing.T) {
 		t.Errorf("expected plugin 1, got %s", plugins[0].PluginKey)
 	}
 
-	// List with uninstalled
-	plugins, err = svc.List(ctx, true)
+	// ListByStatus should return plugins matching the status.
+	all, err := svc.ListByStatus(ctx, "uninstalled")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(plugins) != 2 {
-		t.Errorf("expected 2 plugins total, got %d", len(plugins))
+	if len(all) != 1 {
+		t.Errorf("expected 1 uninstalled plugin, got %d", len(all))
 	}
 
-	// GetByID
+	// GetByID.
 	p, err := svc.GetByID(ctx, "plugin-1")
 	if err != nil || p == nil {
 		t.Fatalf("expected to get plugin 1 by ID")
 	}
 
-	// GetByKey
+	// GetByKey.
 	p, err = svc.GetByKey(ctx, "com.test.1")
 	if err != nil || p == nil {
 		t.Fatalf("expected to get plugin 1 by Key")
 	}
 
-	// Uninstall (soft)
+	// Uninstall (soft).
 	uninstalled, err := svc.Uninstall(ctx, "plugin-1", false)
 	if err != nil || uninstalled == nil {
 		t.Fatalf("unexpected error uninstalling (soft): %v", err)
@@ -118,10 +119,10 @@ func TestPluginRegistryService_ListGetInstallUninstall(t *testing.T) {
 	var count int64
 	db.Table("plugins").Count(&count)
 	if count != 2 {
-		t.Errorf("expected plugin to still exist after soft uninstall")
+		t.Errorf("expected plugin to still exist after soft uninstall, count=%d", count)
 	}
 
-	// Uninstall (hard)
+	// Uninstall (hard).
 	_, err = svc.Uninstall(ctx, "plugin-1", true)
 	if err != nil {
 		t.Fatalf("unexpected error uninstalling (hard): %v", err)
@@ -140,16 +141,28 @@ func TestPluginRegistryService_Config(t *testing.T) {
 
 	now := time.Now()
 	pluginID := "plugin-config-1"
-	db.Exec("INSERT INTO plugins (id, plugin_key, status, updated_at) VALUES (?, 'com.test.config', 'ready', ?)", pluginID, now)
+	db.Exec("INSERT INTO plugins (id, plugin_key, status, updated_at, manifest_json) VALUES (?, 'com.test.config', 'ready', ?, '{}')", pluginID, now)
 
-	// Set config
-	configMap := map[string]interface{}{"key": "val"}
-	cfg, err := svc.SetConfig(ctx, pluginID, configMap)
-	if err != nil || cfg == nil {
-		t.Fatalf("expected to set config: %v", err)
+	// GetConfig returns nil when no config exists.
+	cfg, err := svc.GetConfig(ctx, pluginID)
+	if err != nil {
+		t.Fatalf("expected nil error for missing config, got: %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil config before any upsert")
 	}
 
-	// Get config
+	// UpsertConfig (create).
+	configMap := map[string]interface{}{"key": "val"}
+	result, err := svc.UpsertConfig(ctx, pluginID, UpsertConfigInput{ConfigJSON: configMap})
+	if err != nil || result == nil {
+		t.Fatalf("expected to upsert config: %v", err)
+	}
+	if result.PluginID != pluginID {
+		t.Errorf("expected config PluginID %s, got %s", pluginID, result.PluginID)
+	}
+
+	// GetConfig retrieves the record.
 	cfg, err = svc.GetConfig(ctx, pluginID)
 	if err != nil || cfg == nil {
 		t.Fatalf("expected to get config: %v", err)
@@ -158,15 +171,38 @@ func TestPluginRegistryService_Config(t *testing.T) {
 		t.Errorf("expected config pluginID %s, got %s", pluginID, cfg.PluginID)
 	}
 
-	// Delete config
-	cfg, err = svc.DeleteConfig(ctx, pluginID)
-	if err != nil {
-		t.Fatalf("expected to delete config: %v", err)
+	// UpsertConfig (update).
+	updated, err := svc.UpsertConfig(ctx, pluginID, UpsertConfigInput{ConfigJSON: map[string]interface{}{"key": "updated"}})
+	if err != nil || updated == nil {
+		t.Fatalf("expected update to succeed: %v", err)
+	}
+}
+
+func TestPluginRegistryService_Resolve(t *testing.T) {
+	db := setupPluginRegistryTestDB(t)
+	svc := NewPluginRegistryService(db)
+	ctx := context.Background()
+
+	db.Exec("INSERT INTO plugins (id, plugin_key, status, version, manifest_json) VALUES ('abc-123', 'my.plugin', 'ready', '1.0', '{}')")
+
+	// Resolve by ID.
+	p, err := svc.Resolve(ctx, "abc-123")
+	if err != nil || p == nil {
+		t.Fatalf("expected to resolve by ID: %v", err)
 	}
 
-	// Verify delete
-	cfg, _ = svc.GetConfig(ctx, pluginID)
-	if cfg != nil {
-		t.Errorf("expected config to be nil after deletion")
+	// Resolve by key.
+	p, err = svc.Resolve(ctx, "my.plugin")
+	if err != nil || p == nil {
+		t.Fatalf("expected to resolve by key: %v", err)
+	}
+
+	// Non-existent returns nil.
+	p, err = svc.Resolve(ctx, "does-not-exist")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p != nil {
+		t.Errorf("expected nil for non-existent plugin")
 	}
 }

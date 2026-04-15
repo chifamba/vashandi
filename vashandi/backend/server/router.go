@@ -81,7 +81,34 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		})
 
 		// Plugin Routes
+		// Static sub-paths must be registered before parameterized :pluginId routes.
 		api.Get("/plugins", routes.ListPluginsHandler(db, activitySvc))
+		api.Get("/plugins/examples", routes.GetPluginExamplesHandler())
+		api.Get("/plugins/ui-contributions", routes.GetPluginUIContributionsHandler(db))
+		api.Get("/plugins/tools", routes.GetPluginToolsHandler())
+		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler())
+		api.Post("/plugins/install", routes.InstallPluginHandler(db, activitySvc))
+		// Per-plugin routes
+		api.Get("/plugins/{pluginId}", routes.GetPluginHandler(db))
+		api.Delete("/plugins/{pluginId}", routes.DeletePluginHandler(db, activitySvc))
+		api.Post("/plugins/{pluginId}/enable", routes.EnablePluginHandler(db, activitySvc))
+		api.Post("/plugins/{pluginId}/disable", routes.DisablePluginHandler(db, activitySvc))
+		api.Get("/plugins/{pluginId}/health", routes.GetPluginHealthHandler(db))
+		api.Get("/plugins/{pluginId}/logs", routes.GetPluginLogsHandler(db))
+		api.Post("/plugins/{pluginId}/upgrade", routes.UpgradePluginHandler(db, activitySvc))
+		api.Get("/plugins/{pluginId}/config", routes.GetPluginConfigHandler(db))
+		api.Post("/plugins/{pluginId}/config", routes.SetPluginConfigHandler(db, activitySvc))
+		api.Post("/plugins/{pluginId}/config/test", routes.TestPluginConfigHandler())
+		api.Post("/plugins/{pluginId}/bridge/data", routes.PluginBridgeDataHandler())
+		api.Post("/plugins/{pluginId}/bridge/action", routes.PluginBridgeActionHandler())
+		api.Get("/plugins/{pluginId}/bridge/stream/{channel}", routes.PluginBridgeStreamHandler())
+		api.Post("/plugins/{pluginId}/data/{key}", routes.PluginDataByKeyHandler())
+		api.Post("/plugins/{pluginId}/actions/{key}", routes.PluginActionByKeyHandler())
+		api.Get("/plugins/{pluginId}/jobs", routes.GetPluginJobsHandler(db))
+		api.Get("/plugins/{pluginId}/jobs/{jobId}/runs", routes.GetPluginJobRunsHandler(db))
+		api.Post("/plugins/{pluginId}/jobs/{jobId}/trigger", routes.TriggerPluginJobHandler())
+		api.Post("/plugins/{pluginId}/webhooks/{endpointKey}", routes.WebhookIngestionHandler(db))
+		api.Get("/plugins/{pluginId}/dashboard", routes.GetPluginDashboardHandler(db))
 
 		// Issue Routes
 		api.Get("/issues", issueRoutes.ListAllIssuesHandler)
