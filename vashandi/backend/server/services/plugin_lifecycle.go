@@ -141,7 +141,10 @@ func (s *PluginLifecycleService) Unload(ctx context.Context, pluginID string, re
 	if PluginStatus(plugin.Status) == PluginStatusUninstalled {
 		if removeData {
 			err := s.DB.WithContext(ctx).Delete(&plugin).Error
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
+			return &plugin, nil
 		}
 		return nil, fmt.Errorf("plugin %s is already uninstalled", plugin.PluginKey)
 	}
