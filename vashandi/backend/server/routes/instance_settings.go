@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
+	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -34,6 +35,7 @@ func loadOrCreateInstanceSetting(db *gorm.DB, r *http.Request) (*models.Instance
 			return nil, err
 		}
 		setting = models.InstanceSetting{
+			ID:           uuid.NewString(),
 			SingletonKey: "default",
 			General:      datatypes.JSON([]byte(`{}`)),
 			Experimental: datatypes.JSON([]byte(`{}`)),
