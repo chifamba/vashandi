@@ -99,11 +99,13 @@ func Run() {
 		os.Exit(1)
 	}
 
+	authHandler := NewBetterAuthHandler(db)
 	app := NewApp(db, RouterOptions{
 		DeploymentMode:     cfg.Server.DeploymentMode,
 		DeploymentExposure: cfg.Server.Exposure,
 		AllowedHostnames:   cfg.Server.AllowedHostnames,
 		BindHost:           cfg.Server.Host,
+		AuthHandler:        authHandler,
 		Telemetry:          GetTelemetryClient(),
 	})
 

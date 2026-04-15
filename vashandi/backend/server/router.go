@@ -57,7 +57,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	r := chi.NewRouter()
 
-	issueRoutes := routes.NewIssueRoutes(db, activitySvc, tc)
+	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
 	costSvc := services.NewCostService(db)
 	runtimeMgr := services.NewWorkspaceRuntimeManager(db)
 
@@ -94,7 +94,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	// Auth routes — registered before the /api/v1 block so that more-specific
 	// paths (get-session) take precedence over the wildcard catch-all.
-	r.Get("/api/auth/get-session", routes.GetSessionHandler())
+	r.Get("/api/auth/get-session", routes.GetSessionHandler(db))
 	if opts.AuthHandler != nil {
 		r.Handle("/api/auth/*", opts.AuthHandler)
 	} else {
@@ -245,7 +245,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/agents/{id}/resume", routes.ResumeAgentHandler(db))
 		api.Post("/agents/{id}/terminate", routes.TerminateAgentHandler(db))
 		api.Post("/agents/{id}/wakeup", routes.WakeupAgentHandler(db))
-		api.Post("/agents/{id}/heartbeat/invoke", routes.InvokeAgentHeartbeatHandler(db, tc))
+		api.Post("/agents/{id}/heartbeat/invoke", routes.InvokeAgentHeartbeatHandler(db))
 		api.Post("/agents/{id}/claude-login", routes.AgentClaudeLoginHandler(db))
 		api.Get("/agents/{id}/runtime-state", routes.GetAgentRuntimeStateHandler(db))
 		api.Post("/agents/{id}/runtime-state/reset-session", routes.ResetAgentSessionHandler(db))
@@ -303,7 +303,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Goals Routes
 		api.Get("/companies/{companyId}/goals", routes.ListGoalsHandler(db))
-		api.Post("/companies/{companyId}/goals", routes.CreateGoalHandler(db, tc))
+		api.Post("/companies/{companyId}/goals", routes.CreateGoalHandler(db))
 		api.Get("/goals/{id}", routes.GetGoalHandler(db))
 		api.Patch("/goals/{id}", routes.UpdateGoalHandler(db))
 		api.Delete("/goals/{id}", routes.DeleteGoalHandler(db))
@@ -393,7 +393,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Company Skills Routes
 		api.Get("/companies/{companyId}/skills", routes.ListCompanySkillsHandler(db))
-		api.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db, tc))
+		api.Post("/companies/{companyId}/skills", routes.CreateCompanySkillHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}", routes.GetCompanySkillHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}/update-status", routes.GetCompanySkillUpdateStatusHandler(db))
 		api.Get("/companies/{companyId}/skills/{skillId}/files", routes.GetCompanySkillFilesHandler(db))
@@ -459,7 +459,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Project Routes
 		api.Get("/companies/{companyId}/projects", routes.ListProjectsHandler(db))
-		api.Post("/companies/{companyId}/projects", routes.CreateProjectHandler(db, tc))
+		api.Post("/companies/{companyId}/projects", routes.CreateProjectHandler(db))
 		api.Get("/projects/{id}", routes.GetProjectHandler(db))
 		api.Patch("/projects/{id}", routes.UpdateProjectHandler(db))
 		api.Delete("/projects/{id}", routes.DeleteProjectHandler(db))
@@ -471,7 +471,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Routine Routes
 		api.Get("/companies/{companyId}/routines", routes.ListRoutinesHandler(db))
-		api.Post("/companies/{companyId}/routines", routes.CreateRoutineHandler(db, tc))
+		api.Post("/companies/{companyId}/routines", routes.CreateRoutineHandler(db))
 		api.Get("/routines/{id}", routes.GetRoutineHandler(db))
 		api.Patch("/routines/{id}", routes.UpdateRoutineHandler(db))
 		api.Delete("/routines/{id}", routes.DeleteRoutineHandler(db))
