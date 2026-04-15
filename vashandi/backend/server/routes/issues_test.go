@@ -3,8 +3,10 @@ package routes
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -17,11 +19,12 @@ import (
 
 func setupIssuesRouteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&issues_route_test=1"), &gorm.Config{})
+	dbName := fmt.Sprintf("file::memory:?cache=shared&issues_route_%s=1", url.QueryEscape(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	for _, tbl := range []string{"issue_comments", "issue_work_products", "labels", "activity_log", "issues", "projects", "agents", "companies"} {
+	for _, tbl := range []string{"issue_approvals", "approvals", "issue_inbox_archives", "issue_read_states", "issue_comments", "issue_work_products", "labels", "activity_log", "issues", "projects", "agents", "companies"} {
 		db.Exec("DROP TABLE IF EXISTS " + tbl)
 	}
 	db.Exec(`CREATE TABLE companies (
@@ -157,6 +160,42 @@ func setupIssuesRouteTestDB(t *testing.T) *gorm.DB {
 		agent_id text,
 		run_id text,
 		created_at datetime
+	)`)
+	db.Exec(`CREATE TABLE issue_read_states (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		issue_id text NOT NULL,
+		user_id text NOT NULL,
+		last_read_at datetime NOT NULL,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE issue_inbox_archives (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		issue_id text NOT NULL,
+		user_id text NOT NULL,
+		archived_at datetime NOT NULL,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE approvals (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		type text NOT NULL,
+		status text NOT NULL DEFAULT 'pending',
+		payload text NOT NULL DEFAULT '{}',
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE issue_approvals (
+		company_id text NOT NULL,
+		issue_id text NOT NULL,
+		approval_id text NOT NULL,
+		linked_by_agent_id text,
+		linked_by_user_id text,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (issue_id, approval_id)
 	)`)
 	// Seed data
 	db.Exec("INSERT INTO companies (id, name, issue_prefix, issue_counter) VALUES ('comp-a', 'Alpha', 'ALP', 5)")
@@ -733,5 +772,131 @@ func TestListIssuesHandler_ContentType(t *testing.T) {
 
 	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
+}
+
+func TestMarkAndUnmarkIssueReadHandler_UsesActorContext(t *testing.T) {
+	db := setupIssuesRouteTestDB(t)
+	db.Exec("INSERT INTO issues (id, company_id, title, status, priority, origin_kind) VALUES ('i-read', 'comp-a', 'Read me', 'backlog', 'medium', 'manual')")
+
+	ir := newIssueRoutes(t, db)
+	router := chi.NewRouter()
+	router.Post("/issues/{id}/read", func(w http.ResponseWriter, r *http.Request) {
+		ir.MarkIssueReadHandler(w, r.WithContext(WithActor(r.Context(), ActorInfo{UserID: "user-1"})))
+	})
+	router.Delete("/issues/{id}/read", func(w http.ResponseWriter, r *http.Request) {
+		ir.UnmarkIssueReadHandler(w, r.WithContext(WithActor(r.Context(), ActorInfo{UserID: "user-1"})))
+	})
+
+	markReq := httptest.NewRequest(http.MethodPost, "/issues/i-read/read", nil)
+	markRes := httptest.NewRecorder()
+	router.ServeHTTP(markRes, markReq)
+	if markRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", markRes.Code, markRes.Body.String())
+	}
+
+	var states []models.IssueReadState
+	if err := db.Find(&states).Error; err != nil {
+		t.Fatalf("load read states: %v", err)
+	}
+	if len(states) != 1 {
+		t.Fatalf("expected 1 read state, got %d", len(states))
+	}
+	if states[0].UserID != "user-1" {
+		t.Fatalf("expected read state for user-1, got %q", states[0].UserID)
+	}
+
+	unmarkReq := httptest.NewRequest(http.MethodDelete, "/issues/i-read/read", nil)
+	unmarkRes := httptest.NewRecorder()
+	router.ServeHTTP(unmarkRes, unmarkReq)
+	if unmarkRes.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d; body=%s", unmarkRes.Code, unmarkRes.Body.String())
+	}
+
+	var remaining int64
+	if err := db.Model(&models.IssueReadState{}).Count(&remaining).Error; err != nil {
+		t.Fatalf("count read states: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("expected read state to be deleted, found %d rows", remaining)
+	}
+}
+
+func TestArchiveAndUnarchiveIssueInboxHandler_UsesActorContext(t *testing.T) {
+	db := setupIssuesRouteTestDB(t)
+	db.Exec("INSERT INTO issues (id, company_id, title, status, priority, origin_kind) VALUES ('i-archive', 'comp-a', 'Archive me', 'backlog', 'medium', 'manual')")
+
+	ir := newIssueRoutes(t, db)
+	router := chi.NewRouter()
+	router.Post("/issues/{id}/inbox-archive", func(w http.ResponseWriter, r *http.Request) {
+		ir.ArchiveIssueInboxHandler(w, r.WithContext(WithActor(r.Context(), ActorInfo{UserID: "user-2"})))
+	})
+	router.Delete("/issues/{id}/inbox-archive", func(w http.ResponseWriter, r *http.Request) {
+		ir.UnarchiveIssueInboxHandler(w, r.WithContext(WithActor(r.Context(), ActorInfo{UserID: "user-2"})))
+	})
+
+	archiveReq := httptest.NewRequest(http.MethodPost, "/issues/i-archive/inbox-archive", nil)
+	archiveRes := httptest.NewRecorder()
+	router.ServeHTTP(archiveRes, archiveReq)
+	if archiveRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", archiveRes.Code, archiveRes.Body.String())
+	}
+
+	var archives []models.IssueInboxArchive
+	if err := db.Find(&archives).Error; err != nil {
+		t.Fatalf("load archives: %v", err)
+	}
+	if len(archives) != 1 {
+		t.Fatalf("expected 1 archive row, got %d", len(archives))
+	}
+	if archives[0].UserID != "user-2" {
+		t.Fatalf("expected archive for user-2, got %q", archives[0].UserID)
+	}
+
+	unarchiveReq := httptest.NewRequest(http.MethodDelete, "/issues/i-archive/inbox-archive", nil)
+	unarchiveRes := httptest.NewRecorder()
+	router.ServeHTTP(unarchiveRes, unarchiveReq)
+	if unarchiveRes.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d; body=%s", unarchiveRes.Code, unarchiveRes.Body.String())
+	}
+
+	var remaining int64
+	if err := db.Model(&models.IssueInboxArchive{}).Count(&remaining).Error; err != nil {
+		t.Fatalf("count archives: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("expected archive row to be deleted, found %d rows", remaining)
+	}
+}
+
+func TestListIssueApprovalsHandler_ReturnsLinkedApprovals(t *testing.T) {
+	db := setupIssuesRouteTestDB(t)
+	db.Exec("INSERT INTO issues (id, company_id, title, status, priority, origin_kind) VALUES ('i-approval', 'comp-a', 'Needs approval', 'backlog', 'medium', 'manual')")
+	db.Exec("INSERT INTO approvals (id, company_id, type, status, payload) VALUES ('ap-1', 'comp-a', 'deploy', 'pending', '{}')")
+	db.Exec("INSERT INTO issue_approvals (company_id, issue_id, approval_id, linked_by_user_id) VALUES ('comp-a', 'i-approval', 'ap-1', 'user-3')")
+
+	ir := newIssueRoutes(t, db)
+	router := chi.NewRouter()
+	router.Get("/issues/{id}/approvals", ir.ListIssueApprovalsHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/issues/i-approval/approvals", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", res.Code, res.Body.String())
+	}
+
+	var approvals []models.IssueApproval
+	if err := json.NewDecoder(res.Body).Decode(&approvals); err != nil {
+		t.Fatalf("decode approvals: %v", err)
+	}
+	if len(approvals) != 1 {
+		t.Fatalf("expected 1 linked approval, got %d", len(approvals))
+	}
+	if approvals[0].ApprovalID != "ap-1" {
+		t.Fatalf("expected approval ap-1, got %q", approvals[0].ApprovalID)
+	}
+	if approvals[0].Approval.ID != "ap-1" {
+		t.Fatalf("expected preloaded approval data, got %+v", approvals[0].Approval)
 	}
 }

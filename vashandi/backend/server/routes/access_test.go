@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,10 +19,12 @@ import (
 
 func setupAccessTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&access_test=1"), &gorm.Config{})
+	dbName := fmt.Sprintf("file::memory:?cache=shared&access_%s=1", url.QueryEscape(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	db.Exec("DROP TABLE IF EXISTS companies")
 	db.Exec("DROP TABLE IF EXISTS invites")
 	db.Exec("DROP TABLE IF EXISTS cli_auth_challenges")
 	db.Exec("DROP TABLE IF EXISTS join_requests")
@@ -87,6 +91,12 @@ func setupAccessTestDB(t *testing.T) *gorm.DB {
 		id text PRIMARY KEY,
 		user_id text NOT NULL,
 		role text NOT NULL DEFAULT 'member',
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE companies (
+		id text PRIMARY KEY,
+		name text NOT NULL,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
@@ -440,5 +450,93 @@ func TestRevokeCLIAuthCurrentHandler(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] != "revoked" {
 		t.Errorf("expected status 'revoked', got %q", resp["status"])
+	}
+}
+
+func TestGetInviteOnboardingTextHandler_Found(t *testing.T) {
+	db := setupAccessTestDB(t)
+	db.Exec("INSERT INTO companies (id, name) VALUES ('comp-1', 'Acme')")
+
+	token := "invite-token"
+	tokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+	futureExpiry := time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05")
+	db.Exec("INSERT INTO invites (id, company_id, token_hash, allowed_join_types, expires_at) VALUES ('inv-1', 'comp-1', ?, 'agent', ?)", tokenHash, futureExpiry)
+
+	router := chi.NewRouter()
+	router.Get("/invites/{token}/onboarding.txt", GetInviteOnboardingTextHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/invites/"+token+"/onboarding.txt", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+		t.Fatalf("expected text/plain content type, got %q", ct)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Acme") {
+		t.Fatalf("expected onboarding text to include company name, got %q", body)
+	}
+	if !strings.Contains(body, token) {
+		t.Fatalf("expected onboarding text to include invite token, got %q", body)
+	}
+}
+
+func TestApproveCLIAuthChallengeHandler_Success(t *testing.T) {
+	db := setupAccessTestDB(t)
+	token := "pcp_board_test_token"
+	futureExpiry := time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05")
+	db.Exec(`INSERT INTO cli_auth_challenges (id, secret_hash, pending_key_hash, pending_key_name, board_api_key_id, expires_at)
+		VALUES ('chal-1', 'secret-hash', ?, 'CLI board key', 'board-key-1', ?)`, hashToken(token), futureExpiry)
+
+	router := chi.NewRouter()
+	router.Post("/cli-auth/challenges/{id}/approve", ApproveCLIAuthChallengeHandler(db))
+
+	req := httptest.NewRequest(http.MethodPost, "/cli-auth/challenges/chal-1/approve", bytes.NewBufferString(`{"token":"`+token+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if approved, ok := resp["approved"].(bool); !ok || !approved {
+		t.Fatalf("expected approved=true, got %+v", resp)
+	}
+
+	var challenge struct {
+		ApprovedAt *time.Time
+	}
+	if err := db.Table("cli_auth_challenges").Select("approved_at").Where("id = ?", "chal-1").Scan(&challenge).Error; err != nil {
+		t.Fatalf("load challenge: %v", err)
+	}
+	if challenge.ApprovedAt == nil {
+		t.Fatal("expected approved_at to be set")
+	}
+}
+
+func TestApproveCLIAuthChallengeHandler_InvalidToken(t *testing.T) {
+	db := setupAccessTestDB(t)
+	futureExpiry := time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05")
+	db.Exec(`INSERT INTO cli_auth_challenges (id, secret_hash, pending_key_hash, pending_key_name, expires_at)
+		VALUES ('chal-2', 'secret-hash', ?, 'CLI board key', ?)`, hashToken("expected-token"), futureExpiry)
+
+	router := chi.NewRouter()
+	router.Post("/cli-auth/challenges/{id}/approve", ApproveCLIAuthChallengeHandler(db))
+
+	req := httptest.NewRequest(http.MethodPost, "/cli-auth/challenges/chal-2/approve", bytes.NewBufferString(`{"token":"wrong-token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
