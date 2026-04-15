@@ -58,6 +58,10 @@ func TestRealizeWorkspace_WithoutRepoURLCreatesPrimaryWorkspace(t *testing.T) {
 }
 
 func TestRealizeWorkspace_WorktreeCreatesSeparateCheckout(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required for worktree integration coverage")
+	}
+
 	tempHome := t.TempDir()
 	t.Setenv("PAPERCLIP_HOME", tempHome)
 	t.Setenv("PAPERCLIP_INSTANCE_ID", "test")

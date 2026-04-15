@@ -22,7 +22,7 @@ import (
 // setupAgentsCRUDTestDB creates an isolated in-memory SQLite database for agent CRUD tests.
 func setupAgentsCRUDTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dbName := fmt.Sprintf("file::memory:?cache=shared&agents_crud_%s=1", url.QueryEscape(t.Name()))
+	dbName := fmt.Sprintf("file:agents_crud_%s?mode=memory&cache=shared", url.QueryEscape(t.Name()))
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
