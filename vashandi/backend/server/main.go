@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/cors"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -44,15 +43,6 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	schedulerSvc := services.NewRoutineSchedulerService(db, heartbeatSvc, issueSvc, activitySvc)
 
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
-	
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
 
 	return &App{
 		Router:     r,
@@ -107,7 +97,12 @@ func Run() {
 		os.Exit(1)
 	}
 
-	app := NewApp(db, RouterOptions{DeploymentMode: cfg.Server.DeploymentMode})
+	app := NewApp(db, RouterOptions{
+		DeploymentMode:     cfg.Server.DeploymentMode,
+		DeploymentExposure: cfg.Server.Exposure,
+		AllowedHostnames:   cfg.Server.AllowedHostnames,
+		BindHost:           cfg.Server.Host,
+	})
 
 	// Startup Recovery
 	if app.Heartbeat != nil {

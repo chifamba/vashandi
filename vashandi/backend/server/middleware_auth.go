@@ -54,6 +54,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 					IsAgent:         false,
 					IsInstanceAdmin: true,
 					ActorType:       "board",
+					ActorSource:     "local_implicit",
 				}
 				ctx := context.WithValue(r.Context(), routes.ActorKey, actor)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -95,6 +96,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 						IsAgent:         false,
 						IsInstanceAdmin: isAdmin,
 						ActorType:       "board",
+						ActorSource:     "board_key",
 					}
 				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 					log.Printf("auth: board key lookup error: %v", err)
@@ -108,6 +110,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 						CompanyID: key.CompanyID,
 						IsAgent:   true,
 						ActorType: "agent",
+						ActorSource: "agent_key",
 					}
 				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 					log.Printf("auth: agent key lookup error: %v", err)
@@ -146,6 +149,7 @@ func resolveSessionCookieActor(r *http.Request, db *gorm.DB) (routes.ActorInfo, 
 		IsAgent:         false,
 		IsInstanceAdmin: isAdmin,
 		ActorType:       "board",
+		ActorSource:     "session",
 	}, true
 }
 

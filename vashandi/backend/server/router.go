@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"gorm.io/gorm"
 
 	"github.com/chifamba/vashandi/vashandi/backend/server/realtime"
@@ -17,6 +18,18 @@ import (
 type RouterOptions struct {
 	// DeploymentMode is "local_trusted" (default) or "authenticated".
 	DeploymentMode string
+
+	// DeploymentExposure is "private" or "public".  Combined with
+	// DeploymentMode == "authenticated" it enables the private hostname guard.
+	DeploymentExposure string
+
+	// AllowedHostnames is the operator-configured list of hostnames permitted
+	// when the private hostname guard is active.
+	AllowedHostnames []string
+
+	// BindHost is the address the HTTP server listens on.  It is automatically
+	// added to the private hostname allow set when non-empty and not "0.0.0.0".
+	BindHost string
 
 	// AuthHandler is an optional handler mounted at /api/auth/* to serve
 	// BetterAuth endpoints (sign-in, sign-out, etc.).  When nil those paths
@@ -47,7 +60,31 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+
+	// CORS must be registered before routes so that preflight OPTIONS requests
+	// are handled correctly.  AllowedOrigins uses "*" with credential support
+	// via the reflected-origin behaviour of the cors package.
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
+	// Private hostname guard runs before auth so blocked requests never touch
+	// the database.
+	r.Use(PrivateHostnameGuard(PrivateHostnameGuardOptions{
+		Enabled:          opts.DeploymentMode == "authenticated" && opts.DeploymentExposure == "private",
+		AllowedHostnames: opts.AllowedHostnames,
+		BindHost:         opts.BindHost,
+	}))
+
 	r.Use(ActorMiddleware(db, AuthMiddlewareOptions{DeploymentMode: opts.DeploymentMode}))
+
+	// Board mutation guard runs after auth so it can inspect the actor type and source.
+	r.Use(BoardMutationGuard)
 
 	// Auth routes — registered before the /api/v1 block so that more-specific
 	// paths (get-session) take precedence over the wildcard catch-all.
