@@ -823,7 +823,7 @@ A release candidate is blocked unless these pass:
 
 ## Milestone 7: Hardened Go Backend Parity (Current Production State)
 
-The project has reached 100% feature parity with the legacy Node.js backend using a high-performance Go implementation in `vashandi/backend/`.
+The Go backend (`vashandi/backend/`) has reached production-grade parity with the legacy Node.js backend, covering all critical API surface. A small set of areas are intentionally deferred and remain in Node.js (see below).
 
 ### Key Hardened Features:
 - **Heartbeat Resilience**: Autonomous reaping of orphaned runs and strict concurrency enforcement.
@@ -834,12 +834,17 @@ The project has reached 100% feature parity with the legacy Node.js backend usin
 
 ### Operational Pivot:
 - **Go 1.25+** is the primary runtime for orchestration and business logic.
-- **Node.js** remains active for Board (Web) UI proxying and development middleware.
+- **Node.js** remains active for Board (Web) UI proxying, development middleware, and the deferred areas listed below.
 - **pgvector** is required for memory-related features.
 
-- full integration/e2e suite
-- seed/demo company templates for local testing
-- release checklist and docs update
+### Known Deferred Items (retained in Node.js):
+- **Plugin system** — plugin loader, sandbox, worker manager, job scheduler, event bus, stream bus (~25 routes / ~8,000 lines).
+- **Company portability preview** — `POST /exports/preview` and `POST /imports/preview`; Go has apply stubs only.
+- **Full heartbeat orchestration** — workspace assignment, session compaction, billing ledger.
+- **Workspace runtime management** — Docker/process lifecycle for execution workspaces.
+- **Feedback system** — feedback-trace routes, bundle, share, export, redaction.
+
+For the complete route-by-route parity record, see `doc/plans/2026-04-14-go-parity-tracking.md`.
 
 ## 19. Acceptance Criteria (Release Gate)
 
