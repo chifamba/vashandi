@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"time"
 
@@ -171,9 +170,4 @@ func valueOrZero(value *int64) int64 {
 		return 0
 	}
 	return *value
-}
-
-func readAllCloser(reader io.ReadCloser) ([]byte, error) {
-	defer reader.Close()
-	return io.ReadAll(reader)
 }

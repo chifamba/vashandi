@@ -2,11 +2,9 @@ package storage
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type LocalDiskProvider struct {
@@ -128,24 +126,4 @@ func (p *LocalDiskProvider) DeleteObject(_ context.Context, input DeleteObjectIn
 		return err
 	}
 	return nil
-}
-
-type readCloser struct {
-	io.Reader
-	close func() error
-}
-
-func (r *readCloser) Close() error {
-	if r.close != nil {
-		return r.close()
-	}
-	return nil
-}
-
-func newReadCloser(reader io.Reader) io.ReadCloser {
-	return &readCloser{Reader: reader}
-}
-
-func pointerTime(t time.Time) *time.Time {
-	return &t
 }

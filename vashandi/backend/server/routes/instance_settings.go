@@ -22,7 +22,7 @@ var (
 		},
 	}
 	defaultExperimentalSettings = map[string]any{
-		"enableIsolatedWorkspaces":    false,
+		"enableIsolatedWorkspaces":     false,
 		"autoRestartDevServerWhenIdle": false,
 	}
 )

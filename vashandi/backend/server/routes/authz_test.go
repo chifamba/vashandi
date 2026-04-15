@@ -29,8 +29,8 @@ func TestAssertBoard_BoardActor(t *testing.T) {
 func TestAssertBoard_AgentActor(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ctx := WithActor(req.Context(), ActorInfo{
-		AgentID:  "agent-1",
-		IsAgent:  true,
+		AgentID:   "agent-1",
+		IsAgent:   true,
 		ActorType: "agent",
 	})
 	req = req.WithContext(ctx)
@@ -56,13 +56,27 @@ func TestAssertBoard_SystemActor(t *testing.T) {
 func TestAssertInstanceAdmin_BoardActor(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ctx := WithActor(req.Context(), ActorInfo{
-		UserID:    "admin-1",
-		ActorType: "board",
+		UserID:          "admin-1",
+		ActorType:       "board",
+		IsInstanceAdmin: true,
 	})
 	req = req.WithContext(ctx)
 
 	if err := AssertInstanceAdmin(req); err != nil {
 		t.Errorf("expected board actor to be instance admin, got: %v", err)
+	}
+}
+
+func TestAssertInstanceAdmin_NonAdminBoardActor(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := WithActor(req.Context(), ActorInfo{
+		UserID:    "user-1",
+		ActorType: "board",
+	})
+	req = req.WithContext(ctx)
+
+	if err := AssertInstanceAdmin(req); err == nil {
+		t.Error("expected non-admin board actor to be rejected")
 	}
 }
 
