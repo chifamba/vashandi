@@ -421,9 +421,8 @@ func ExecutePluginToolHandler(db *gorm.DB, wm *services.PluginWorkerManager) htt
 // npm install natively, npm-based packages are recorded with status "pending"
 // and must be loaded via the Node.js worker infrastructure.  Local-path plugins
 // require a manifest.json at the given path to be readable.
-func InstallPluginHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
+func InstallPluginHandler(db *gorm.DB, activity *services.ActivityService, lifecycle *services.PluginLifecycleService) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
-	lifecycle := services.NewPluginLifecycleService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -566,9 +565,8 @@ func GetPluginHandler(db *gorm.DB) http.HandlerFunc {
 // DELETE /plugins/:pluginId
 // --------------------------------------------------------------------------
 
-func DeletePluginHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
+func DeletePluginHandler(db *gorm.DB, activity *services.ActivityService, lifecycle *services.PluginLifecycleService) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
-	lifecycle := services.NewPluginLifecycleService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -614,9 +612,8 @@ func DeletePluginHandler(db *gorm.DB, activity *services.ActivityService) http.H
 // POST /plugins/:pluginId/enable
 // --------------------------------------------------------------------------
 
-func EnablePluginHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
+func EnablePluginHandler(db *gorm.DB, activity *services.ActivityService, lifecycle *services.PluginLifecycleService) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
-	lifecycle := services.NewPluginLifecycleService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -660,9 +657,8 @@ func EnablePluginHandler(db *gorm.DB, activity *services.ActivityService) http.H
 // POST /plugins/:pluginId/disable
 // --------------------------------------------------------------------------
 
-func DisablePluginHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
+func DisablePluginHandler(db *gorm.DB, activity *services.ActivityService, lifecycle *services.PluginLifecycleService) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
-	lifecycle := services.NewPluginLifecycleService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -825,9 +821,8 @@ func GetPluginLogsHandler(db *gorm.DB) http.HandlerFunc {
 // POST /plugins/:pluginId/upgrade
 // --------------------------------------------------------------------------
 
-func UpgradePluginHandler(db *gorm.DB, activity *services.ActivityService) http.HandlerFunc {
+func UpgradePluginHandler(db *gorm.DB, activity *services.ActivityService, lifecycle *services.PluginLifecycleService) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
-	lifecycle := services.NewPluginLifecycleService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -1385,17 +1380,11 @@ func GetPluginJobRunsHandler(db *gorm.DB) http.HandlerFunc {
 // POST /plugins/:pluginId/jobs/:jobId/trigger
 // --------------------------------------------------------------------------
 
-// TriggerPluginJobHandler manually triggers a plugin job outside its cron schedule.
-// It creates a run record with trigger="manual" and dispatches via the runJob RPC.
-func TriggerPluginJobHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
+func TriggerPluginJobHandler(db *gorm.DB, scheduler *services.PluginJobScheduler) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
-			return
-		}
-		if wm == nil {
-			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Job scheduling is not enabled"})
 			return
 		}
 
@@ -1412,76 +1401,15 @@ func TriggerPluginJobHandler(db *gorm.DB, wm *services.PluginWorkerManager) http
 			return
 		}
 
-		job, err := registry.GetJobByIDForPlugin(r.Context(), plugin.ID, jobID)
+		runID, err := scheduler.TriggerJob(r.Context(), jobID, "manual")
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if job == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Job not found"})
-			return
-		}
-
-		if !wm.IsRunning(plugin.ID) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": fmt.Sprintf("Worker for plugin %q is not running — cannot trigger job", plugin.PluginKey),
-			})
-			return
-		}
-
-		// Create a job run record.
-		run := models.PluginJobRun{
-			JobID:    job.ID,
-			PluginID: plugin.ID,
-			Trigger:  "manual",
-			Status:   "pending",
-		}
-		if err := db.WithContext(r.Context()).Create(&run).Error; err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-
-		// Dispatch to worker in the background — mirrors TypeScript's dispatchManualRun.
-		runID := run.ID
-		pluginID2 := plugin.ID
-		jobCopy := *job
-		go func() {
-			bgCtx, bgCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			defer bgCancel()
-
-			startedAt := time.Now()
-			db.WithContext(bgCtx).Model(&models.PluginJobRun{}).Where("id = ?", runID).Updates(map[string]interface{}{
-				"status":     "running",
-				"started_at": startedAt,
-			})
-
-			params := map[string]interface{}{
-				"jobId":       jobCopy.ID,
-				"jobKey":      jobCopy.JobKey,
-				"trigger":     "manual",
-				"scheduledAt": startedAt.UTC().Format(time.RFC3339),
-			}
-			_, runErr := wm.Call(bgCtx, pluginID2, "runJob", params, 5*time.Minute)
-
-			finishedAt := time.Now()
-			durationMs := int(finishedAt.Sub(startedAt).Milliseconds())
-			updates := map[string]interface{}{
-				"finished_at": finishedAt,
-				"duration_ms": durationMs,
-			}
-			if runErr != nil {
-				errMsg := runErr.Error()
-				updates["status"] = "failed"
-				updates["error"] = errMsg
-			} else {
-				updates["status"] = "completed"
-			}
-			db.WithContext(bgCtx).Model(&models.PluginJobRun{}).Where("id = ?", runID).Updates(updates)
-		}()
 
 		writeJSON(w, http.StatusOK, map[string]string{
-			"runId": run.ID,
-			"jobId": job.ID,
+			"jobId": jobID,
+			"runId": runID,
 		})
 	}
 }
@@ -1490,10 +1418,7 @@ func TriggerPluginJobHandler(db *gorm.DB, wm *services.PluginWorkerManager) http
 // POST /plugins/:pluginId/webhooks/:endpointKey
 // --------------------------------------------------------------------------
 
-// WebhookIngestionHandler records inbound webhook deliveries for a plugin.
-// NOTE: This endpoint does NOT require board authentication (external callers
-// must be able to reach it). Signature verification is the plugin's responsibility.
-func WebhookIngestionHandler(db *gorm.DB) http.HandlerFunc {
+func WebhookIngestionHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		pluginID := chi.URLParam(r, "pluginId")
@@ -1572,11 +1497,14 @@ func WebhookIngestionHandler(db *gorm.DB) http.HandlerFunc {
 
 		// Build payload JSON (use raw body if JSON, or wrap as string).
 		var payloadJSON json.RawMessage
+		var parsedBody interface{}
 		if json.Valid(rawBody) {
 			payloadJSON = rawBody
+			_ = json.Unmarshal(rawBody, &parsedBody)
 		} else {
 			wrapped, _ := json.Marshal(map[string]string{"raw": string(rawBody)})
 			payloadJSON = wrapped
+			parsedBody = map[string]string{"raw": string(rawBody)}
 		}
 
 		startedAt := time.Now()
@@ -1586,23 +1514,53 @@ func WebhookIngestionHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		// In the Go backend there is no worker to dispatch to, so we record as
-		// "success" immediately (the plugin worker infrastructure is Node.js-side).
-		durationMs := int(time.Since(startedAt).Milliseconds())
-		_ = registry.UpdateWebhookDelivery(r.Context(), deliveryID, "success", durationMs, nil)
+		// Dispatch to the worker via handleWebhook RPC.
+		var workerErr error
+		if wm != nil && wm.IsRunning(plugin.ID) {
+			params := map[string]interface{}{
+				"endpointKey": endpointKey,
+				"headers":     rawHeaders,
+				"rawBody":      string(rawBody),
+				"parsedBody":   parsedBody,
+				"requestId":    deliveryID, // Use deliveryID as requestId
+			}
+			_, workerErr = wm.Call(r.Context(), plugin.ID, "handleWebhook", params, 30*time.Second)
+		} else {
+			workerErr = fmt.Errorf("plugin worker not available")
+		}
 
-		writeJSON(w, http.StatusOK, map[string]string{
-			"deliveryId": deliveryID,
-			"status":     "success",
-		})
+		durationMs := int(time.Since(startedAt).Milliseconds())
+		status := "success"
+		var errMsg *string
+		if workerErr != nil {
+			status = "failed"
+			s := workerErr.Error()
+			errMsg = &s
+		}
+
+		_ = registry.UpdateWebhookDelivery(r.Context(), deliveryID, status, durationMs, errMsg)
+
+		if workerErr != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{
+				"deliveryId": deliveryID,
+				"status":     status,
+				"error":      *errMsg,
+			})
+		} else {
+			writeJSON(w, http.StatusOK, map[string]string{
+				"deliveryId": deliveryID,
+				"status":     status,
+			})
+		}
 	}
 }
+
 
 // --------------------------------------------------------------------------
 // GET /plugins/:pluginId/dashboard
 // --------------------------------------------------------------------------
 
-func GetPluginDashboardHandler(db *gorm.DB) http.HandlerFunc {
+func GetPluginDashboardHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
@@ -1635,22 +1593,29 @@ func GetPluginDashboardHandler(db *gorm.DB) http.HandlerFunc {
 
 		health := buildHealthCheck(plugin)
 
+		var workerInfo interface{}
+		if wm != nil {
+			if handle := wm.GetWorker(plugin.ID); handle != nil {
+				workerInfo = handle.Diagnostics()
+			}
+		}
+
 		type dashboardResponse struct {
-			PluginID               string                       `json:"pluginId"`
-			Worker                 interface{}                  `json:"worker"`
-			RecentJobRuns          []models.PluginJobRun        `json:"recentJobRuns"`
+			PluginID                string                       `json:"pluginId"`
+			Worker                  interface{}                  `json:"worker"`
+			RecentJobRuns           []models.PluginJobRun        `json:"recentJobRuns"`
 			RecentWebhookDeliveries []models.PluginWebhookDelivery `json:"recentWebhookDeliveries"`
-			Health                 pluginHealthCheck            `json:"health"`
-			CheckedAt              string                       `json:"checkedAt"`
+			Health                  pluginHealthCheck            `json:"health"`
+			CheckedAt               string                       `json:"checkedAt"`
 		}
 
 		writeJSON(w, http.StatusOK, dashboardResponse{
-			PluginID:               plugin.ID,
-			Worker:                 nil, // No worker manager in Go backend
+			PluginID:                plugin.ID,
+			Worker:                  workerInfo,
 			RecentJobRuns:          jobRuns,
 			RecentWebhookDeliveries: deliveries,
-			Health:                 health,
-			CheckedAt:              time.Now().UTC().Format(time.RFC3339),
+			Health:                  health,
+			CheckedAt:               time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 }

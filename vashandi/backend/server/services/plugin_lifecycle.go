@@ -49,15 +49,17 @@ func isValidTransition(from, to PluginStatus) bool {
 }
 
 type PluginLifecycleService struct {
-	DB          *gorm.DB
-	listeners   map[string][]func(interface{})
-	mu          sync.RWMutex
+	DB            *gorm.DB
+	WorkerManager *PluginWorkerManager
+	listeners     map[string][]func(interface{})
+	mu            sync.RWMutex
 }
 
-func NewPluginLifecycleService(db *gorm.DB) *PluginLifecycleService {
+func NewPluginLifecycleService(db *gorm.DB, wm *PluginWorkerManager) *PluginLifecycleService {
 	return &PluginLifecycleService{
-		DB:        db,
-		listeners: make(map[string][]func(interface{})),
+		DB:            db,
+		WorkerManager: wm,
+		listeners:     make(map[string][]func(interface{})),
 	}
 }
 
@@ -125,17 +127,39 @@ func (s *PluginLifecycleService) transition(ctx context.Context, pluginID string
 }
 
 func (s *PluginLifecycleService) Load(ctx context.Context, pluginID string) (*models.Plugin, error) {
-	return s.transition(ctx, pluginID, PluginStatusReady, nil)
+	plugin, err := s.transition(ctx, pluginID, PluginStatusReady, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.WorkerManager != nil {
+		_ = s.WorkerManager.StartWorker(ctx, pluginID)
+	}
+
+	return plugin, nil
 }
 
 func (s *PluginLifecycleService) Disable(ctx context.Context, pluginID string) (*models.Plugin, error) {
-	return s.transition(ctx, pluginID, PluginStatusDisabled, nil)
+	plugin, err := s.transition(ctx, pluginID, PluginStatusDisabled, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.WorkerManager != nil {
+		_ = s.WorkerManager.StopWorker(ctx, pluginID)
+	}
+
+	return plugin, nil
 }
 
 func (s *PluginLifecycleService) Unload(ctx context.Context, pluginID string, removeData bool) (*models.Plugin, error) {
 	var plugin models.Plugin
 	if err := s.DB.WithContext(ctx).First(&plugin, "id = ?", pluginID).Error; err != nil {
 		return nil, err
+	}
+
+	if s.WorkerManager != nil {
+		_ = s.WorkerManager.StopWorker(ctx, pluginID)
 	}
 
 	if PluginStatus(plugin.Status) == PluginStatusUninstalled {
@@ -165,6 +189,9 @@ func (s *PluginLifecycleService) Unload(ctx context.Context, pluginID string, re
 }
 
 func (s *PluginLifecycleService) MarkError(ctx context.Context, pluginID, errMsg string) (*models.Plugin, error) {
+	if s.WorkerManager != nil {
+		_ = s.WorkerManager.StopWorker(ctx, pluginID)
+	}
 	return s.transition(ctx, pluginID, PluginStatusError, &errMsg)
 }
 

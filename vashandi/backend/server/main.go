@@ -25,6 +25,8 @@ type App struct {
 	Scheduler           *services.RoutineSchedulerService
 	LiveEvents          *realtime.Hub
 	PluginWorkerManager *services.PluginWorkerManager
+	PluginJobScheduler  *services.PluginJobScheduler
+	PluginJobCoordinator *services.PluginJobCoordinator
 }
 
 func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
@@ -57,6 +59,18 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	issueSvc := services.NewIssueService(db, activitySvc)
 	schedulerSvc := services.NewRoutineSchedulerService(db, heartbeatSvc, issueSvc, activitySvc)
 
+	// Create shared plugin lifecycle service.
+	lifecycleSvc := services.NewPluginLifecycleService(db, pluginWorkerManager)
+	routerOpts.PluginLifecycleService = lifecycleSvc
+
+	// Initialize Plugin Job Scheduler stack.
+	jobStore := services.NewPluginJobStore(db)
+	jobScheduler := services.NewPluginJobScheduler(db, jobStore, pluginWorkerManager)
+	jobCoordinator := services.NewPluginJobCoordinator(jobStore, jobScheduler, services.NewPluginRegistryService(db), lifecycleSvc)
+
+	routerOpts.PluginJobStore = jobStore
+	routerOpts.PluginJobScheduler = jobScheduler
+
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
 
 	return &App{
@@ -66,6 +80,8 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 		Scheduler:           schedulerSvc,
 		LiveEvents:          hub,
 		PluginWorkerManager: pluginWorkerManager,
+		PluginJobScheduler:  jobScheduler,
+		PluginJobCoordinator: jobCoordinator,
 	}
 }
 
@@ -143,6 +159,13 @@ func Run() {
 	if app.PluginWorkerManager != nil {
 		slog.Info("Starting plugin workers for ready plugins")
 		go app.PluginWorkerManager.StartReadyPlugins(context.Background())
+	}
+
+	// Start plugin job scheduler and coordinator.
+	if app.PluginJobScheduler != nil && app.PluginJobCoordinator != nil {
+		slog.Info("Starting plugin job scheduler and coordinator")
+		app.PluginJobCoordinator.Start()
+		app.PluginJobScheduler.Start(context.Background())
 	}
 
 	// Start the feedback export flusher (mirrors the Node.js 5-second timer).

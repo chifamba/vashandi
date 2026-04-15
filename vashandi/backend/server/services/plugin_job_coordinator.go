@@ -2,154 +2,89 @@ package services
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"log/slog"
-
-	"github.com/chifamba/vashandi/vashandi/backend/db/models"
-	"gorm.io/gorm"
 )
 
-type PluginJobScheduler interface {
-	RegisterPlugin(ctx context.Context, pluginID string) error
-	UnregisterPlugin(ctx context.Context, pluginID string) error
-}
-
-type PluginJobStore interface {
-	SyncJobDeclarations(ctx context.Context, pluginID string, jobs []map[string]interface{}) error
-	DeleteAllJobs(ctx context.Context, pluginID string) error
-}
-
 type PluginJobCoordinator struct {
-	DB        *gorm.DB
+	Store     *PluginJobStore
+	Scheduler *PluginJobScheduler
+	Registry  *PluginRegistryService
 	Lifecycle *PluginLifecycleService
-	Scheduler PluginJobScheduler
-	JobStore  PluginJobStore
-	attached  bool
 }
 
-func NewPluginJobCoordinator(db *gorm.DB, lifecycle *PluginLifecycleService, scheduler PluginJobScheduler, jobStore PluginJobStore) *PluginJobCoordinator {
+func NewPluginJobCoordinator(store *PluginJobStore, scheduler *PluginJobScheduler, registry *PluginRegistryService, lifecycle *PluginLifecycleService) *PluginJobCoordinator {
 	return &PluginJobCoordinator{
-		DB:        db,
-		Lifecycle: lifecycle,
+		Store:     store,
 		Scheduler: scheduler,
-		JobStore:  jobStore,
-	}
-}
-
-func (c *PluginJobCoordinator) onPluginLoaded(payload interface{}) {
-	data, ok := payload.(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	pluginID, _ := data["pluginId"].(string)
-	pluginKey, _ := data["pluginKey"].(string)
-
-	ctx := context.Background()
-	slog.Info("plugin loaded — syncing jobs and registering with scheduler", "pluginId", pluginID, "pluginKey", pluginKey)
-
-	var plugin models.Plugin
-	err := c.DB.WithContext(ctx).First(&plugin, "id = ?", pluginID).Error
-	if err != nil {
-		slog.Warn("plugin loaded but no manifest found — skipping job sync", "pluginId", pluginID)
-		return
-	}
-
-	// Assuming ManifestJson is a map or can be unmarshaled
-	var manifest map[string]interface{}
-	if plugin.ManifestJSON != nil {
-		// Mock logic since we haven't fully ported the manifest JSON parsing
-		// into the DB model yet.
-		// manifest = *plugin.ManifestJSON
-	}
-
-	var jobDeclarations []map[string]interface{}
-	if jobs, ok := manifest["jobs"].([]interface{}); ok {
-		for _, j := range jobs {
-			if jobMap, ok := j.(map[string]interface{}); ok {
-				jobDeclarations = append(jobDeclarations, jobMap)
-			}
-		}
-	}
-
-	if len(jobDeclarations) > 0 {
-		slog.Info("syncing job declarations from manifest", "pluginId", pluginID, "jobCount", len(jobDeclarations))
-		err := c.JobStore.SyncJobDeclarations(ctx, pluginID, jobDeclarations)
-		if err != nil {
-			slog.Error("failed to sync jobs", "err", err, "pluginId", pluginID)
-		}
-	}
-
-	err = c.Scheduler.RegisterPlugin(ctx, pluginID)
-	if err != nil {
-		slog.Error("failed to register plugin with scheduler", "err", err, "pluginId", pluginID)
-	}
-}
-
-func (c *PluginJobCoordinator) onPluginDisabled(payload interface{}) {
-	data, ok := payload.(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	pluginID, _ := data["pluginId"].(string)
-	pluginKey, _ := data["pluginKey"].(string)
-	reason, _ := data["reason"].(string)
-
-	ctx := context.Background()
-	slog.Info("plugin disabled — unregistering from scheduler", "pluginId", pluginID, "pluginKey", pluginKey, "reason", reason)
-
-	err := c.Scheduler.UnregisterPlugin(ctx, pluginID)
-	if err != nil {
-		slog.Error("failed to unregister plugin from scheduler", "err", err, "pluginId", pluginID)
-	}
-}
-
-func (c *PluginJobCoordinator) onPluginUnloaded(payload interface{}) {
-	data, ok := payload.(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	pluginID, _ := data["pluginId"].(string)
-	pluginKey, _ := data["pluginKey"].(string)
-	removeData, _ := data["removeData"].(bool)
-
-	ctx := context.Background()
-	slog.Info("plugin unloaded — unregistering from scheduler", "pluginId", pluginID, "pluginKey", pluginKey, "removeData", removeData)
-
-	err := c.Scheduler.UnregisterPlugin(ctx, pluginID)
-	if err != nil {
-		slog.Error("failed to unregister plugin from scheduler during unload", "err", err, "pluginId", pluginID)
-	}
-
-	if removeData {
-		slog.Info("purging job data for uninstalled plugin", "pluginId", pluginID)
-		err := c.JobStore.DeleteAllJobs(ctx, pluginID)
-		if err != nil {
-			slog.Error("failed to purge job data", "err", err, "pluginId", pluginID)
-		}
+		Registry:  registry,
+		Lifecycle: lifecycle,
 	}
 }
 
 func (c *PluginJobCoordinator) Start() {
-	if c.attached {
-		return
-	}
-	c.attached = true
-
-	c.Lifecycle.On("plugin.loaded", c.onPluginLoaded)
-	c.Lifecycle.On("plugin.disabled", c.onPluginDisabled)
-	c.Lifecycle.On("plugin.unloaded", c.onPluginUnloaded)
-
-	fmt.Println("plugin job coordinator started — listening to lifecycle events")
+	c.Lifecycle.On("plugin.status_changed", c.handleStatusChanged)
+	slog.Info("Plugin job coordinator started — listening to lifecycle events")
 }
 
-func (c *PluginJobCoordinator) Stop() {
-	if !c.attached {
+func (c *PluginJobCoordinator) handleStatusChanged(payload interface{}) {
+	data, ok := payload.(map[string]interface{})
+	if !ok {
 		return
 	}
-	c.attached = false
-	// Normally we would have Off methods on Lifecycle to remove these specific listeners
-	fmt.Println("plugin job coordinator stopped")
+
+	pluginID, _ := data["pluginId"].(string)
+	pluginKey, _ := data["pluginKey"].(string)
+	newStatus, _ := data["newStatus"].(PluginStatus)
+
+	if pluginID == "" {
+		return
+	}
+
+	ctx := context.Background()
+
+	switch newStatus {
+	case PluginStatusReady:
+		slog.Info("Plugin ready — syncing jobs and registering with scheduler", "pluginId", pluginID, "pluginKey", pluginKey)
+		c.syncAndRegister(ctx, pluginID)
+	case PluginStatusDisabled, PluginStatusError:
+		slog.Info("Plugin disabled/error — unregistering from scheduler", "pluginId", pluginID, "pluginKey", pluginKey)
+		c.Scheduler.UnregisterPlugin(ctx, pluginID)
+	case PluginStatusUninstalled:
+		slog.Info("Plugin uninstalled — unregistering from scheduler", "pluginId", pluginID, "pluginKey", pluginKey)
+		c.Scheduler.UnregisterPlugin(ctx, pluginID)
+		// Note: Data purging is handled by the Unload method in LifecycleService if removeData is true.
+		// However, the coordinator could also trigger store.DeleteAllJobs if we had the removeData flag here.
+		// Since the payload doesn't have removeData, we'll assume it's handled or we can check the DB.
+	}
+}
+
+func (c *PluginJobCoordinator) syncAndRegister(ctx context.Context, pluginID string) {
+	// 1. Get the manifest from the registry.
+	plugin, err := c.Registry.GetByID(ctx, pluginID)
+	if err != nil || plugin == nil {
+		slog.Error("Coordinator: failed to get plugin for job sync", "pluginId", pluginID, "error", err)
+		return
+	}
+
+	// 2. Parse jobs from manifest.
+	var manifest struct {
+		Jobs []PluginJobDeclaration `json:"jobs"`
+	}
+	if err := json.Unmarshal(plugin.ManifestJSON, &manifest); err != nil {
+		slog.Error("Coordinator: failed to parse manifest for jobs", "pluginId", pluginID, "error", err)
+		return
+	}
+
+	// 3. Sync job declarations.
+	if len(manifest.Jobs) > 0 {
+		if err := c.Store.SyncJobDeclarations(ctx, pluginID, manifest.Jobs); err != nil {
+			slog.Error("Coordinator: failed to sync job declarations", "pluginId", pluginID, "error", err)
+		}
+	}
+
+	// 4. Register with scheduler.
+	if err := c.Scheduler.RegisterPlugin(ctx, pluginID); err != nil {
+		slog.Error("Coordinator: failed to register plugin with scheduler", "pluginId", pluginID, "error", err)
+	}
 }

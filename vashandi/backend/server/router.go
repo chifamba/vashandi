@@ -52,6 +52,15 @@ type RouterOptions struct {
 	// PluginStreamBus receives stream notifications from plugin workers for
 	// SSE fan-out. When nil, the stream bridge route returns 501.
 	PluginStreamBus *services.PluginStreamBus
+
+	// PluginJobScheduler manages scheduled plugin jobs.
+	PluginJobScheduler *services.PluginJobScheduler
+
+	// PluginJobStore handles DB operations for plugin jobs.
+	PluginJobStore *services.PluginJobStore
+
+	// PluginLifecycleService manages plugin state transitions.
+	PluginLifecycleService *services.PluginLifecycleService
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
@@ -149,15 +158,15 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/plugins/ui-contributions", routes.GetPluginUIContributionsHandler(db))
 		api.Get("/plugins/tools", routes.GetPluginToolsHandler(db))
 		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler(db, opts.PluginWorkerManager))
-		api.Post("/plugins/install", routes.InstallPluginHandler(db, activitySvc))
+		api.Post("/plugins/install", routes.InstallPluginHandler(db, activitySvc, opts.PluginLifecycleService))
 		// Per-plugin routes
 		api.Get("/plugins/{pluginId}", routes.GetPluginHandler(db))
-		api.Delete("/plugins/{pluginId}", routes.DeletePluginHandler(db, activitySvc))
-		api.Post("/plugins/{pluginId}/enable", routes.EnablePluginHandler(db, activitySvc))
-		api.Post("/plugins/{pluginId}/disable", routes.DisablePluginHandler(db, activitySvc))
+		api.Delete("/plugins/{pluginId}", routes.DeletePluginHandler(db, activitySvc, opts.PluginLifecycleService))
+		api.Post("/plugins/{pluginId}/enable", routes.EnablePluginHandler(db, activitySvc, opts.PluginLifecycleService))
+		api.Post("/plugins/{pluginId}/disable", routes.DisablePluginHandler(db, activitySvc, opts.PluginLifecycleService))
 		api.Get("/plugins/{pluginId}/health", routes.GetPluginHealthHandler(db))
 		api.Get("/plugins/{pluginId}/logs", routes.GetPluginLogsHandler(db))
-		api.Post("/plugins/{pluginId}/upgrade", routes.UpgradePluginHandler(db, activitySvc))
+		api.Post("/plugins/{pluginId}/upgrade", routes.UpgradePluginHandler(db, activitySvc, opts.PluginLifecycleService))
 		api.Get("/plugins/{pluginId}/config", routes.GetPluginConfigHandler(db))
 		api.Post("/plugins/{pluginId}/config", routes.SetPluginConfigHandler(db, activitySvc))
 		api.Post("/plugins/{pluginId}/config/test", routes.TestPluginConfigHandler(db, opts.PluginWorkerManager))
@@ -168,9 +177,9 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/plugins/{pluginId}/actions/{key}", routes.PluginActionByKeyHandler(db, opts.PluginWorkerManager))
 		api.Get("/plugins/{pluginId}/jobs", routes.GetPluginJobsHandler(db))
 		api.Get("/plugins/{pluginId}/jobs/{jobId}/runs", routes.GetPluginJobRunsHandler(db))
-		api.Post("/plugins/{pluginId}/jobs/{jobId}/trigger", routes.TriggerPluginJobHandler(db, opts.PluginWorkerManager))
-		api.Post("/plugins/{pluginId}/webhooks/{endpointKey}", routes.WebhookIngestionHandler(db))
-		api.Get("/plugins/{pluginId}/dashboard", routes.GetPluginDashboardHandler(db))
+		api.Post("/plugins/{pluginId}/jobs/{jobId}/trigger", routes.TriggerPluginJobHandler(db, opts.PluginJobScheduler))
+		api.Post("/plugins/{pluginId}/webhooks/{endpointKey}", routes.WebhookIngestionHandler(db, opts.PluginWorkerManager))
+		api.Get("/plugins/{pluginId}/dashboard", routes.GetPluginDashboardHandler(db, opts.PluginWorkerManager))
 
 		// Issue Routes
 		api.Get("/issues", issueRoutes.ListAllIssuesHandler)
