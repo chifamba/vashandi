@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/driver/postgres"
@@ -203,12 +204,23 @@ func Run() {
 		os.Exit(1)
 	}
 
-	authHandler := NewBetterAuthHandler(db)
+	authSecret := strings.TrimSpace(os.Getenv("BETTER_AUTH_SECRET"))
+	if authSecret == "" {
+		authSecret = strings.TrimSpace(os.Getenv("PAPERCLIP_AGENT_JWT_SECRET"))
+	}
+	authHandler := NewBetterAuthHandler(db, BetterAuthOptions{
+		DisableSignUp:            cfg.Auth.DisableSignUp,
+		RequireEmailVerification: cfg.Auth.RequireEmailVerification,
+		AllowedHostnames:         cfg.Server.AllowedHostnames,
+		PublicBaseURL:            cfg.Auth.PublicBaseUrl,
+		Secret:                   authSecret,
+	})
 	app := NewApp(db, RouterOptions{
 		DeploymentMode:     cfg.Server.DeploymentMode,
 		DeploymentExposure: cfg.Server.Exposure,
 		AllowedHostnames:   cfg.Server.AllowedHostnames,
 		BindHost:           cfg.Server.Host,
+		BetterAuthSecret:   authSecret,
 		AuthHandler:        authHandler,
 		Telemetry:          GetTelemetryClient(),
 		DatabaseBackup:     cfg.Database.Backup,

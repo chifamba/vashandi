@@ -16,14 +16,14 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 )
 
-// betterAuthCookieName is the default session cookie name used by BetterAuth.
-const betterAuthCookieName = "better-auth.session_token"
-
 // AuthMiddlewareOptions configures ActorMiddleware behaviour.
 type AuthMiddlewareOptions struct {
 	// DeploymentMode is either "local_trusted" or "authenticated".
 	// Defaults to "local_trusted" when empty.
 	DeploymentMode string
+
+	// BetterAuthSecret verifies signed better-auth session cookies.
+	BetterAuthSecret string
 }
 
 // ActorMiddleware resolves the caller identity and stores it in the request
@@ -68,7 +68,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 			if !strings.HasPrefix(authHeader, "Bearer ") {
 				// No bearer token — try a BetterAuth session cookie.
 				if db != nil {
-					if sessionActor, ok := resolveSessionCookieActor(r, db); ok {
+					if sessionActor, ok := resolveSessionCookieActor(r, db, opts.BetterAuthSecret); ok {
 						actor = sessionActor
 					}
 				}
@@ -106,10 +106,10 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 				err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error
 				if err == nil {
 					actor = routes.ActorInfo{
-						AgentID:   key.AgentID,
-						CompanyID: key.CompanyID,
-						IsAgent:   true,
-						ActorType: "agent",
+						AgentID:     key.AgentID,
+						CompanyID:   key.CompanyID,
+						IsAgent:     true,
+						ActorType:   "agent",
 						ActorSource: "agent_key",
 					}
 				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -126,15 +126,15 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 // resolveSessionCookieActor reads the BetterAuth session cookie from the
 // request, looks up the session in the database, and returns a board ActorInfo
 // if the session is valid and not expired.
-func resolveSessionCookieActor(r *http.Request, db *gorm.DB) (routes.ActorInfo, bool) {
-	cookie, err := r.Cookie(betterAuthCookieName)
-	if err != nil || cookie.Value == "" {
+func resolveSessionCookieActor(r *http.Request, db *gorm.DB, secret string) (routes.ActorInfo, bool) {
+	token, ok := resolveBetterAuthSessionToken(r, secret)
+	if !ok {
 		return routes.ActorInfo{}, false
 	}
 
 	var session models.Session
-	err = db.WithContext(r.Context()).
-		Where("token = ? AND expires_at > ?", cookie.Value, time.Now()).
+	err := db.WithContext(r.Context()).
+		Where("token = ? AND expires_at > ?", token, time.Now()).
 		First(&session).Error
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {

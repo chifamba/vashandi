@@ -2,11 +2,16 @@ package server
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
+	"time"
 
+	"golang.org/x/crypto/scrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -15,12 +20,11 @@ import (
 
 func setupAuthTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&auth_test=1"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 
-	// Create necessary tables
 	db.Exec(`CREATE TABLE "user" (
 		id text PRIMARY KEY,
 		name text NOT NULL,
@@ -63,17 +67,22 @@ func setupAuthTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestBetterAuthHandler_SignUpSignIn(t *testing.T) {
+func TestBetterAuthHandler_SignUpSignInSignOut(t *testing.T) {
+	t.Setenv("BETTER_AUTH_SECRET", "test-secret")
 	db := setupAuthTestDB(t)
-	h := NewBetterAuthHandler(db)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+	})
 
-	// 1. Sign Up
 	signUpBody, _ := json.Marshal(map[string]string{
-		"email":    "test@example.com",
+		"email":    "Test@Example.com",
 		"password": "password123",
 		"name":     "Test User",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up/email", bytes.NewBuffer(signUpBody))
+	req.Header.Set("Origin", "https://app.example.com")
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
@@ -81,65 +90,207 @@ func TestBetterAuthHandler_SignUpSignIn(t *testing.T) {
 		t.Fatalf("sign-up failed: %d %s", w.Code, w.Body.String())
 	}
 
-	var signUpResp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&signUpResp)
-	userResp := signUpResp["user"].(map[string]interface{})
-	if userResp["email"] != "test@example.com" {
-		t.Errorf("expected email test@example.com, got %v", userResp["email"])
+	var signUpResp struct {
+		Token string `json:"token"`
+		User  struct {
+			Email         string `json:"email"`
+			EmailVerified bool   `json:"emailVerified"`
+		} `json:"user"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&signUpResp); err != nil {
+		t.Fatalf("decode sign-up response: %v", err)
+	}
+	if signUpResp.User.Email != "test@example.com" {
+		t.Fatalf("expected normalized email, got %q", signUpResp.User.Email)
+	}
+	if signUpResp.Token == "" {
+		t.Fatal("expected session token in sign-up response")
+	}
+	if signUpResp.User.EmailVerified {
+		t.Fatal("new users should start unverified")
 	}
 
-	// Verify cookie
-	cookies := w.Result().Cookies()
-	var sessionToken string
-	for _, c := range cookies {
-		if c.Name == cookieName {
-			sessionToken = c.Value
-		}
+	sessionCookie := findCookie(w.Result().Cookies(), betterAuthCookieBaseName)
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie")
 	}
-	if sessionToken == "" {
-		t.Fatal("expected session token cookie")
+	if _, ok := verifyBetterAuthCookieValue(sessionCookie.Value, "test-secret"); !ok {
+		t.Fatal("expected signed better-auth cookie")
 	}
 
-	// 2. Sign In
 	signInBody, _ := json.Marshal(map[string]string{
 		"email":    "test@example.com",
 		"password": "password123",
 	})
 	req = httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", bytes.NewBuffer(signInBody))
+	req.Header.Set("Origin", "https://app.example.com")
 	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sign-in failed: %d %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/sign-out", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.AddCookie(sessionCookie)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sign-out failed: %d %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	db.Model(&models.Session{}).Where("token = ?", signUpResp.Token).Count(&count)
+	if count != 0 {
+		t.Fatalf("expected session to be deleted, got %d", count)
+	}
+}
+
+func TestBetterAuthHandler_UpgradesLegacyPasswordHash(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+	})
+
+	legacyHash, err := hashLegacyPassword("password123")
+	if err != nil {
+		t.Fatalf("hash legacy password: %v", err)
+	}
+	user := models.User{
+		ID:            "user-1",
+		Name:          "Test User",
+		Email:         "test@example.com",
+		EmailVerified: true,
+	}
+	account := models.Account{
+		ID:         "acct-1",
+		AccountID:  user.ID,
+		ProviderID: "credential",
+		UserID:     user.ID,
+		Password:   &legacyHash,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	signInBody, _ := json.Marshal(map[string]string{
+		"email":    "test@example.com",
+		"password": "password123",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", bytes.NewBuffer(signInBody))
+	req.Header.Set("Origin", "https://app.example.com")
+	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("sign-in failed: %d %s", w.Code, w.Body.String())
 	}
 
-	// 3. Sign In with wrong password
-	signInBodyWrong, _ := json.Marshal(map[string]string{
-		"email":    "test@example.com",
-		"password": "wrongpassword",
+	var updated models.Account
+	if err := db.First(&updated, "id = ?", account.ID).Error; err != nil {
+		t.Fatalf("reload account: %v", err)
+	}
+	if updated.Password == nil || *updated.Password == legacyHash {
+		t.Fatal("expected password hash to be upgraded")
+	}
+	if !verifyBetterAuthPassword("password123", *updated.Password) {
+		t.Fatal("expected upgraded better-auth password hash")
+	}
+}
+
+func TestBetterAuthHandler_DisableSignUpAndTrustedOrigins(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		DisableSignUp:    true,
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
 	})
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", bytes.NewBuffer(signInBodyWrong))
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for wrong password, got %d", w.Code)
+	signUpBody := `{"email":"test@example.com","password":"password123","name":"Test User"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up/email", strings.NewReader(signUpBody))
+	req.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected origin rejection, got %d", w.Code)
 	}
 
-	// 4. Sign Out
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/sign-out", nil)
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionToken})
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/sign-up/email", strings.NewReader(signUpBody))
+	req.Header.Set("Origin", "https://app.example.com")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected disable sign-up rejection, got %d", w.Code)
+	}
+}
 
+func TestBetterAuthHandler_EmailVerificationFlow(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		RequireEmailVerification: true,
+		AllowedHostnames:         []string{"app.example.com"},
+		Secret:                   "test-secret",
+	})
+
+	signUpBody := `{"email":"test@example.com","password":"password123","name":"Test User","callbackURL":"/welcome"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up/email", strings.NewReader(signUpBody))
+	req.Header.Set("Origin", "https://app.example.com")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Errorf("sign-out failed: %d", w.Code)
+		t.Fatalf("sign-up failed: %d %s", w.Code, w.Body.String())
+	}
+	if findCookie(w.Result().Cookies(), betterAuthCookieBaseName) != nil {
+		t.Fatal("did not expect session cookie before verification")
 	}
 
-	// Verify session is deleted
-	var count int64
-	db.Model(&models.Session{}).Where("token = ?", sessionToken).Count(&count)
-	if count != 0 {
-		t.Errorf("expected session to be deleted, got %d", count)
+	token, err := createEmailVerificationToken("test-secret", "test@example.com", time.Hour)
+	if err != nil {
+		t.Fatalf("create token: %v", err)
 	}
+	req = httptest.NewRequest(http.MethodGet, "/api/auth/verify-email?token="+token+"&callbackURL=%2Fwelcome", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("verify-email failed: %d %s", w.Code, w.Body.String())
+	}
+
+	var user models.User
+	if err := db.First(&user, "email = ?", "test@example.com").Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if !user.EmailVerified {
+		t.Fatal("expected user to be verified")
+	}
+
+	signInBody := `{"email":"test@example.com","password":"password123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", strings.NewReader(signInBody))
+	req.Header.Set("Origin", "https://app.example.com")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sign-in after verification failed: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
+}
+
+func hashLegacyPassword(password string) (string, error) {
+	salt := generateRandomBytes(passwordSaltLen)
+	hash, err := scrypt.Key([]byte(password), salt, legacyPasswordN, legacyPasswordR, legacyPasswordP, legacyPasswordKeyLen)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(salt) + ":" + hex.EncodeToString(hash), nil
 }
