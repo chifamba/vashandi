@@ -508,15 +508,11 @@ func loadBudgetScopeRecord(ctx context.Context, db *gorm.DB, scope BudgetScope) 
 	}
 }
 
-func isBudgetPaused(scopeType string, record *budgetScopeRecord) bool {
+func isBudgetPaused(_ string, record *budgetScopeRecord) bool {
 	if record == nil || record.PauseReason != "budget" {
 		return false
 	}
-	paused := record.Status == "paused" || record.PausedAt != nil
-	if scopeType == "company" {
-		return paused
-	}
-	return paused
+	return record.Status == "paused" || record.PausedAt != nil
 }
 
 func budgetPausedReason(scopeType string) string {

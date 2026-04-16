@@ -101,7 +101,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	if costSvc == nil {
 		costSvc = services.NewCostService(db)
 	}
-	if heartbeatSvc != nil && heartbeatSvc.BudgetEnforcementHook != nil {
+	if heartbeatSvc.BudgetEnforcementHook != nil {
 		costSvc.BudgetEnforcementHook = heartbeatSvc.BudgetEnforcementHook
 	}
 	runtimeMgr := opts.RuntimeManager
