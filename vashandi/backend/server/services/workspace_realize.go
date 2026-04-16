@@ -183,6 +183,7 @@ func sanitizeBranchName(value string) string {
 	result = strings.Trim(result, "-/.")
 	if len(result) > maxWorkspaceBranchNameLength {
 		result = result[:maxWorkspaceBranchNameLength]
+		result = strings.Trim(result, "-/.")
 	}
 	if result == "" {
 		return "paperclip-work"

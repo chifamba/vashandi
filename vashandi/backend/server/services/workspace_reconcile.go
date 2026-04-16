@@ -241,7 +241,7 @@ func isRuntimeServiceURLHealthy(ctx context.Context, url string) bool {
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 

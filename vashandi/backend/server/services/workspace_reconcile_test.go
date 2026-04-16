@@ -21,7 +21,7 @@ func TestReconcileOnStartupAdoptsPersistedLocalProcess(t *testing.T) {
 	t.Setenv("PAPERCLIP_INSTANCE_ID", "test")
 
 	cwd := t.TempDir()
-	cmd := exec.Command("sh", "-lc", "sleep 30")
+	cmd := exec.Command("sh", "-lc", "sleep 5")
 	cmd.Dir = cwd
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -45,7 +45,7 @@ func TestReconcileOnStartupAdoptsPersistedLocalProcess(t *testing.T) {
 		ScopeType:            "execution_workspace",
 		ScopeID:              &workspaceID,
 		ReuseKey:             &reuseKey,
-		Command:              stringOrNil("sleep 30"),
+		Command:              stringOrNil("sleep 5"),
 		Cwd:                  &cwd,
 		Provider:             "local_process",
 		StartedAt:            time.Now(),
@@ -59,7 +59,7 @@ func TestReconcileOnStartupAdoptsPersistedLocalProcess(t *testing.T) {
 		ProfileKind:    "workspace-runtime",
 		ServiceName:    "sleepy",
 		Cwd:            cwd,
-		Command:        "sleep 30",
+		Command:        "sleep 5",
 		EnvFingerprint: computeEnvFingerprint(nil),
 		Scope: map[string]interface{}{
 			"projectWorkspaceId":   nil,
@@ -71,7 +71,7 @@ func TestReconcileOnStartupAdoptsPersistedLocalProcess(t *testing.T) {
 		ServiceKey:       serviceKey,
 		ProfileKind:      "workspace-runtime",
 		ServiceName:      "sleepy",
-		Command:          "sleep 30",
+		Command:          "sleep 5",
 		Cwd:              cwd,
 		EnvFingerprint:   computeEnvFingerprint(nil),
 		PID:              cmd.Process.Pid,
@@ -120,7 +120,7 @@ func TestRehydratePersistentServicesStartsDesiredProjectWorkspaceService(t *test
 				"services": []interface{}{
 					map[string]interface{}{
 						"name":      "sleepy",
-						"command":   "sleep 30",
+						"command":   "sleep 5",
 						"lifecycle": "shared",
 					},
 				},
