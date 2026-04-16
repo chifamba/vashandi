@@ -4,12 +4,23 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func openHealthTestDB(t *testing.T, name string) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), name+".db")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	return db
+}
 
 func TestHealthHandler_NilDB(t *testing.T) {
 	handler := HealthHandler(nil)
@@ -34,10 +45,7 @@ func TestHealthHandler_NilDB(t *testing.T) {
 }
 
 func TestHealthHandler_WithDB(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:health1?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	db := openHealthTestDB(t, "health1")
 
 	handler := HealthHandler(db)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -61,10 +69,7 @@ func TestHealthHandler_WithDB(t *testing.T) {
 }
 
 func TestHealthHandler_AuthenticatedBootstrapPendingWithInvite(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:health2?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	db := openHealthTestDB(t, "health2")
 	if err := db.Exec(`CREATE TABLE instance_user_roles (id text, user_id text, role text)`).Error; err != nil {
 		t.Fatalf("create roles table: %v", err)
 	}
@@ -104,10 +109,7 @@ func TestHealthHandler_AuthenticatedBootstrapPendingWithInvite(t *testing.T) {
 }
 
 func TestHealthHandler_AuthenticatedReadyWhenAdminExists(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:health3?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	db := openHealthTestDB(t, "health3")
 	if err := db.Exec(`CREATE TABLE instance_user_roles (id text, user_id text, role text)`).Error; err != nil {
 		t.Fatalf("create roles table: %v", err)
 	}

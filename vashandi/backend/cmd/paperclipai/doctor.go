@@ -50,7 +50,7 @@ var doctorCmd = &cobra.Command{
 }
 
 func runDoctorChecks() []doctorCheckResult {
-	results := make([]doctorCheckResult, 0, 9)
+	var results []doctorCheckResult
 
 	loaded, err := loadCLIConfig()
 	if err != nil {
@@ -121,7 +121,18 @@ func checkAgentJWT(cfg *shared.PaperclipConfig) doctorCheckResult {
 		}
 	}
 
-	if strings.TrimSpace(os.Getenv("BETTER_AUTH_SECRET")) != "" || strings.TrimSpace(os.Getenv("PAPERCLIP_AGENT_JWT_SECRET")) != "" {
+	secret := strings.TrimSpace(os.Getenv("BETTER_AUTH_SECRET"))
+	if secret == "" {
+		secret = strings.TrimSpace(os.Getenv("PAPERCLIP_AGENT_JWT_SECRET"))
+	}
+	if secret != "" {
+		if len(secret) < 32 {
+			return doctorCheckResult{
+				Name:    "Agent JWT",
+				Status:  doctorFail,
+				Details: "Authentication secret must be at least 32 characters long",
+			}
+		}
 		return doctorCheckResult{
 			Name:    "Agent JWT",
 			Status:  doctorPass,
@@ -366,7 +377,13 @@ func checkPortAvailability(cfg *shared.PaperclipConfig) doctorCheckResult {
 			Details: fmt.Sprintf("Port %d is not available: %v", cfg.Server.Port, err),
 		}
 	}
-	_ = listener.Close()
+	if err := listener.Close(); err != nil {
+		return doctorCheckResult{
+			Name:    "Port",
+			Status:  doctorWarn,
+			Details: fmt.Sprintf("Port %d accepted a bind but could not be released cleanly: %v", cfg.Server.Port, err),
+		}
+	}
 
 	return doctorCheckResult{
 		Name:    "Port",

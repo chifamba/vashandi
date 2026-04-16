@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -128,14 +129,7 @@ func validateSecretMaterial(raw string) bool {
 		return false
 	}
 	if len(trimmed) == 64 {
-		isHex := true
-		for _, r := range trimmed {
-			if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
-				isHex = false
-				break
-			}
-		}
-		if isHex {
+		if decoded, err := hex.DecodeString(trimmed); err == nil && len(decoded) == 32 {
 			return true
 		}
 	}
@@ -150,6 +144,8 @@ func openPostgresConnection(dsn string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Callers must verify connectivity with Ping/PingContext because sql.Open
+	// validates driver registration and DSN parsing, not the live connection.
 	return db, nil
 }
 

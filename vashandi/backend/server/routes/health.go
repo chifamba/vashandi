@@ -9,6 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	instanceAdminRole = "instance_admin"
+	bootstrapCEOType  = "bootstrap_ceo"
+)
+
 type HealthResponse struct {
 	Status             string                 `json:"status"`
 	Version            string                 `json:"version"`
@@ -68,7 +73,7 @@ func HealthHandler(db *gorm.DB, options ...HealthHandlerOptions) http.HandlerFun
 		if opts.DeploymentMode == "authenticated" {
 			var adminCount int64
 			if err := db.Model(&models.InstanceUserRole{}).
-				Where("role = ?", "instance_admin").
+				Where("role = ?", instanceAdminRole).
 				Count(&adminCount).Error; err != nil {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				json.NewEncoder(w).Encode(HealthResponse{
@@ -83,7 +88,7 @@ func HealthHandler(db *gorm.DB, options ...HealthHandlerOptions) http.HandlerFun
 				var inviteCount int64
 				now := time.Now()
 				if err := db.Model(&models.Invite{}).
-					Where("invite_type = ?", "bootstrap_ceo").
+					Where("invite_type = ?", bootstrapCEOType).
 					Where("revoked_at IS NULL").
 					Where("accepted_at IS NULL").
 					Where("expires_at > ?", now).
