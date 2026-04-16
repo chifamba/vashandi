@@ -94,17 +94,19 @@ func buildAttachmentContentDisposition(disposition, filename string) string {
 
 // IssueRoutes handles HTTP requests for issues
 type IssueRoutes struct {
-	db       *gorm.DB
-	service  *services.IssueService
-	feedback *services.FeedbackService
+	db        *gorm.DB
+	service   *services.IssueService
+	feedback  *services.FeedbackService
+	documents *services.DocumentService
 }
 
 // NewIssueRoutes creates a new IssueRoutes
 func NewIssueRoutes(db *gorm.DB, activity *services.ActivityService) *IssueRoutes {
 	return &IssueRoutes{
-		db:       db,
-		service:  services.NewIssueService(db, activity),
-		feedback: services.NewFeedbackService(db),
+		db:        db,
+		service:   services.NewIssueService(db, activity),
+		feedback:  services.NewFeedbackService(db),
+		documents: services.NewDocumentService(db),
 	}
 }
 
@@ -798,66 +800,43 @@ func (ir *IssueRoutes) GetFeedbackTraceBundleHandler(w http.ResponseWriter, r *h
 // ListIssueDocumentsHandler returns all documents linked to an issue.
 func (ir *IssueRoutes) ListIssueDocumentsHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var docs []models.IssueDocument
-	if err := ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Order("updated_at DESC").Find(&docs).Error; err != nil {
+	docs, err := ir.documents.ListIssueDocuments(r.Context(), id)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Enrich with document data where available.
-	type docEntry struct {
-		models.IssueDocument
-		Document *models.Document `json:"document,omitempty"`
-	}
-	result := make([]docEntry, 0, len(docs))
-	for _, d := range docs {
-		entry := docEntry{IssueDocument: d}
-		var document models.Document
-		if err := ir.db.WithContext(r.Context()).First(&document, "id = ?", d.DocumentID).Error; err == nil {
-			entry.Document = &document
-		}
-		result = append(result, entry)
-	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	json.NewEncoder(w).Encode(docs)
 }
 
 // GetIssueDocumentHandler returns a single document linked to an issue by key.
 func (ir *IssueRoutes) GetIssueDocumentHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	key := chi.URLParam(r, "key")
-	var issueDoc models.IssueDocument
-	if err := ir.db.WithContext(r.Context()).
-		Where("issue_id = ? AND key = ?", id, key).
-		First(&issueDoc).Error; err != nil {
-		http.Error(w, "Not found", http.StatusNotFound)
+	doc, err := ir.documents.GetIssueDocumentByKey(r.Context(), id, key)
+	if err != nil {
+		if errors.Is(err, services.ErrDocumentNotFound) || errors.Is(err, services.ErrInvalidDocumentKey) {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	var document models.Document
-	if err := ir.db.WithContext(r.Context()).First(&document, "id = ?", issueDoc.DocumentID).Error; err != nil {
-		http.Error(w, "Document not found", http.StatusNotFound)
-		return
-	}
-	type response struct {
-		models.IssueDocument
-		Document models.Document `json:"document"`
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response{IssueDocument: issueDoc, Document: document})
+	json.NewEncoder(w).Encode(doc)
 }
 
 // UpsertIssueDocumentHandler creates or updates a document linked to an issue.
 func (ir *IssueRoutes) UpsertIssueDocumentHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	key := chi.URLParam(r, "key")
-	var issue models.Issue
-	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
+
 	var body struct {
-		Title  *string `json:"title"`
-		Body   string  `json:"body"`
-		Format string  `json:"format"`
+		Title          *string `json:"title"`
+		Body           string  `json:"body"`
+		Format         string  `json:"format"`
+		ChangeSummary  *string `json:"changeSummary"`
+		BaseRevisionID *string `json:"baseRevisionId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -867,72 +846,65 @@ func (ir *IssueRoutes) UpsertIssueDocumentHandler(w http.ResponseWriter, r *http
 		body.Format = "markdown"
 	}
 
-	// Look up existing link.
-	var issueDoc models.IssueDocument
-	isNew := false
-	if err := ir.db.WithContext(r.Context()).
-		Where("issue_id = ? AND key = ?", id, key).
-		First(&issueDoc).Error; err != nil {
-		isNew = true
-	}
-
 	actor := GetActorInfo(r)
-	if isNew {
-		doc := models.Document{
-			CompanyID:  issue.CompanyID,
-			Title:      body.Title,
-			Format:     body.Format,
-			LatestBody: body.Body,
-		}
-		if actor.UserID != "" {
-			doc.CreatedByUserID = &actor.UserID
-			doc.UpdatedByUserID = &actor.UserID
-		}
-		if err := ir.db.WithContext(r.Context()).Create(&doc).Error; err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		issueDoc = models.IssueDocument{
-			CompanyID:  issue.CompanyID,
-			IssueID:    id,
-			DocumentID: doc.ID,
-			Key:        key,
-		}
-		if err := ir.db.WithContext(r.Context()).Create(&issueDoc).Error; err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(issueDoc)
-		return
-	}
-
-	// Update existing document.
-	updates := map[string]interface{}{
-		"latest_body": body.Body,
-		"format":      body.Format,
-		"title":       body.Title,
+	var createdByAgentID *string
+	var createdByUserID *string
+	if actor.AgentID != "" {
+		createdByAgentID = &actor.AgentID
 	}
 	if actor.UserID != "" {
-		updates["updated_by_user_id"] = actor.UserID
+		createdByUserID = &actor.UserID
 	}
-	if err := ir.db.WithContext(r.Context()).Model(&models.Document{}).
-		Where("id = ?", issueDoc.DocumentID).Updates(updates).Error; err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+	result, err := ir.documents.UpsertIssueDocument(r.Context(), services.UpsertIssueDocumentInput{
+		IssueID:          id,
+		Key:              key,
+		Title:            body.Title,
+		Format:           body.Format,
+		Body:             body.Body,
+		ChangeSummary:    body.ChangeSummary,
+		BaseRevisionID:   body.BaseRevisionID,
+		CreatedByAgentID: createdByAgentID,
+		CreatedByUserID:  createdByUserID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrIssueNotFound):
+			http.Error(w, "Issue not found", http.StatusNotFound)
+		case errors.Is(err, services.ErrInvalidDocumentKey):
+			http.Error(w, "Invalid document key", http.StatusUnprocessableEntity)
+		case errors.Is(err, services.ErrDocumentUpdateRequiresBaseRevision):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Document update requires baseRevisionId"})
+		case errors.Is(err, services.ErrDocumentConcurrentUpdate):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Document was updated by someone else"})
+		case errors.Is(err, services.ErrDocumentDoesNotExistYet):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Document does not exist yet"})
+		case errors.Is(err, services.ErrDocumentKeyAlreadyExists):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Document key already exists on this issue"})
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(issueDoc)
+	if result.Created {
+		w.WriteHeader(http.StatusCreated)
+	}
+	json.NewEncoder(w).Encode(result)
 }
 
 // DeleteIssueDocumentHandler removes a document link from an issue.
 func (ir *IssueRoutes) DeleteIssueDocumentHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	key := chi.URLParam(r, "key")
-	if err := ir.db.WithContext(r.Context()).
-		Where("issue_id = ? AND key = ?", id, key).
-		Delete(&models.IssueDocument{}).Error; err != nil {
+
+	_, err := ir.documents.DeleteIssueDocument(r.Context(), id, key)
+	if err != nil {
+		if errors.Is(err, services.ErrInvalidDocumentKey) {
+			http.Error(w, "Invalid document key", http.StatusUnprocessableEntity)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1011,19 +983,75 @@ func (ir *IssueRoutes) GetIssueHeartbeatContextHandler(w http.ResponseWriter, r 
 func (ir *IssueRoutes) ListIssueDocumentRevisionsHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	key := chi.URLParam(r, "key")
-	var issueDoc models.IssueDocument
-	if err := ir.db.WithContext(r.Context()).
-		First(&issueDoc, "issue_id = ? AND key = ?", id, key).Error; err != nil {
+
+	revisions, err := ir.documents.ListIssueDocumentRevisions(r.Context(), id, key)
+	if err != nil {
+		if errors.Is(err, services.ErrDocumentNotFound) || errors.Is(err, services.ErrInvalidDocumentKey) {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(revisions)
+}
+
+// RestoreIssueDocumentRevisionHandler restores a document to a previous revision.
+func (ir *IssueRoutes) RestoreIssueDocumentRevisionHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key := chi.URLParam(r, "key")
+	revisionID := chi.URLParam(r, "revisionId")
+
+	actor := GetActorInfo(r)
+	var createdByAgentID *string
+	var createdByUserID *string
+	if actor.AgentID != "" {
+		createdByAgentID = &actor.AgentID
+	}
+	if actor.UserID != "" {
+		createdByUserID = &actor.UserID
+	}
+
+	result, err := ir.documents.RestoreIssueDocumentRevision(r.Context(), id, key, revisionID, createdByAgentID, createdByUserID)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrDocumentNotFound):
+			http.Error(w, "Document not found", http.StatusNotFound)
+		case errors.Is(err, services.ErrDocumentRevisionNotFound):
+			http.Error(w, "Document revision not found", http.StatusNotFound)
+		case errors.Is(err, services.ErrInvalidDocumentKey):
+			http.Error(w, "Invalid document key", http.StatusUnprocessableEntity)
+		case errors.Is(err, services.ErrRevisionAlreadyLatest):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Selected revision is already the latest revision"})
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// GetIssueDocumentPayloadHandler returns the document payload for an issue.
+func (ir *IssueRoutes) GetIssueDocumentPayloadHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).Select("id", "description").First(&issue, "id = ?", id).Error; err != nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-	var revisions []models.DocumentRevision
-	ir.db.WithContext(r.Context()).
-		Where("document_id = ?", issueDoc.DocumentID).
-		Order("revision_number ASC").
-		Find(&revisions)
+
+	payload, err := ir.documents.GetIssueDocumentPayload(r.Context(), id, issue.Description)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(revisions)
+	json.NewEncoder(w).Encode(payload)
 }
 
 // UploadIssueAttachmentHandler handles POST /companies/:companyId/issues/:issueId/attachments
