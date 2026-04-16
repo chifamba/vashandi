@@ -2,77 +2,10 @@ package routes
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
-	"github.com/chifamba/vashandi/vashandi/backend/db/models"
-	"github.com/google/uuid"
-	"gorm.io/datatypes"
-	"gorm.io/gorm"
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
-
-var (
-	defaultGeneralSettings = map[string]any{
-		"censorUsernameInLogs":          false,
-		"keyboardShortcuts":             false,
-		"feedbackDataSharingPreference": "prompt",
-		"backupRetention": map[string]any{
-			"dailyDays":     7,
-			"weeklyWeeks":   4,
-			"monthlyMonths": 1,
-		},
-	}
-	defaultExperimentalSettings = map[string]any{
-		"enableIsolatedWorkspaces":     false,
-		"autoRestartDevServerWhenIdle": false,
-	}
-)
-
-func loadOrCreateInstanceSetting(db *gorm.DB, r *http.Request) (*models.InstanceSetting, error) {
-	var setting models.InstanceSetting
-	if err := db.WithContext(r.Context()).Where("singleton_key = ?", "default").First(&setting).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
-		setting = models.InstanceSetting{
-			ID:           uuid.NewString(),
-			SingletonKey: "default",
-			General:      datatypes.JSON([]byte(`{}`)),
-			Experimental: datatypes.JSON([]byte(`{}`)),
-		}
-		if err := db.WithContext(r.Context()).Create(&setting).Error; err != nil {
-			return nil, err
-		}
-	}
-	return &setting, nil
-}
-
-func decodeSettings(raw datatypes.JSON, defaults map[string]any) map[string]any {
-	merged := map[string]any{}
-	for key, value := range defaults {
-		merged[key] = value
-	}
-	if len(raw) == 0 {
-		return merged
-	}
-	var existing map[string]any
-	if err := json.Unmarshal(raw, &existing); err != nil {
-		return merged
-	}
-	for key, value := range existing {
-		merged[key] = value
-	}
-	return merged
-}
-
-func mergeSettings(raw datatypes.JSON, patch map[string]any) datatypes.JSON {
-	current := decodeSettings(raw, map[string]any{})
-	for key, value := range patch {
-		current[key] = value
-	}
-	body, _ := json.Marshal(current)
-	return datatypes.JSON(body)
-}
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -104,28 +37,23 @@ func requireInstanceAdmin(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func GetGeneralSettingsHandler(db *gorm.DB) http.HandlerFunc {
+func GetGeneralSettingsHandler(settingsSvc *services.InstanceSettingsService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireBoard(w, r) {
 			return
 		}
-		setting, err := loadOrCreateInstanceSetting(db, r)
+		settings, err := settingsSvc.GetGeneral(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, decodeSettings(setting.General, defaultGeneralSettings))
+		writeJSON(w, http.StatusOK, settings)
 	}
 }
 
-func UpdateGeneralSettingsHandler(db *gorm.DB) http.HandlerFunc {
+func UpdateGeneralSettingsHandler(settingsSvc *services.InstanceSettingsService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireInstanceAdmin(w, r) {
-			return
-		}
-		setting, err := loadOrCreateInstanceSetting(db, r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		var patch map[string]any
@@ -133,37 +61,32 @@ func UpdateGeneralSettingsHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		setting.General = mergeSettings(setting.General, patch)
-		if err := db.WithContext(r.Context()).Save(setting).Error; err != nil {
+		settings, err := settingsSvc.UpdateGeneral(r.Context(), patch)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, decodeSettings(setting.General, defaultGeneralSettings))
+		writeJSON(w, http.StatusOK, settings)
 	}
 }
 
-func GetExperimentalSettingsHandler(db *gorm.DB) http.HandlerFunc {
+func GetExperimentalSettingsHandler(settingsSvc *services.InstanceSettingsService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireBoard(w, r) {
 			return
 		}
-		setting, err := loadOrCreateInstanceSetting(db, r)
+		settings, err := settingsSvc.GetExperimental(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, decodeSettings(setting.Experimental, defaultExperimentalSettings))
+		writeJSON(w, http.StatusOK, settings)
 	}
 }
 
-func UpdateExperimentalSettingsHandler(db *gorm.DB) http.HandlerFunc {
+func UpdateExperimentalSettingsHandler(settingsSvc *services.InstanceSettingsService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireInstanceAdmin(w, r) {
-			return
-		}
-		setting, err := loadOrCreateInstanceSetting(db, r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		var patch map[string]any
@@ -171,11 +94,11 @@ func UpdateExperimentalSettingsHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		setting.Experimental = mergeSettings(setting.Experimental, patch)
-		if err := db.WithContext(r.Context()).Save(setting).Error; err != nil {
+		settings, err := settingsSvc.UpdateExperimental(r.Context(), patch)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, decodeSettings(setting.Experimental, defaultExperimentalSettings))
+		writeJSON(w, http.StatusOK, settings)
 	}
 }

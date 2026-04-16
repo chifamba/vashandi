@@ -259,77 +259,20 @@ type agentToolDescriptor struct {
 	PluginID         string                 `json:"pluginId"`
 }
 
-// GetPluginToolsHandler lists all plugin-contributed tools extracted from ready
-// plugin manifests. An optional ?pluginId= query parameter restricts results to
-// a single plugin.
-func GetPluginToolsHandler(db *gorm.DB) http.HandlerFunc {
-	registry := services.NewPluginRegistryService(db)
+// GetPluginToolsHandler lists all plugin-contributed tools.
+func GetPluginToolsHandler(dispatcher *services.PluginToolDispatcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
 
-		filterPluginID := r.URL.Query().Get("pluginId")
-
-		var plugins []models.Plugin
-		var err error
-		if filterPluginID != "" {
-			p, resolveErr := registry.Resolve(r.Context(), filterPluginID)
-			if resolveErr != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": resolveErr.Error()})
-				return
-			}
-			if p == nil {
-				writeJSON(w, http.StatusOK, []agentToolDescriptor{})
-				return
-			}
-			plugins = []models.Plugin{*p}
-		} else {
-			plugins, err = registry.ListByStatus(r.Context(), "ready")
-			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			}
+		tools, err := dispatcher.ListToolsForAgent(r.Context(), "", "")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
 		}
 
-		tools := make([]agentToolDescriptor, 0)
-		for _, plugin := range plugins {
-			if plugin.Status != "ready" {
-				continue
-			}
-			manifest := parseManifest(plugin.ManifestJSON)
-			if manifest == nil {
-				continue
-			}
-			rawTools, _ := manifest["tools"].([]interface{})
-			for _, t := range rawTools {
-				toolMap, ok := t.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				name, _ := toolMap["name"].(string)
-				if name == "" {
-					continue
-				}
-				displayName, _ := toolMap["displayName"].(string)
-				if displayName == "" {
-					displayName = name
-				}
-				description, _ := toolMap["description"].(string)
-				schema, _ := toolMap["parametersSchema"].(map[string]interface{})
-				if schema == nil {
-					schema = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
-				}
-				tools = append(tools, agentToolDescriptor{
-					Name:             plugin.PluginKey + ":" + name,
-					DisplayName:      displayName,
-					Description:      description,
-					ParametersSchema: schema,
-					PluginID:         plugin.ID,
-				})
-			}
-		}
 		writeJSON(w, http.StatusOK, tools)
 	}
 }
@@ -339,16 +282,11 @@ func GetPluginToolsHandler(db *gorm.DB) http.HandlerFunc {
 // --------------------------------------------------------------------------
 
 // ExecutePluginToolHandler dispatches a tool-execution call to the appropriate
-// plugin worker via the executeTool RPC method.
-func ExecutePluginToolHandler(db *gorm.DB, wm *services.PluginWorkerManager) http.HandlerFunc {
-	registry := services.NewPluginRegistryService(db)
+// plugin worker via the dispatcher.
+func ExecutePluginToolHandler(dispatcher *services.PluginToolDispatcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
-			return
-		}
-		if wm == nil {
-			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Plugin tool dispatch is not enabled"})
 			return
 		}
 
@@ -365,51 +303,22 @@ func ExecutePluginToolHandler(db *gorm.DB, wm *services.PluginWorkerManager) htt
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"tool" is required`})
 			return
 		}
-		if body.RunContext == nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"runContext" is required`})
-			return
-		}
 
-		// tool format: "pluginKey:toolName"
-		idx := strings.Index(body.Tool, ":")
-		if idx < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `"tool" must be in format "pluginKey:toolName"`})
-			return
-		}
-		pluginKey := body.Tool[:idx]
-		toolName := body.Tool[idx+1:]
-
-		plugin, err := registry.Resolve(r.Context(), pluginKey)
+		res, err := dispatcher.ExecuteTool(r.Context(), body.Tool, body.Parameters, body.RunContext)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		if plugin == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Plugin %q not found", pluginKey)})
-			return
-		}
-		if plugin.Status != "ready" {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Plugin is not ready (status: %s)", plugin.Status)})
-			return
-		}
-		if !wm.IsRunning(plugin.ID) {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Worker for plugin %q is not running", pluginKey)})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 
-		params := map[string]interface{}{
-			"toolName":   toolName,
-			"parameters": body.Parameters,
-			"runContext": body.RunContext,
-		}
-		raw, callErr := wm.Call(r.Context(), plugin.ID, "executeTool", params, 0)
-		if callErr != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": callErr.Error()})
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(raw)
+		
+		// If the dispatcher returned raw bytes (it does currently since it wraps wm.Call), we write them.
+		if raw, ok := res.([]byte); ok {
+			_, _ = w.Write(raw)
+		} else {
+			_ = json.NewEncoder(w).Encode(res)
+		}
 	}
 }
 
@@ -421,7 +330,7 @@ func ExecutePluginToolHandler(db *gorm.DB, wm *services.PluginWorkerManager) htt
 // npm install natively, npm-based packages are recorded with status "pending"
 // and must be loaded via the Node.js worker infrastructure.  Local-path plugins
 // require a manifest.json at the given path to be readable.
-func InstallPluginHandler(db *gorm.DB, activity *services.ActivityService, lifecycle *services.PluginLifecycleService) http.HandlerFunc {
+func InstallPluginHandler(db *gorm.DB, activity *services.ActivityService, lifecycle *services.PluginLifecycleService, validator *services.PluginCapabilityValidator) http.HandlerFunc {
 	registry := services.NewPluginRegistryService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
@@ -442,6 +351,16 @@ func InstallPluginHandler(db *gorm.DB, activity *services.ActivityService, lifec
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
+		}
+
+		if validator != nil && len(body.ManifestJSON) > 0 {
+			var manifestV1 services.PluginManifestV1
+			if err := json.Unmarshal(body.ManifestJSON, &manifestV1); err == nil {
+				if err := validator.ValidateManifestCapabilities(&manifestV1); err != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Manifest validation failed: %v", err)})
+					return
+				}
+			}
 		}
 
 		if body.PackageName == "" {
@@ -1235,40 +1154,51 @@ func PluginBridgeStreamHandler(db *gorm.DB, wm *services.PluginWorkerManager, st
 			return
 		}
 
-		// Set SSE response headers.
+		// SSE Setup
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
+			return
 		}
 
-		// Send initial connection comment.
+		// Subscribe to stream bus
+		events, cancel := streamBus.Subscribe(plugin.ID, channel, companyID)
+		defer cancel()
+
+		// Send initial connection comment
 		_, _ = fmt.Fprint(w, ":ok\n\n")
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
+		flusher.Flush()
 
-		ctx := r.Context()
-		unsubscribe := streamBus.Subscribe(plugin.ID, channel, companyID, func(event interface{}, eventType services.StreamEventType) {
-			eventJSON, err := json.Marshal(event)
-			if err != nil {
+		// Send initial open signal
+		fmt.Fprintf(w, "event: %s\ndata: {}\n\n", services.StreamEventOpen)
+		flusher.Flush()
+
+		for {
+			select {
+			case <-r.Context().Done():
 				return
-			}
-			if eventType != services.StreamEventMessage {
-				_, _ = fmt.Fprintf(w, "event: %s\n", string(eventType))
-			}
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(eventJSON))
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-		})
-		defer unsubscribe()
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				data, _ := json.Marshal(event.Data)
+				if event.Type != services.StreamEventMessage {
+					fmt.Fprintf(w, "event: %s\n", string(event.Type))
+				}
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				flusher.Flush()
 
-		// Block until client disconnects.
-		<-ctx.Done()
+				if event.Type == services.StreamEventClose {
+					return
+				}
+			}
+		}
 	}
 }
 

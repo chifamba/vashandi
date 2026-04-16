@@ -17,12 +17,17 @@ func ListAdaptersHandler(db *gorm.DB) http.HandlerFunc {
 return func(w http.ResponseWriter, r *http.Request) {
 builtin := []map[string]string{
 {"type": "claude", "name": "Claude (Anthropic)"},
+{"type": "claude_local", "name": "Claude (local CLI)"},
 {"type": "codex", "name": "Codex (OpenAI)"},
+{"type": "codex_local", "name": "Codex (local CLI)"},
 {"type": "gemini", "name": "Gemini (Google)"},
 {"type": "cursor", "name": "Cursor"},
+{"type": "cursor_local", "name": "Cursor (local CLI)"},
 {"type": "windsurf", "name": "Windsurf"},
 {"type": "aider", "name": "Aider"},
 {"type": "opencode_local", "name": "OpenCode (local)"},
+{"type": "pi_local", "name": "PI (local CLI)"},
+{"type": "openclaw_gateway", "name": "OpenClaw Gateway"},
 }
 
 var plugins []models.Plugin

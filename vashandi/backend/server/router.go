@@ -12,6 +12,7 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/server/realtime"
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
+	"github.com/chifamba/vashandi/vashandi/backend/shared"
 	"github.com/chifamba/vashandi/vashandi/backend/shared/telemetry"
 )
 
@@ -61,6 +62,19 @@ type RouterOptions struct {
 
 	// PluginLifecycleService manages plugin state transitions.
 	PluginLifecycleService *services.PluginLifecycleService
+
+	// DatabaseBackup configuration
+	DatabaseBackup shared.DatabaseBackupConfig
+
+	// PluginEventBus handles namespaced event routing for plugins.
+	PluginEventBus *services.PluginEventBus
+	// PluginCapabilityValidator enforces least-privilege for plugins.
+	PluginCapabilityValidator *services.PluginCapabilityValidator
+	// PluginToolDispatcher handles discovery and execution of plugin tools.
+	PluginToolDispatcher *services.PluginToolDispatcher
+
+	// InstanceSettings manages instance-wide configuration.
+	InstanceSettings *services.InstanceSettingsService
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
@@ -156,9 +170,9 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/plugins", routes.ListPluginsHandler(db, activitySvc))
 		api.Get("/plugins/examples", routes.GetPluginExamplesHandler())
 		api.Get("/plugins/ui-contributions", routes.GetPluginUIContributionsHandler(db))
-		api.Get("/plugins/tools", routes.GetPluginToolsHandler(db))
-		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler(db, opts.PluginWorkerManager))
-		api.Post("/plugins/install", routes.InstallPluginHandler(db, activitySvc, opts.PluginLifecycleService))
+		api.Get("/plugins/tools", routes.GetPluginToolsHandler(opts.PluginToolDispatcher))
+		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler(opts.PluginToolDispatcher))
+		api.Post("/plugins/install", routes.InstallPluginHandler(db, activitySvc, opts.PluginLifecycleService, opts.PluginCapabilityValidator))
 		// Per-plugin routes
 		api.Get("/plugins/{pluginId}", routes.GetPluginHandler(db))
 		api.Delete("/plugins/{pluginId}", routes.DeletePluginHandler(db, activitySvc, opts.PluginLifecycleService))
@@ -451,14 +465,14 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/companies/{companyId}/inbox-dismissals", routes.CreateInboxDismissalHandler(db))
 
 		// Instance Settings Routes
-		api.Get("/settings/general", routes.GetGeneralSettingsHandler(db))
-		api.Patch("/settings/general", routes.UpdateGeneralSettingsHandler(db))
-		api.Get("/settings/experimental", routes.GetExperimentalSettingsHandler(db))
-		api.Patch("/settings/experimental", routes.UpdateExperimentalSettingsHandler(db))
-		api.Get("/instance/settings/general", routes.GetGeneralSettingsHandler(db))
-		api.Patch("/instance/settings/general", routes.UpdateGeneralSettingsHandler(db))
-		api.Get("/instance/settings/experimental", routes.GetExperimentalSettingsHandler(db))
-		api.Patch("/instance/settings/experimental", routes.UpdateExperimentalSettingsHandler(db))
+		api.Get("/settings/general", routes.GetGeneralSettingsHandler(opts.InstanceSettings))
+		api.Patch("/settings/general", routes.UpdateGeneralSettingsHandler(opts.InstanceSettings))
+		api.Get("/settings/experimental", routes.GetExperimentalSettingsHandler(opts.InstanceSettings))
+		api.Patch("/settings/experimental", routes.UpdateExperimentalSettingsHandler(opts.InstanceSettings))
+		api.Get("/instance/settings/general", routes.GetGeneralSettingsHandler(opts.InstanceSettings))
+		api.Patch("/instance/settings/general", routes.UpdateGeneralSettingsHandler(opts.InstanceSettings))
+		api.Get("/instance/settings/experimental", routes.GetExperimentalSettingsHandler(opts.InstanceSettings))
+		api.Patch("/instance/settings/experimental", routes.UpdateExperimentalSettingsHandler(opts.InstanceSettings))
 
 		// LLM Routes
 		api.Get("/llms/configuration", routes.ListAgentConfigurationHandler())

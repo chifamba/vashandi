@@ -6,169 +6,151 @@ import (
 	"strings"
 )
 
-// UsageInfo accumulates token usage across all step_finish events.
-type UsageInfo struct {
-	InputTokens       int
-	CachedInputTokens int
-	OutputTokens      int
+type StreamEvent struct {
+	Type      string                 `json:"type"`
+	SessionID *string                `json:"sessionID,omitempty"`
+	Message   interface{}            `json:"message,omitempty"`
+	Error     interface{}            `json:"error,omitempty"`
+	Name      string                 `json:"name,omitempty"`
+	Code      string                 `json:"code,omitempty"`
+	Part      map[string]interface{} `json:"part,omitempty"`
 }
 
-// ParsedOutput is the result of parsing an OpenCode JSONL stdout stream.
-type ParsedOutput struct {
+type UsageSummary struct {
+	InputTokens       int `json:"inputTokens"`
+	CachedInputTokens int `json:"cachedInputTokens"`
+	OutputTokens      int `json:"outputTokens"`
+}
+
+type ParseResult struct {
 	SessionID    *string
 	Summary      string
-	Usage        UsageInfo
-	CostUsd      float64
 	ErrorMessage *string
-}
-
-// errorText extracts a human-readable error string from an arbitrary JSON value.
-func errorText(value interface{}) string {
-	if s, ok := value.(string); ok {
-		return s
-	}
-	rec, ok := value.(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	if msg, ok := rec["message"].(string); ok && msg != "" {
-		return msg
-	}
-	if data, ok := rec["data"].(map[string]interface{}); ok {
-		if msg, ok := data["message"].(string); ok && msg != "" {
-			return msg
-		}
-	}
-	if name, ok := rec["name"].(string); ok && name != "" {
-		return name
-	}
-	if code, ok := rec["code"].(string); ok && code != "" {
-		return code
-	}
-	b, err := json.Marshal(rec)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-func asFloat64(v interface{}) float64 {
-	switch n := v.(type) {
-	case float64:
-		return n
-	case int:
-		return float64(n)
-	}
-	return 0
-}
-
-func asInt(v interface{}) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	}
-	return 0
+	CostUsd      *float64
+	Usage        *UsageSummary
 }
 
 func asString(v interface{}) string {
-	s, _ := v.(string)
-	return s
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
 }
 
-func asMap(v interface{}) map[string]interface{} {
-	m, _ := v.(map[string]interface{})
-	return m
+func asInt(vals ...interface{}) int {
+	for _, v := range vals {
+		if f, ok := v.(float64); ok && f != 0 {
+			return int(f)
+		}
+		if i, ok := v.(int); ok && i != 0 {
+			return i
+		}
+	}
+	return 0
 }
 
-// ParseOpenCodeJsonl parses JSONL output from `opencode run --format json`.
-func ParseOpenCodeJsonl(stdout string) ParsedOutput {
-	var out ParsedOutput
-	var messages []string
+func errorText(value interface{}) string {
+	if s, ok := value.(string); ok {
+		return strings.TrimSpace(s)
+	}
+	if m, ok := value.(map[string]interface{}); ok {
+		if msg := asString(m["message"]); msg != "" {
+			return msg
+		}
+		if data, ok := m["data"].(map[string]interface{}); ok {
+			if nested := asString(data["message"]); nested != "" {
+				return nested
+			}
+		}
+		if name := asString(m["name"]); name != "" {
+			return name
+		}
+		if code := asString(m["code"]); code != "" {
+			return code
+		}
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
+	return ""
+}
+
+func ParseOpenCodeJsonl(stdout string) ParseResult {
+	var res ParseResult
+	res.Usage = &UsageSummary{}
+	var cost float64
+	var texts []string
 	var errors []string
 
-	for _, rawLine := range strings.Split(stdout, "\n") {
-		line := strings.TrimSpace(rawLine)
+	lines := strings.Split(stdout, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 
-		var event map[string]interface{}
+		var event StreamEvent
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
 			continue
 		}
 
-		if sid := strings.TrimSpace(asString(event["sessionID"])); sid != "" {
-			s := sid
-			out.SessionID = &s
+		if event.SessionID != nil && strings.TrimSpace(*event.SessionID) != "" {
+			res.SessionID = event.SessionID
 		}
 
-		evType := asString(event["type"])
-
-		switch evType {
+		switch event.Type {
 		case "text":
-			part := asMap(event["part"])
-			text := strings.TrimSpace(asString(part["text"]))
-			if text != "" {
-				messages = append(messages, text)
-			}
-
-		case "step_finish":
-			part := asMap(event["part"])
-			tokens := asMap(part["tokens"])
-			cache := asMap(tokens["cache"])
-			out.Usage.InputTokens += asInt(tokens["input"])
-			out.Usage.CachedInputTokens += asInt(cache["read"])
-			out.Usage.OutputTokens += asInt(tokens["output"]) + asInt(tokens["reasoning"])
-			out.CostUsd += asFloat64(part["cost"])
-
-		case "tool_use":
-			part := asMap(event["part"])
-			state := asMap(part["state"])
-			if asString(state["status"]) == "error" {
-				text := strings.TrimSpace(asString(state["error"]))
-				if text != "" {
-					errors = append(errors, text)
+			if event.Part != nil {
+				if t := asString(event.Part["text"]); t != "" {
+					texts = append(texts, t)
 				}
 			}
-
-		case "error":
-			var errVal interface{}
-			if e, ok := event["error"]; ok {
-				errVal = e
-			} else {
-				errVal = event["message"]
+		case "step_finish":
+			if event.Part != nil && event.Part["tokens"] != nil {
+				if toks, ok := event.Part["tokens"].(map[string]interface{}); ok {
+					res.Usage.InputTokens += asInt(toks["input"])
+					res.Usage.OutputTokens += asInt(toks["output"], toks["reasoning"])
+					if c, ok := toks["cache"].(map[string]interface{}); ok {
+						res.Usage.CachedInputTokens += asInt(c["read"])
+					}
+				}
+				if c, ok := event.Part["cost"].(float64); ok {
+					cost += c
+				}
 			}
-			text := strings.TrimSpace(errorText(errVal))
-			if text != "" {
-				errors = append(errors, text)
+		case "tool_use":
+			if event.Part != nil && event.Part["state"] != nil {
+				if state, ok := event.Part["state"].(map[string]interface{}); ok {
+					if asString(state["status"]) == "error" {
+						if errTxt := asString(state["error"]); errTxt != "" {
+							errors = append(errors, errTxt)
+						}
+					}
+				}
+			}
+		case "error":
+			target := event.Error
+			if target == nil {
+				target = event.Message
+			}
+			if errTxt := errorText(target); errTxt != "" {
+				errors = append(errors, errTxt)
 			}
 		}
 	}
 
-	out.Summary = strings.TrimSpace(strings.Join(messages, "\n\n"))
+	res.Summary = strings.TrimSpace(strings.Join(texts, "\n\n"))
 	if len(errors) > 0 {
-		msg := strings.Join(errors, "\n")
-		out.ErrorMessage = &msg
+		e := strings.Join(errors, "\n")
+		res.ErrorMessage = &e
 	}
-	return out
+	if cost > 0 {
+		res.CostUsd = &cost
+	}
+
+	return res
 }
 
-var unknownSessionRe = regexp.MustCompile(
-	`(?i)unknown\s+session|session\b.*\bnot\s+found|resource\s+not\s+found:.*[/\\]session[/\\].*\.json|notfounderror|no session`,
-)
-
-// IsOpenCodeUnknownSessionError returns true when the stdout/stderr indicates
-// that the requested session no longer exists in OpenCode.
 func IsOpenCodeUnknownSessionError(stdout, stderr string) bool {
-	var lines []string
-	for _, line := range strings.Split(stdout+"\n"+stderr, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	haystack := strings.Join(lines, "\n")
-	return unknownSessionRe.MatchString(haystack)
+	re := regexp.MustCompile(`(?i)(unknown\s+session|session\b.*\bnot\s+found|resource\s+not\s+found:.*[\\/]session[\\/].*\.json|notfounderror|no session)`)
+	return re.MatchString(stdout) || re.MatchString(stderr)
 }

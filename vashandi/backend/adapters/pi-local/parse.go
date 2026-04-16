@@ -100,8 +100,6 @@ func asFloat(v interface{}, fallback float64) float64 {
 func ParsePiJsonl(stdout string) ParsedPiOutput {
 	result := ParsedPiOutput{}
 
-	var currentToolCallID string
-
 	for _, rawLine := range strings.Split(stdout, "\n") {
 		line := strings.TrimSpace(rawLine)
 		if line == "" {
@@ -237,7 +235,6 @@ func ParsePiJsonl(stdout string) ParsedPiOutput {
 		if eventType == "tool_execution_start" {
 			tcID := asString(event["toolCallId"], "")
 			toolName := asString(event["toolName"], "")
-			currentToolCallID = tcID
 			result.ToolCalls = append(result.ToolCalls, ToolCall{
 				ToolCallID: tcID,
 				ToolName:   toolName,
@@ -249,7 +246,6 @@ func ParsePiJsonl(stdout string) ParsedPiOutput {
 		if eventType == "tool_execution_end" {
 			tcID := asString(event["toolCallId"], "")
 			isError, _ := event["isError"].(bool)
-			currentToolCallID = ""
 
 			var resultStr string
 			if s, ok := event["result"].(string); ok {
@@ -266,7 +262,6 @@ func ParsePiJsonl(stdout string) ParsedPiOutput {
 					break
 				}
 			}
-			currentToolCallID = ""
 			continue
 		}
 

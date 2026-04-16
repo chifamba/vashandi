@@ -215,3 +215,20 @@ func (s *SecretService) NormalizeAdapterConfigForPersistence(ctx context.Context
 	normalized["env"] = normalizedEnv
 	return normalized, nil
 }
+
+// ResolveSecretReference resolves a secret reference (either a string ID or a secret_ref object).
+func (s *SecretService) ResolveSecretReference(ctx context.Context, companyID string, ref interface{}) (string, error) {
+	switch v := ref.(type) {
+	case string:
+		return s.ResolveSecretValue(ctx, companyID, v, "latest")
+	case map[string]interface{}:
+		if t, _ := v["type"].(string); t == "secret_ref" {
+			secretID, _ := v["secretId"].(string)
+			version := v["version"]
+			return s.ResolveSecretValue(ctx, companyID, secretID, version)
+		}
+		return "", fmt.Errorf("invalid secret_ref object")
+	default:
+		return "", fmt.Errorf("invalid secret reference type: %T", ref)
+	}
+}

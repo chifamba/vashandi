@@ -354,3 +354,52 @@ func (s *PluginRegistryService) UpdateWebhookDelivery(ctx context.Context, id, s
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+type PluginEntityQuery struct {
+	EntityType *string
+	ExternalID *string
+	Limit      int
+	Offset   int
+}
+
+func (s *PluginRegistryService) ListEntities(ctx context.Context, pluginID string, query PluginEntityQuery) ([]models.PluginEntity, error) {
+	q := s.DB.WithContext(ctx).Where("plugin_id = ?", pluginID)
+	if query.EntityType != nil {
+		q = q.Where("entity_type = ?", *query.EntityType)
+	}
+	if query.ExternalID != nil {
+		q = q.Where("external_id = ?", *query.ExternalID)
+	}
+	if query.Limit > 0 {
+		q = q.Limit(query.Limit)
+	} else {
+		q = q.Limit(100)
+	}
+	if query.Offset > 0 {
+		q = q.Offset(query.Offset)
+	}
+
+	var entities []models.PluginEntity
+	err := q.Order("created_at ASC").Find(&entities).Error
+	return entities, err
+}
+
+func (s *PluginRegistryService) UpsertEntity(ctx context.Context, pluginID string, entity *models.PluginEntity) (*models.PluginEntity, error) {
+	entity.PluginID = pluginID
+	
+	// Manual upsert for composite uniqueness
+	var existing models.PluginEntity
+	err := s.DB.WithContext(ctx).Where("plugin_id = ? AND entity_type = ? AND external_id = ?", 
+		pluginID, entity.EntityType, *entity.ExternalID).First(&existing).Error
+	
+	if err == nil {
+		entity.ID = existing.ID
+		entity.CreatedAt = existing.CreatedAt
+		entity.UpdatedAt = time.Now()
+		err = s.DB.WithContext(ctx).Save(entity).Error
+	} else if err == gorm.ErrRecordNotFound {
+		err = s.DB.WithContext(ctx).Create(entity).Error
+	}
+
+	return entity, err
+}

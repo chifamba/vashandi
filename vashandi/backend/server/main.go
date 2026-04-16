@@ -27,13 +27,33 @@ type App struct {
 	PluginWorkerManager *services.PluginWorkerManager
 	PluginJobScheduler  *services.PluginJobScheduler
 	PluginJobCoordinator *services.PluginJobCoordinator
+	PluginHostServices  *services.PluginHostServices
+	DatabaseBackup      *services.DatabaseBackupService
 }
 
 func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	activitySvc := services.NewActivityService(db)
 	secretsSvc := services.NewSecretService(db, activitySvc)
 	opsSvc := services.NewWorkspaceOperationService(db)
+	issueSvc := services.NewIssueService(db, activitySvc)
+	goalSvc := services.NewGoalService(db)
+	workspaceSvc := services.NewWorkspaceService(db)
+	costSvc := services.NewCostService(db)
+	registrySvc := services.NewPluginRegistryService(db)
+	stateSvc := services.NewPluginStateStore(db)
+	instanceSettingsSvc := services.NewInstanceSettingsService(db)
+	routerOpts.InstanceSettings = instanceSettingsSvc
+
+	eventBus := services.NewPluginEventBus()
+	capabilityValidator := services.NewPluginCapabilityValidator()
+	pluginSecretsHandler := services.NewPluginSecretsHandler(db, secretsSvc, registrySvc, capabilityValidator)
+	toolRegistry := services.NewPluginToolRegistry()
+	toolDispatcher := services.NewPluginToolDispatcher(db, toolRegistry, nil) // Will inject wm below
+
 	heartbeatSvc := services.NewHeartbeatService(db, secretsSvc, activitySvc, opsSvc, nil, nil)
+	heartbeatSvc.Workspaces = workspaceSvc
+	heartbeatSvc.Costs = costSvc
+	heartbeatSvc.EventBus = eventBus
 
 	// Create the shared event hub and inject it into the router options and
 	// the heartbeat service so that run-status changes are broadcast to all
@@ -42,46 +62,82 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	routerOpts.Hub = hub
 	heartbeatSvc.Notify = hub.Publish
 
+	// Create PluginHostServices
+	hostServices := services.NewPluginHostServices(services.PluginHostServicesOptions{
+		DB:         db,
+		Issues:     issueSvc,
+		Goals:      goalSvc,
+		Heartbeat:  heartbeatSvc,
+		Activity:   activitySvc,
+		Costs:      costSvc,
+		Secrets:    secretsSvc,
+		Registry:   registrySvc,
+		State:      stateSvc,
+		EventBus:   eventBus,
+		Telemetry:  routerOpts.Telemetry,
+		Validator:  capabilityValidator,
+		SecretsHandler: pluginSecretsHandler,
+	})
+
 	// Create the plugin stream bus (SSE fan-out for worker stream notifications).
 	streamBus := services.NewPluginStreamBus()
 	routerOpts.PluginStreamBus = streamBus
 
 	// Create the plugin worker manager that spawns Node.js plugin processes.
 	pluginWorkerManager := services.NewPluginWorkerManager(services.PluginWorkerManagerOptions{
-		DB:        db,
-		StreamBus: streamBus,
-		ActivityLog: func(ctx context.Context, entry services.LogEntry) (string, error) {
-			return activitySvc.Log(ctx, entry)
+		DB:                  db,
+		StreamBus:           streamBus,
+		EventBus:            eventBus,
+		HostServices:        hostServices,
+		CapabilityValidator: capabilityValidator,
+		DefaultSandboxConfig: &services.PluginSandboxConfig{
+			TimeoutMs:     2000,
+			MemoryLimitMb: 512,
 		},
 	})
 	routerOpts.PluginWorkerManager = pluginWorkerManager
+	routerOpts.PluginCapabilityValidator = capabilityValidator
+	toolDispatcher.WorkerManager = pluginWorkerManager
+	routerOpts.PluginToolDispatcher = toolDispatcher
 
-	issueSvc := services.NewIssueService(db, activitySvc)
 	schedulerSvc := services.NewRoutineSchedulerService(db, heartbeatSvc, issueSvc, activitySvc)
 
+	routerOpts.PluginEventBus = eventBus
+
 	// Create shared plugin lifecycle service.
-	lifecycleSvc := services.NewPluginLifecycleService(db, pluginWorkerManager)
+	lifecycleSvc := services.NewPluginLifecycleService(db, pluginWorkerManager, eventBus, toolRegistry)
 	routerOpts.PluginLifecycleService = lifecycleSvc
 
 	// Initialize Plugin Job Scheduler stack.
 	jobStore := services.NewPluginJobStore(db)
 	jobScheduler := services.NewPluginJobScheduler(db, jobStore, pluginWorkerManager)
-	jobCoordinator := services.NewPluginJobCoordinator(jobStore, jobScheduler, services.NewPluginRegistryService(db), lifecycleSvc)
+	jobCoordinator := services.NewPluginJobCoordinator(jobStore, jobScheduler, registrySvc, lifecycleSvc)
 
 	routerOpts.PluginJobStore = jobStore
 	routerOpts.PluginJobScheduler = jobScheduler
 
+	// Create and wire the database backup service.
+	backupSvc := services.NewDatabaseBackupService(
+		db,
+		instanceSettingsSvc,
+		routerOpts.DatabaseBackup.Dir,
+		routerOpts.DatabaseBackup.IntervalMinutes,
+		routerOpts.DatabaseBackup.Enabled,
+	)
+
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
 
 	return &App{
-		Router:              r,
-		DB:                  db,
-		Heartbeat:           heartbeatSvc,
-		Scheduler:           schedulerSvc,
-		LiveEvents:          hub,
-		PluginWorkerManager: pluginWorkerManager,
-		PluginJobScheduler:  jobScheduler,
+		Router:               r,
+		DB:                   db,
+		Heartbeat:            heartbeatSvc,
+		Scheduler:            schedulerSvc,
+		LiveEvents:           hub,
+		PluginWorkerManager:  pluginWorkerManager,
+		PluginJobScheduler:   jobScheduler,
 		PluginJobCoordinator: jobCoordinator,
+		PluginHostServices:   hostServices,
+		DatabaseBackup:       backupSvc,
 	}
 }
 
@@ -139,6 +195,7 @@ func Run() {
 		BindHost:           cfg.Server.Host,
 		AuthHandler:        authHandler,
 		Telemetry:          GetTelemetryClient(),
+		DatabaseBackup:     cfg.Database.Backup,
 	})
 
 	// Startup Recovery
@@ -161,11 +218,46 @@ func Run() {
 		go app.PluginWorkerManager.StartReadyPlugins(context.Background())
 	}
 
+	// Start the plugin dev watcher (only active when PLUGIN_DEV_WATCH=true).
+	// Queries installed local-path plugins so file changes auto-reload workers.
+	if app.PluginWorkerManager != nil {
+		var localPlugins []struct {
+			ID          string  `gorm:"column:id"`
+			PackagePath *string `gorm:"column:package_path"`
+		}
+		if err := db.WithContext(context.Background()).
+			Table("plugins").
+			Select("id, package_path").
+			Where("status = ? AND package_path IS NOT NULL", "installed").
+			Scan(&localPlugins).Error; err != nil {
+			slog.Warn("plugin-dev-watcher: could not query local-path plugins", "error", err)
+		} else {
+			pluginDirs := make(map[string]string, len(localPlugins))
+			for _, p := range localPlugins {
+				if p.PackagePath != nil && *p.PackagePath != "" {
+					pluginDirs[p.ID] = *p.PackagePath
+				}
+			}
+			services.StartPluginDevWatcher(context.Background(), pluginDirs, app.PluginWorkerManager)
+		}
+	}
+
+	// Start plugin host services log flusher.
+	if app.PluginHostServices != nil {
+		slog.Info("Starting plugin host services log flusher")
+		app.PluginHostServices.StartLogFlusher(context.Background())
+	}
+
 	// Start plugin job scheduler and coordinator.
 	if app.PluginJobScheduler != nil && app.PluginJobCoordinator != nil {
 		slog.Info("Starting plugin job scheduler and coordinator")
 		app.PluginJobCoordinator.Start()
 		app.PluginJobScheduler.Start(context.Background())
+	}
+
+	// Start database backup and retention service.
+	if app.DatabaseBackup != nil {
+		go app.DatabaseBackup.Start(context.Background())
 	}
 
 	// Start the feedback export flusher (mirrors the Node.js 5-second timer).
@@ -178,6 +270,9 @@ func Run() {
 	}
 	slog.Info("Starting feedback export flusher")
 	services.StartFeedbackExportFlusher(context.Background(), feedbackExportSvc, 5_000)
+
+	slog.Info("Starting plugin log retention service")
+	services.StartPluginLogRetention(context.Background(), db, 7, 1)
 
 	if err := app.Start(cfg.Server.Port); err != nil {
 		slog.Error("Server failed", "error", err)

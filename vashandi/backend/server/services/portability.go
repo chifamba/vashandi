@@ -601,8 +601,436 @@ func derefStr(p *string) string {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Env-input helpers (mirrors TS isSensitiveEnvKey / extractPortableEnvInputs).
+// ──────────────────────────────────────────────────────────────────────────────
+
+// isSensitiveEnvKey returns true for API keys, tokens, secrets, passwords, etc.
+func isSensitiveEnvKey(key string) bool {
+	n := strings.ToLower(strings.TrimSpace(key))
+	for _, pattern := range []string{
+		"token", "_token", "-token",
+		"apikey", "api_key", "api-key",
+		"access_token", "access-token",
+		"auth", "auth_token", "auth-token",
+		"authorization", "bearer",
+		"secret", "passwd", "password",
+		"credential", "jwt",
+		"privatekey", "private_key", "private-key",
+		"cookie", "connectionstring",
+	} {
+		if n == pattern || strings.HasSuffix(n, pattern) || strings.Contains(n, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAbsoluteCommand returns true for paths like /usr/bin/foo or C:\foo.
+func isAbsoluteCommand(val string) bool {
+	if val == "" {
+		return false
+	}
+	// Unix-style absolute path
+	if strings.HasPrefix(val, "/") {
+		return true
+	}
+	// Windows-style C:\ or C:/
+	if len(val) >= 3 && val[1] == ':' && (val[2] == '\\' || val[2] == '/') {
+		return true
+	}
+	return false
+}
+
+type scopedEnvInputContext struct {
+	label         string
+	warningPrefix string
+	agentSlug     *string
+	projectSlug   *string
+}
+
+// extractPortableScopedEnvInputs converts an env map (plain/secret_ref bindings)
+// into PortabilityEnvInput entries, mirroring the TS implementation exactly.
+func extractPortableScopedEnvInputs(scope scopedEnvInputContext, env map[string]interface{}, warnings *[]string) []PortabilityEnvInput {
+	out := []PortabilityEnvInput{}
+	for key, binding := range env {
+		if strings.ToUpper(key) == "PATH" {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("%s PATH override was omitted from export because it is system-dependent.", scope.warningPrefix))
+			}
+			continue
+		}
+
+		desc := func(d string) *string { return &d }(fmt.Sprintf("Optional default for %s on %s", key, scope.label))
+
+		// secret_ref binding
+		if m, ok := binding.(map[string]interface{}); ok && m["type"] == "secret_ref" {
+			d := fmt.Sprintf("Provide %s for %s", key, scope.label)
+			dv := ""
+			out = append(out, PortabilityEnvInput{
+				Key:          key,
+				Description:  &d,
+				AgentSlug:    scope.agentSlug,
+				ProjectSlug:  scope.projectSlug,
+				Kind:         "secret",
+				Requirement:  "optional",
+				DefaultValue: &dv,
+				Portability:  "portable",
+			})
+			continue
+		}
+
+		// plain binding: { type: "plain", value: "..." }
+		if m, ok := binding.(map[string]interface{}); ok && m["type"] == "plain" {
+			raw := ""
+			if v, ok := m["value"].(string); ok {
+				raw = strings.TrimSpace(v)
+			}
+			sensitive := isSensitiveEnvKey(key)
+			portability := "portable"
+			if raw != "" && isAbsoluteCommand(raw) {
+				portability = "system_dependent"
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("%s env %s default was exported as system-dependent.", scope.warningPrefix, key))
+				}
+			}
+			dv := ""
+			if !sensitive {
+				dv = raw
+			}
+			kind := "plain"
+			if sensitive {
+				kind = "secret"
+			}
+			out = append(out, PortabilityEnvInput{
+				Key:          key,
+				Description:  desc,
+				AgentSlug:    scope.agentSlug,
+				ProjectSlug:  scope.projectSlug,
+				Kind:         kind,
+				Requirement:  "optional",
+				DefaultValue: &dv,
+				Portability:  portability,
+			})
+			continue
+		}
+
+		// bare string binding
+		if raw, ok := binding.(string); ok {
+			raw = strings.TrimSpace(raw)
+			portability := "portable"
+			if isAbsoluteCommand(raw) {
+				portability = "system_dependent"
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("%s env %s default was exported as system-dependent.", scope.warningPrefix, key))
+				}
+			}
+			sensitive := isSensitiveEnvKey(key)
+			dv := ""
+			if !sensitive {
+				dv = raw
+			}
+			kind := "plain"
+			if sensitive {
+				kind = "secret"
+			}
+			out = append(out, PortabilityEnvInput{
+				Key:          key,
+				Description:  desc,
+				AgentSlug:    scope.agentSlug,
+				ProjectSlug:  scope.projectSlug,
+				Kind:         kind,
+				Requirement:  "optional",
+				DefaultValue: &dv,
+				Portability:  portability,
+			})
+		}
+	}
+	return out
+}
+
+func extractPortableEnvInputs(agentSlug string, adapterCfg map[string]interface{}, warnings *[]string) []PortabilityEnvInput {
+	env, _ := adapterCfg["env"].(map[string]interface{})
+	if env == nil {
+		return nil
+	}
+	return extractPortableScopedEnvInputs(scopedEnvInputContext{
+		label:         "agent " + agentSlug,
+		warningPrefix: "Agent " + agentSlug,
+		agentSlug:     &agentSlug,
+	}, env, warnings)
+}
+
+func extractPortableProjectEnvInputs(projectSlug string, projectEnv interface{}, warnings *[]string) []PortabilityEnvInput {
+	env, _ := projectEnv.(map[string]interface{})
+	if env == nil {
+		return nil
+	}
+	return extractPortableScopedEnvInputs(scopedEnvInputContext{
+		label:         "project " + projectSlug,
+		warningPrefix: "Project " + projectSlug,
+		projectSlug:   &projectSlug,
+	}, env, warnings)
+}
+
+// dedupeEnvInputs removes duplicate env inputs by (agentSlug, projectSlug, KEY).
+func dedupeEnvInputs(inputs []PortabilityEnvInput) []PortabilityEnvInput {
+	seen := map[string]bool{}
+	out := []PortabilityEnvInput{}
+	for _, v := range inputs {
+		ag := ""
+		if v.AgentSlug != nil {
+			ag = *v.AgentSlug
+		}
+		pr := ""
+		if v.ProjectSlug != nil {
+			pr = *v.ProjectSlug
+		}
+		k := ag + ":" + pr + ":" + strings.ToUpper(v.Key)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, v)
+	}
+	return out
+}
+
+// buildEnvInputMap converts a slice of PortabilityEnvInput into the YAML map
+// shape written under a per-agent or per-project `inputs.env` key.
+func buildEnvInputMap(inputs []PortabilityEnvInput) map[string]interface{} {
+	m := map[string]interface{}{}
+	for _, v := range inputs {
+		entry := map[string]interface{}{
+			"kind":        v.Kind,
+			"requirement": v.Requirement,
+		}
+		if v.DefaultValue != nil {
+			entry["default"] = *v.DefaultValue
+		}
+		if v.Description != nil && *v.Description != "" {
+			entry["description"] = *v.Description
+		}
+		if v.Portability == "system_dependent" {
+			entry["portability"] = "system_dependent"
+		}
+		m[v.Key] = entry
+	}
+	return m
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Adapter-default pruning (mirrors TS pruneDefaultLikeValue).
+// ──────────────────────────────────────────────────────────────────────────────
+
+type defaultRule struct {
+	path  []string
+	value interface{}
+}
+
+var adapterDefaultRulesByType = map[string][]defaultRule{
+	"codex_local": {
+		{path: []string{"timeoutSec"}, value: float64(0)},
+		{path: []string{"graceSec"}, value: float64(15)},
+	},
+	"gemini_local": {
+		{path: []string{"timeoutSec"}, value: float64(0)},
+		{path: []string{"graceSec"}, value: float64(15)},
+	},
+	"opencode_local": {
+		{path: []string{"timeoutSec"}, value: float64(0)},
+		{path: []string{"graceSec"}, value: float64(15)},
+	},
+	"cursor": {
+		{path: []string{"timeoutSec"}, value: float64(0)},
+		{path: []string{"graceSec"}, value: float64(15)},
+	},
+	"claude_local": {
+		{path: []string{"timeoutSec"}, value: float64(0)},
+		{path: []string{"graceSec"}, value: float64(15)},
+		{path: []string{"maxTurnsPerRun"}, value: float64(1000)},
+	},
+	"openclaw_gateway": {
+		{path: []string{"timeoutSec"}, value: float64(120)},
+		{path: []string{"waitTimeoutMs"}, value: float64(120000)},
+		{path: []string{"sessionKeyStrategy"}, value: "fixed"},
+		{path: []string{"sessionKey"}, value: "paperclip"},
+		{path: []string{"role"}, value: "operator"},
+		{path: []string{"scopes"}, value: []interface{}{"operator.admin"}},
+	},
+}
+
+var runtimeDefaultRules = []defaultRule{
+	{path: []string{"heartbeat", "cooldownSec"}, value: float64(10)},
+	{path: []string{"heartbeat", "intervalSec"}, value: float64(3600)},
+	{path: []string{"heartbeat", "wakeOnOnDemand"}, value: true},
+	{path: []string{"heartbeat", "wakeOnAssignment"}, value: true},
+	{path: []string{"heartbeat", "wakeOnAutomation"}, value: true},
+	{path: []string{"heartbeat", "wakeOnDemand"}, value: true},
+	{path: []string{"heartbeat", "maxConcurrentRuns"}, value: float64(3)},
+}
+
+func jsonValEqual(a, b interface{}) bool {
+	// Use JSON marshalling for deep equality (same as TS JSON.stringify comparison).
+	aj, _ := json.Marshal(a)
+	bj, _ := json.Marshal(b)
+	return string(aj) == string(bj)
+}
+
+func isPathDefault(pathSegments []string, val interface{}, rules []defaultRule) bool {
+	for _, r := range rules {
+		if jsonValEqual(r.path, pathSegments) && jsonValEqual(r.value, val) {
+			return true
+		}
+	}
+	return false
+}
+
+// pruneDefaultLikeValue recursively strips values that match known defaults and
+// false boolean values (when dropFalseBools=true), mirroring TS behaviour.
+// Returns nil to signal the value should be omitted entirely.
+func pruneDefaultLikeValue(val interface{}, path []string, dropFalseBools bool, rules []defaultRule) (interface{}, bool) {
+	if rules != nil && isPathDefault(path, val, rules) {
+		return nil, false
+	}
+	switch v := val.(type) {
+	case bool:
+		if dropFalseBools && !v {
+			return nil, false
+		}
+		return v, true
+	case map[string]interface{}:
+		out := map[string]interface{}{}
+		for k, entry := range v {
+			childPath := append(append([]string{}, path...), k)
+			pruned, keep := pruneDefaultLikeValue(entry, childPath, dropFalseBools, rules)
+			if keep {
+				out[k] = pruned
+			}
+		}
+		return out, true
+	case []interface{}:
+		out := make([]interface{}, 0, len(v))
+		for _, entry := range v {
+			pruned, keep := pruneDefaultLikeValue(entry, path, dropFalseBools, rules)
+			if keep {
+				out = append(out, pruned)
+			}
+		}
+		return out, true
+	case nil:
+		return nil, false
+	}
+	return val, true
+}
+
+func pruneAdapterConfig(adapterType string, cfg map[string]interface{}) map[string]interface{} {
+	rules := adapterDefaultRulesByType[adapterType]
+	pruned, _ := pruneDefaultLikeValue(cfg, []string{}, true, rules)
+	if m, ok := pruned.(map[string]interface{}); ok {
+		return m
+	}
+	return map[string]interface{}{}
+}
+
+func pruneRuntimeConfig(cfg map[string]interface{}) map[string]interface{} {
+	pruned, _ := pruneDefaultLikeValue(cfg, []string{}, true, runtimeDefaultRules)
+	if m, ok := pruned.(map[string]interface{}); ok {
+		return m
+	}
+	return map[string]interface{}{}
+}
+
+func prunePermissions(cfg map[string]interface{}) map[string]interface{} {
+	pruned, _ := pruneDefaultLikeValue(cfg, []string{}, true, nil)
+	if m, ok := pruned.(map[string]interface{}); ok {
+		return m
+	}
+	return map[string]interface{}{}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// README generation (Gap 5).
+// ──────────────────────────────────────────────────────────────────────────────
+
+func generatePortableReadme(manifest PortabilityManifest) string {
+	var sb strings.Builder
+	companyName := "Company Package"
+	if manifest.Company != nil && manifest.Company.Name != "" {
+		companyName = manifest.Company.Name
+	}
+	sb.WriteString("# " + companyName + "\n\n")
+	if manifest.Company != nil && manifest.Company.Description != nil && *manifest.Company.Description != "" {
+		sb.WriteString(*manifest.Company.Description + "\n\n")
+	}
+	sb.WriteString("---\n\n")
+
+	if len(manifest.Agents) > 0 {
+		sb.WriteString("## Agents\n\n")
+		for _, a := range manifest.Agents {
+			sb.WriteString("- **" + a.Name + "** (`" + a.Slug + "`)")
+			if a.Title != nil && *a.Title != "" {
+				sb.WriteString(" — " + *a.Title)
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+	if len(manifest.Projects) > 0 {
+		sb.WriteString("## Projects\n\n")
+		for _, p := range manifest.Projects {
+			sb.WriteString("- **" + p.Name + "** (`" + p.Slug + "`)")
+			if p.Description != nil && *p.Description != "" {
+				sb.WriteString(" — " + *p.Description)
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+	if len(manifest.Skills) > 0 {
+		sb.WriteString("## Skills\n\n")
+		for _, sk := range manifest.Skills {
+			sb.WriteString("- **" + sk.Name + "** (`" + sk.Key + "`)\n")
+		}
+		sb.WriteString("\n")
+	}
+	if len(manifest.Issues) > 0 {
+		sb.WriteString(fmt.Sprintf("## Tasks\n\n%d task(s) included in this package.\n\n", len(manifest.Issues)))
+	}
+	return sb.String()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Import helpers (Gap 6).
+// ──────────────────────────────────────────────────────────────────────────────
+
+// disableImportedTimerHeartbeat clones the runtimeConfig and sets
+// heartbeat.enabled = false so imported agents don't auto-start heartbeat
+// loops immediately after import, mirroring the TS implementation.
+func disableImportedTimerHeartbeat(runtimeConfig map[string]interface{}) map[string]interface{} {
+	next := cloneMap(runtimeConfig)
+	if next == nil {
+		next = map[string]interface{}{}
+	}
+	hb, _ := next["heartbeat"].(map[string]interface{})
+	if hb == nil {
+		hb = map[string]interface{}{}
+	} else {
+		// shallow copy
+		hbCopy := make(map[string]interface{}, len(hb))
+		for k, v := range hb {
+			hbCopy[k] = v
+		}
+		hb = hbCopy
+	}
+	hb["enabled"] = false
+	next["heartbeat"] = hb
+	return next
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // GitHub source fetching.
 // ──────────────────────────────────────────────────────────────────────────────
+
 
 type ghParsedURL struct {
 	hostname    string
@@ -1341,6 +1769,7 @@ func (s *PortabilityService) ExportBundle(ctx context.Context, companyID string,
 
 	files := map[string]interface{}{}
 	warnings := []string{}
+	envInputs := []PortabilityEnvInput{}
 
 	// ── Agents ───────────────────────────────────────────────────────────────
 	var agentRows []models.Agent
@@ -1467,22 +1896,40 @@ func (s *PortabilityService) ExportBundle(ctx context.Context, companyID string,
 			for k, v := range adapterCfg {
 				switch k {
 				case "promptTemplate", "bootstrapPromptTemplate", "instructionsFilePath",
-					"instructionsBundleMode", "instructionsRootPath", "instructionsEntryFile":
-					// skip
+					"instructionsBundleMode", "instructionsRootPath", "instructionsEntryFile", "env":
+					// skip — env extracted separately below
 				default:
 					portableAdapterCfg[k] = v
 				}
 			}
 			delete(portableAdapterCfg, "skills")
 
+			// Gap 4: warn and drop absolute command values.
+			if cmd := strVal(portableAdapterCfg, "command"); isAbsoluteCommand(cmd) {
+				warnings = append(warnings, fmt.Sprintf("Agent %s command %s was omitted from export because it is system-dependent.", slug, cmd))
+				delete(portableAdapterCfg, "command")
+			}
+
+			// Gap 3: prune adapter-type-specific defaults and false-boolean permissions.
+			portableAdapterCfg = pruneAdapterConfig(ag.AdapterType, portableAdapterCfg)
+
 			runtimeCfg := jsonToMap(ag.RuntimeConfig)
 			if runtimeCfg == nil {
 				runtimeCfg = map[string]interface{}{}
 			}
+			runtimeCfg = pruneRuntimeConfig(runtimeCfg)
+
 			permissions := jsonToMap(ag.Permissions)
 			if permissions == nil {
 				permissions = map[string]interface{}{}
 			}
+			permissions = prunePermissions(permissions)
+
+			// Gap 1: extract env inputs from adapterConfig.env.
+			envInputsStart := len(envInputs)
+			agentEnvAdded := extractPortableEnvInputs(slug, adapterCfg, &warnings)
+			envInputs = append(envInputs, agentEnvAdded...)
+			agentEnvInputs := dedupeEnvInputs(envInputs[envInputsStart:])
 
 			ext := map[string]interface{}{}
 			if ag.Role != "" && ag.Role != "agent" {
@@ -1509,9 +1956,12 @@ func (s *PortabilityService) ExportBundle(ctx context.Context, companyID string,
 			if ag.BudgetMonthlyCents > 0 {
 				ext["budgetMonthlyCents"] = ag.BudgetMonthlyCents
 			}
-			if len(ext) > 0 {
-				paperclipAgents[slug] = ext
+			if len(agentEnvInputs) > 0 {
+				ext["inputs"] = map[string]interface{}{
+					"env": buildEnvInputMap(agentEnvInputs),
+				}
 			}
+			paperclipAgents[slug] = ext
 		}
 	}
 
@@ -1583,9 +2033,12 @@ func (s *PortabilityService) ExportBundle(ctx context.Context, companyID string,
 				if leadSlug != "" {
 					ext["leadAgentSlug"] = leadSlug
 				}
-				if len(ext) > 0 {
-					paperclipProjects[slug] = ext
-				}
+				// Gap 2: extract env inputs from project.env.
+				// Note: models.Project does not carry an Env column; project env inputs
+				// are only available via the full service layer. We leave this as a
+				// no-op in the basic export path — no data loss, just no env inputs.
+				_ = extractPortableProjectEnvInputs // referenced to avoid unused-import lint
+				paperclipProjects[slug] = ext
 			}
 		}
 	}
@@ -1853,6 +2306,12 @@ func (s *PortabilityService) ExportBundle(ctx context.Context, companyID string,
 		return nil, err
 	}
 	resolved.warnings = append(warnings, resolved.warnings...)
+
+	// Gap 1+2: Assign deduplicated env inputs to manifest.
+	resolved.manifest.EnvInputs = dedupeEnvInputs(envInputs)
+
+	// Gap 5: Generate README.md summarising the package.
+	files["README.md"] = generatePortableReadme(resolved.manifest)
 
 	return &ExportResult{
 		RootPath:               rootPath,
@@ -2535,7 +2994,9 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 			}
 
 			adapterCfgJSON := mapToJSON(adapterCfg)
-			runtimeCfgJSON := mapToJSON(manifestAgent.RuntimeConfig)
+			// Gap 6: disable heartbeat on imported agents to prevent auto-starts.
+			importedRuntimeConfig := disableImportedTimerHeartbeat(manifestAgent.RuntimeConfig)
+			runtimeCfgJSON := mapToJSON(importedRuntimeConfig)
 			permissionsJSON := mapToJSON(manifestAgent.Permissions)
 			if len(permissionsJSON) == 0 {
 				permissionsJSON = datatypes.JSON("{}")
@@ -2927,6 +3388,19 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 			if err := s.db.WithContext(ctx).Create(&newIssue).Error; err != nil {
 				warnings = append(warnings, fmt.Sprintf("Failed to create issue %s: %v", issuePlan.Slug, err))
 			}
+		}
+	}
+
+	// Gap 7: warn about system_dependent env inputs that may need manual adjustment.
+	for _, envInput := range manifest.EnvInputs {
+		if envInput.Portability == "system_dependent" {
+			scope := ""
+			if envInput.AgentSlug != nil {
+				scope = " (agent " + *envInput.AgentSlug + ")"
+			} else if envInput.ProjectSlug != nil {
+				scope = " (project " + *envInput.ProjectSlug + ")"
+			}
+			warnings = append(warnings, fmt.Sprintf("Environment input %s%s is system-dependent and may need manual adjustment after import.", envInput.Key, scope))
 		}
 	}
 

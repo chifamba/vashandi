@@ -1,11 +1,10 @@
 package services
 
 import (
+	"fmt"
 	"sync"
-	"sync/atomic"
 )
 
-// StreamEventType represents the SSE event type for plugin streams.
 type StreamEventType string
 
 const (
@@ -15,70 +14,87 @@ const (
 	StreamEventError   StreamEventType = "error"
 )
 
-// StreamSubscriber is a callback invoked when a stream event arrives.
-type StreamSubscriber func(event interface{}, eventType StreamEventType)
-
-// PluginStreamBus is an in-memory pub/sub bus for plugin SSE streams.
-//
-// Workers push events via JSON-RPC notifications (streams.open / streams.emit /
-// streams.close). The bus fans those out to all SSE clients subscribed to the
-// matching (pluginId, channel, companyId) tuple.
-type PluginStreamBus struct {
-	mu     sync.RWMutex
-	nextID atomic.Int64
-	subs   map[string]map[int64]StreamSubscriber // key → {id → subscriber}
+type StreamEvent struct {
+	Type    StreamEventType `json:"type"`
+	Data    interface{}     `json:"data"`
+	Channel string          `json:"channel"`
 }
 
-// NewPluginStreamBus returns an initialised PluginStreamBus.
+type streamSubscriber chan StreamEvent
+
+type PluginStreamBus struct {
+	subscribers map[string]map[streamSubscriber]struct{}
+	mu          sync.RWMutex
+}
+
 func NewPluginStreamBus() *PluginStreamBus {
 	return &PluginStreamBus{
-		subs: make(map[string]map[int64]StreamSubscriber),
+		subscribers: make(map[string]map[streamSubscriber]struct{}),
 	}
 }
 
-func pluginStreamKey(pluginID, channel, companyID string) string {
-	return pluginID + ":" + channel + ":" + companyID
+func (b *PluginStreamBus) streamKey(pluginID, channel, companyID string) string {
+	return fmt.Sprintf("%s:%s:%s", pluginID, channel, companyID)
 }
 
-// Subscribe registers a listener for events on the given (pluginID, channel,
-// companyID) tuple. It returns an unsubscribe function that the caller must
-// invoke when the SSE connection closes.
-func (b *PluginStreamBus) Subscribe(pluginID, channel, companyID string, listener StreamSubscriber) func() {
-	key := pluginStreamKey(pluginID, channel, companyID)
-	id := b.nextID.Add(1)
+func (b *PluginStreamBus) Subscribe(pluginID, channel, companyID string) (<-chan StreamEvent, func()) {
+	key := b.streamKey(pluginID, channel, companyID)
+	ch := make(streamSubscriber, 10) // Buffered to prevent blocking
 
 	b.mu.Lock()
-	if b.subs[key] == nil {
-		b.subs[key] = make(map[int64]StreamSubscriber)
-	}
-	b.subs[key][id] = listener
-	b.mu.Unlock()
+	defer b.mu.Unlock()
 
-	return func() {
+	if b.subscribers[key] == nil {
+		b.subscribers[key] = make(map[streamSubscriber]struct{})
+	}
+	b.subscribers[key][ch] = struct{}{}
+
+	cancel := func() {
 		b.mu.Lock()
-		if subs, ok := b.subs[key]; ok {
-			delete(subs, id)
+		defer b.mu.Unlock()
+		if subs, ok := b.subscribers[key]; ok {
+			delete(subs, ch)
 			if len(subs) == 0 {
-				delete(b.subs, key)
+				delete(b.subscribers, key)
 			}
 		}
-		b.mu.Unlock()
+		close(ch)
 	}
+
+	return ch, cancel
 }
 
-// Publish delivers an event to all subscribers of the given tuple.
-func (b *PluginStreamBus) Publish(pluginID, channel, companyID string, event interface{}, eventType StreamEventType) {
-	key := pluginStreamKey(pluginID, channel, companyID)
+func (b *PluginStreamBus) Publish(pluginID, channel, companyID string, data interface{}, eventType StreamEventType) {
+	if eventType == "" {
+		eventType = StreamEventMessage
+	}
+
+	key := b.streamKey(pluginID, channel, companyID)
+	event := StreamEvent{
+		Type:    eventType,
+		Data:    data,
+		Channel: channel,
+	}
 
 	b.mu.RLock()
-	subs := b.subs[key]
-	listeners := make([]StreamSubscriber, 0, len(subs))
-	for _, s := range subs {
-		listeners = append(listeners, s)
+	subs, ok := b.subscribers[key]
+	if !ok || len(subs) == 0 {
+		b.mu.RUnlock()
+		return
+	}
+
+	// Copy subscribers list while holding RLock to avoid long-holding during sends
+	targets := make([]streamSubscriber, 0, len(subs))
+	for ch := range subs {
+		targets = append(targets, ch)
 	}
 	b.mu.RUnlock()
 
-	for _, l := range listeners {
-		l(event, eventType)
+	for _, ch := range targets {
+		select {
+		case ch <- event:
+		default:
+			// Subscriber slow or buffer full, skip to avoid blocking the whole bus
+		}
 	}
 }

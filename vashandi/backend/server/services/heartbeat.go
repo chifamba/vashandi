@@ -43,6 +43,7 @@ type HeartbeatService struct {
 	Activity   *ActivityService
 	Ops        *WorkspaceOperationService
 	Memory     MemoryAdapter
+	EventBus   *PluginEventBus
 
 	// Notify, when non-nil, is called after a run's status changes so that
 	// the live-events hub can broadcast the update to connected clients.
@@ -407,17 +408,31 @@ func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.Hear
 
 // publishRunStatus broadcasts a heartbeat.run.status event via Notify (if set).
 func (s *HeartbeatService) publishRunStatus(run *models.HeartbeatRun) {
+	evtPayload := map[string]interface{}{
+		"runId":   run.ID,
+		"agentId": run.AgentID,
+		"status":  run.Status,
+	}
+
+	if s.EventBus != nil {
+		s.EventBus.Publish(context.Background(), PluginEvent{
+			EventID:    fmt.Sprintf("evt_%d", time.Now().UnixNano()),
+			EventType:  "heartbeat.run.status",
+			CompanyID:  run.CompanyID,
+			OccurredAt: time.Now().UTC().Format(time.RFC3339),
+			ActorType:  "system",
+			ActorID:    "heartbeat",
+			Payload:    evtPayload,
+		})
+	}
+
 	if s.Notify == nil {
 		return
 	}
 	payload, err := json.Marshal(map[string]interface{}{
 		"type":      "heartbeat.run.status",
 		"companyId": run.CompanyID,
-		"payload": map[string]interface{}{
-			"runId":   run.ID,
-			"agentId": run.AgentID,
-			"status":  run.Status,
-		},
+		"payload":   evtPayload,
 	})
 	if err != nil {
 		return

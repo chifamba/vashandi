@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -39,6 +40,7 @@ const (
 const (
 	pluginErrWorkerUnavailable    = -32001
 	pluginErrTimeout              = -32002
+	pluginErrForbidden            = -32003
 	pluginErrMethodNotImplemented = -32004
 )
 
@@ -47,7 +49,7 @@ const (
 // ---------------------------------------------------------------------------
 
 const (
-	rpcDefaultTimeout  = 30 * time.Second
+	rpcDefaultTimeout  = 2 * time.Second
 	rpcMaxTimeout      = 5 * time.Minute
 	rpcInitTimeout     = 15 * time.Second
 	rpcShutdownDrain   = 10 * time.Second
@@ -86,6 +88,18 @@ type rpcErr struct {
 
 func (e *rpcErr) Error() string {
 	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
+}
+
+func wrapRpcErr(err error) *rpcErr {
+	if err == nil {
+		return nil
+	}
+	var re *rpcErr
+	// Check if this error is already an *rpcErr (or wraps one)
+	if errors.As(err, &re) {
+		return re
+	}
+	return &rpcErr{Code: jsonrpcErrInternalError, Message: err.Error()}
 }
 
 // normaliseID converts a JSON-decoded ID (float64, string, int64) to int64.
@@ -169,6 +183,7 @@ type WorkerHandle struct {
 	pending  map[int64]*pendingCall
 
 	supportedMethods []string
+	manifest         *PluginManifestV1
 
 	// openChannels maps channel → companyID for cleanup on crash.
 	openChMu     sync.Mutex
@@ -482,21 +497,23 @@ func (h *WorkerHandle) start(ctx context.Context, entrypoint string) error {
 	h.status = WorkerStatusStarting
 	h.mu.Unlock()
 
-	// Build minimal worker environment (security: don't leak host env).
-	workerEnv := []string{
-		"PAPERCLIP_PLUGIN_ID=" + h.pluginID,
-		"NODE_ENV=" + getEnvOr("NODE_ENV", "production"),
-		"TZ=" + getEnvOr("TZ", "UTC"),
+	// Load configuration and manifest before spawning to apply sandbox settings.
+	_, manifestRaw := h.manager.loadPluginConfigAndManifest(ctx, h.pluginID)
+	var sandbox *PluginSandboxConfig
+	if manifestRaw != nil {
+		if sb, ok := manifestRaw["sandbox"].(map[string]interface{}); ok {
+			b, _ := json.Marshal(sb)
+			json.Unmarshal(b, &sandbox)
+		}
 	}
-	if path := os.Getenv("PATH"); path != "" {
-		workerEnv = append(workerEnv, "PATH="+path)
-	}
-	if nodePath := os.Getenv("NODE_PATH"); nodePath != "" {
-		workerEnv = append(workerEnv, "NODE_PATH="+nodePath)
+	// Fallback to default sandbox if not specified in manifest
+	if sandbox == nil {
+		sandbox = h.manager.opts.DefaultSandboxConfig
 	}
 
 	cmd := exec.CommandContext(ctx, "node", entrypoint)
-	cmd.Env = workerEnv
+	cmd.Env = h.manager.prepareSandboxEnv(h.pluginID, sandbox)
+	applySandboxConstraints(cmd, sandbox)
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -546,13 +563,13 @@ func (h *WorkerHandle) start(ctx context.Context, entrypoint string) error {
 	}()
 
 	// Send initialize RPC.
-	config, manifest := h.manager.loadPluginConfigAndManifest(ctx, h.pluginID)
+	config, _ := h.manager.loadPluginConfig(ctx, h.pluginID)
 
 	instanceID := getEnvOr("PAPERCLIP_INSTANCE_ID", "local")
 	hostVersion := getEnvOr("PAPERCLIP_VERSION", "0.0.0")
 
 	initParams := map[string]interface{}{
-		"manifest": manifest,
+		"manifest": manifestRaw,
 		"config":   config,
 		"instanceInfo": map[string]interface{}{
 			"instanceId":  instanceID,
@@ -567,6 +584,17 @@ func (h *WorkerHandle) start(ctx context.Context, entrypoint string) error {
 		h.killProcess()
 		h.setStatus(WorkerStatusCrashed)
 		return fmt.Errorf("plugin worker initialize failed for %q: %w", h.pluginID, err)
+	}
+
+	// Cache manifest for capability validation
+	if manifestRaw != nil {
+		var manifestV1 PluginManifestV1
+		manifestBytes, _ := json.Marshal(manifestRaw)
+		if err := json.Unmarshal(manifestBytes, &manifestV1); err == nil {
+			h.mu.Lock()
+			h.manifest = &manifestV1
+			h.mu.Unlock()
+		}
 	}
 
 	var initResult struct {
@@ -594,6 +622,10 @@ func (h *WorkerHandle) onProcessExit(exitCode int, waitErr error) {
 	h.stdinPipe = nil
 	h.cmd = nil
 	h.mu.Unlock()
+	
+	if h.manager.opts.HostServices != nil {
+		h.manager.opts.HostServices.Dispose(h.pluginID)
+	}
 
 	rejectErr := fmt.Errorf("worker process for plugin %q exited (code=%d)", h.pluginID, exitCode)
 	h.rejectAllPending(rejectErr)
@@ -795,12 +827,14 @@ type PluginWorkerManagerOptions struct {
 	// PluginDir is the root directory where plugins are installed.
 	// Defaults to ~/.paperclip/plugins when empty.
 	PluginDir string
-	// SecretsResolve optionally resolves secret references.
-	SecretsResolve func(ctx context.Context, secretRef string) (string, error)
-	// ActivityLog optionally records plugin activity entries.
-	ActivityLog func(ctx context.Context, entry LogEntry) (string, error)
-	// EventsEmit optionally publishes live events to the realtime hub.
-	EventsEmit func(companyID, eventType string, payload interface{})
+	// EventBus handles namespaced event routing for plugins.
+	EventBus *PluginEventBus
+	// HostServices provides the full API surface for plugin workers.
+	HostServices *PluginHostServices
+	// CapabilityValidator enforces least-privilege for plugins.
+	CapabilityValidator *PluginCapabilityValidator
+	// DefaultSandboxConfig provides the baseline resource limits for all workers.
+	DefaultSandboxConfig *PluginSandboxConfig
 }
 
 // PluginWorkerManager manages Node.js plugin worker processes. One worker
@@ -920,6 +954,16 @@ func (m *PluginWorkerManager) StopWorker(ctx context.Context, pluginID string) e
 	return err
 }
 
+// RestartWorker stops the worker for pluginID (if running) and starts a fresh
+// one. Satisfies the PluginDevReloader interface used by PluginDevWatcher.
+func (m *PluginWorkerManager) RestartWorker(pluginID string) error {
+	ctx := context.Background()
+	if err := m.StopWorker(ctx, pluginID); err != nil {
+		return err
+	}
+	return m.StartWorker(ctx, pluginID)
+}
+
 // StopAll gracefully stops all managed workers. Called during server shutdown.
 func (m *PluginWorkerManager) StopAll(ctx context.Context) {
 	m.mu.RLock()
@@ -990,6 +1034,24 @@ func (m *PluginWorkerManager) Diagnostics() []WorkerDiagnostics {
 // dispatchHostMethod handles a worker→host RPC call and returns the result or
 // an *rpcErr.
 func (m *PluginWorkerManager) dispatchHostMethod(ctx context.Context, pluginID, method string, rawParams json.RawMessage) (interface{}, *rpcErr) {
+	// 1. Enforce capabilities if validator is present.
+	if m.opts.CapabilityValidator != nil {
+		h := m.GetWorker(pluginID)
+		if h != nil {
+			h.mu.Lock()
+			manifest := h.manifest
+			h.mu.Unlock()
+
+			if err := m.opts.CapabilityValidator.CheckOperation(manifest, method); err != nil {
+				slog.Warn("[plugin-worker-manager] capability check failed", "pluginId", pluginID, "method", method, "err", err)
+				return nil, &rpcErr{
+					Code:    pluginErrForbidden,
+					Message: err.Error(),
+				}
+			}
+		}
+	}
+
 	switch method {
 	case "config.get":
 		cfg, err := m.loadPluginConfig(ctx, pluginID)
@@ -1000,63 +1062,37 @@ func (m *PluginWorkerManager) dispatchHostMethod(ctx context.Context, pluginID, 
 
 	case "http.fetch":
 		var params struct {
-			URL  string                 `json:"url"`
-			Init map[string]interface{} `json:"init"`
-		}
-		if err := json.Unmarshal(rawParams, &params); err != nil {
-			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid http.fetch params"}
-		}
-		method := "GET"
-		if m, ok := params.Init["method"].(string); ok {
-			method = m
-		}
-		headers := map[string]string{}
-		if h, ok := params.Init["headers"].(map[string]interface{}); ok {
-			for k, v := range h {
-				if sv, ok := v.(string); ok {
-					headers[k] = sv
-				}
-			}
-		}
-		resp, err := SafeFetch(ctx, method, params.URL, headers)
-		if err != nil {
-			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: err.Error()}
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
-		respHeaders := make(map[string]string, len(resp.Header))
-		for k, vs := range resp.Header {
-			if len(vs) > 0 {
-				respHeaders[k] = vs[0]
-			}
-		}
-		return map[string]interface{}{
-			"status":     resp.StatusCode,
-			"statusText": resp.Status,
-			"headers":    respHeaders,
-			"body":       string(body),
-		}, nil
-
-	case "secrets.resolve":
-		if m.opts.SecretsResolve == nil {
-			return nil, &rpcErr{Code: jsonrpcErrMethodNotFound, Message: "secrets.resolve not configured"}
-		}
-		var params struct {
-			SecretRef string `json:"secretRef"`
+			URL  string      `json:"url"`
+			Init interface{} `json:"init"`
 		}
 		if err := json.Unmarshal(rawParams, &params); err != nil {
 			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
 		}
-		val, err := m.opts.SecretsResolve(ctx, params.SecretRef)
-		if err != nil {
-			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: err.Error()}
+		res, err := m.opts.HostServices.HTTPFetch(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "secrets.resolve":
+		var params struct {
+			SecretRef string `json:"secretRef"`
+			CompanyID string `json:"companyId"`
 		}
-		return val, nil
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.SecretsResolve(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "secrets.list":
+		var params struct {
+			CompanyID string `json:"companyId"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.SecretsList(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
 
 	case "events.emit":
-		if m.opts.EventsEmit == nil {
-			return nil, nil
-		}
 		var params struct {
 			Name      string      `json:"name"`
 			CompanyID string      `json:"companyId"`
@@ -1065,52 +1101,220 @@ func (m *PluginWorkerManager) dispatchHostMethod(ctx context.Context, pluginID, 
 		if err := json.Unmarshal(rawParams, &params); err != nil {
 			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
 		}
-		m.opts.EventsEmit(params.CompanyID, params.Name, params.Payload)
-		return nil, nil
+		err := m.opts.HostServices.EventsEmit(ctx, pluginID, params)
+		return nil, wrapRpcErr(err)
 
-	case "activity.log":
-		if m.opts.ActivityLog == nil {
-			return nil, nil
+	case "events.subscribe":
+		var params struct {
+			EventPattern string       `json:"eventPattern"`
+			Filter       *EventFilter `json:"filter"`
 		}
-		var params map[string]interface{}
 		if err := json.Unmarshal(rawParams, &params); err != nil {
 			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
 		}
-		cid, _ := params["companyId"].(string)
-		msg, _ := params["message"].(string)
-		_, _ = m.opts.ActivityLog(ctx, LogEntry{
-			CompanyID:  cid,
-			ActorType:  "plugin",
-			ActorID:    pluginID,
-			Action:     "plugin.activity",
-			EntityType: "plugin",
-			EntityID:   pluginID,
-			Details:    map[string]interface{}{"message": msg, "params": params},
-		})
-		return nil, nil
+		err := m.opts.HostServices.EventsSubscribe(ctx, pluginID, params)
+		return nil, wrapRpcErr(err)
 
-	case "state.get", "state.set", "state.delete":
-		// Plugin state persistence via plugin_data-style table is not yet ported.
-		// Return empty/nil results to keep the worker functional.
-		switch method {
-		case "state.get":
-			return nil, nil
-		default:
-			return nil, nil
+	case "activity.log":
+		var params struct {
+			CompanyID  string                 `json:"companyId"`
+			Message    string                 `json:"message"`
+			EntityType string                 `json:"entityType"`
+			EntityID   string                 `json:"entityId"`
+			Metadata   map[string]interface{} `json:"metadata"`
 		}
-
-	case "entities.upsert", "entities.list":
-		// Entity management not yet ported to Go backend.
-		switch method {
-		case "entities.list":
-			return []interface{}{}, nil
-		default:
-			return nil, nil
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
 		}
+		err := m.opts.HostServices.ActivityLog(ctx, pluginID, params)
+		return nil, wrapRpcErr(err)
 
-	case "events.subscribe":
-		// Event subscriptions managed by the Node.js worker runtime; host ack.
-		return nil, nil
+	case "state.get":
+		var params PluginStateParams
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.StateGet(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "state.set":
+		var params struct {
+			PluginStateParams
+			Value interface{} `json:"value"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		err := m.opts.HostServices.StateSet(ctx, pluginID, params)
+		return nil, wrapRpcErr(err)
+
+	case "state.delete":
+		var params PluginStateParams
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		err := m.opts.HostServices.StateDelete(ctx, pluginID, params)
+		return nil, wrapRpcErr(err)
+
+	case "entities.upsert":
+		var params struct {
+			EntityType string                 `json:"entityType"`
+			ScopeKind  string                 `json:"scopeKind"`
+			ScopeID    *string                `json:"scopeId"`
+			ExternalID *string                `json:"externalId"`
+			Title      *string                `json:"title"`
+			Status     *string                `json:"status"`
+			Data       map[string]interface{} `json:"data"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.EntitiesUpsert(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "entities.list":
+		var params struct {
+			EntityType *string `json:"entityType"`
+			ExternalID *string `json:"externalId"`
+			Limit      int     `json:"limit"`
+			Offset     int     `json:"offset"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.EntitiesList(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "telemetry.track":
+		var params struct {
+			EventName  string                 `json:"eventName"`
+			Dimensions map[string]interface{} `json:"dimensions"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		err := m.opts.HostServices.TelemetryTrack(ctx, pluginID, params)
+		return nil, wrapRpcErr(err)
+
+	case "companies.list":
+		var params map[string]interface{}
+		_ = json.Unmarshal(rawParams, &params)
+		res, err := m.opts.HostServices.CompaniesList(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "companies.get":
+		var params struct {
+			CompanyID string `json:"companyId"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.CompaniesGet(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "projects.list":
+		var params map[string]interface{}
+		_ = json.Unmarshal(rawParams, &params)
+		res, err := m.opts.HostServices.ProjectsList(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "projects.get":
+		var params struct {
+			CompanyID string `json:"companyId"`
+			ProjectID string `json:"projectId"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.ProjectsGet(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "issues.list":
+		var params map[string]interface{}
+		_ = json.Unmarshal(rawParams, &params)
+		res, err := m.opts.HostServices.IssuesList(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "issues.get":
+		var params struct {
+			CompanyID string `json:"companyId"`
+			IssueID   string `json:"issueId"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.IssuesGet(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "issues.create":
+		var params struct {
+			CompanyID string       `json:"companyId"`
+			Issue     models.Issue `json:"issue"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.IssuesCreate(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "issues.update":
+		var params struct {
+			CompanyID string                 `json:"companyId"`
+			IssueID   string                 `json:"issueId"`
+			Patch     map[string]interface{} `json:"patch"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.IssuesUpdate(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "agents.list":
+		var params map[string]interface{}
+		_ = json.Unmarshal(rawParams, &params)
+		res, err := m.opts.HostServices.AgentsList(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "agents.get":
+		var params struct {
+			CompanyID string `json:"companyId"`
+			AgentID   string `json:"agentId"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.AgentsGet(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "agents.invoke":
+		var params struct {
+			CompanyID string `json:"companyId"`
+			AgentID   string `json:"agentId"`
+			Prompt    string `json:"prompt"`
+			Reason    string `json:"reason"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.AgentsInvoke(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "goals.list":
+		var params map[string]interface{}
+		_ = json.Unmarshal(rawParams, &params)
+		res, err := m.opts.HostServices.GoalsList(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
+
+	case "goals.create":
+		var params struct {
+			CompanyID string      `json:"companyId"`
+			Goal      models.Goal `json:"goal"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return nil, &rpcErr{Code: jsonrpcErrInternalError, Message: "invalid params"}
+		}
+		res, err := m.opts.HostServices.GoalsCreate(ctx, pluginID, params)
+		return res, wrapRpcErr(err)
 
 	default:
 		return nil, &rpcErr{Code: jsonrpcErrMethodNotFound, Message: fmt.Sprintf("host does not handle method %q", method)}
@@ -1157,13 +1361,46 @@ func (m *PluginWorkerManager) loadPluginConfigAndManifest(ctx context.Context, p
 	cfg, _ := m.loadPluginConfig(ctx, pluginID)
 
 	var plugin models.Plugin
-	manifest := map[string]interface{}{}
+	manifestRaw := map[string]interface{}{}
 	if err := m.db.WithContext(ctx).First(&plugin, "id = ?", pluginID).Error; err == nil {
 		if plugin.ManifestJSON != nil {
-			_ = json.Unmarshal(plugin.ManifestJSON, &manifest)
+			_ = json.Unmarshal(plugin.ManifestJSON, &manifestRaw)
 		}
 	}
-	return cfg, manifest
+	return cfg, manifestRaw
+}
+
+// prepareSandboxEnv curates a minimal environment for the worker process.
+func (m *PluginWorkerManager) prepareSandboxEnv(pluginID string, cfg *PluginSandboxConfig) []string {
+	env := []string{
+		"PAPERCLIP_PLUGIN_ID=" + pluginID,
+		"NODE_ENV=" + getEnvOr("NODE_ENV", "production"),
+		"TZ=" + getEnvOr("TZ", "UTC"),
+	}
+
+	// Always allow PATH and NODE_PATH for Node.js execution.
+	if p := os.Getenv("PATH"); p != "" {
+		env = append(env, "PATH="+p)
+	}
+	if np := os.Getenv("NODE_PATH"); np != "" {
+		env = append(env, "NODE_PATH="+np)
+	}
+
+	// White-listed identity variables.
+	if id := os.Getenv("PAPERCLIP_INSTANCE_ID"); id != "" {
+		env = append(env, "PAPERCLIP_INSTANCE_ID="+id)
+	}
+
+	// Manifest-requested overrides.
+	if cfg != nil {
+		for _, key := range cfg.AllowedEnv {
+			if val := os.Getenv(key); val != "" {
+				env = append(env, key+"="+val)
+			}
+		}
+	}
+
+	return env
 }
 
 // persistWorkerLog writes a worker log notification to the plugin_logs table.

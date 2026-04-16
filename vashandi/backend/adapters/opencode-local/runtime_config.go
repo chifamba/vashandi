@@ -9,155 +9,166 @@ import (
 	"strings"
 )
 
-// PreparedRuntimeConfig holds the environment overlay and cleanup function
-// produced by PrepareOpenCodeRuntimeConfig.
 type PreparedRuntimeConfig struct {
-	// Env is the environment key-value overlay to merge into the process env.
-	Env map[string]string
-	// Notes are human-readable messages describing what was configured.
-	Notes []string
-	// Cleanup releases temporary resources (temp directories, etc.).
-	Cleanup func() error
+	Env     map[string]string
+	Cleanup func()
 }
 
-func resolveXDGConfigHome(env map[string]string) string {
-	if v := strings.TrimSpace(env["XDG_CONFIG_HOME"]); v != "" {
-		return v
+func GetXDGConfigHome(env map[string]string) string {
+	if val := strings.TrimSpace(env["XDG_CONFIG_HOME"]); val != "" {
+		return val
 	}
-	if v := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); v != "" {
-		return v
+	if val := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); val != "" {
+		return val
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config")
 }
 
-func readJSONObject(path string) map[string]interface{} {
-	data, err := os.ReadFile(path)
+// copyDir recursively copies a directory tree, attempting to preserve permissions.
+// Source directory must exist.
+func copyDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
 	if err != nil {
-		return nil
+		return err
 	}
-	var out map[string]interface{}
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil
+
+	for _, entry := range entries {
+		sourcePath := filepath.Join(src, entry.Name())
+		destPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := os.MkdirAll(destPath, 0755); err != nil {
+				return err
+			}
+			if err := copyDir(sourcePath, destPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(sourcePath, destPath); err != nil {
+				return err
+			}
+		}
 	}
-	return out
+	return nil
 }
 
-func copyDirRecursive(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode())
-		}
-		// Copy file, dereferencing symlinks by reading through them.
-		return copyFile(path, target, info.Mode())
-	})
-}
-
-func copyFile(src, dst string, mode os.FileMode) error {
+func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+
+	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
+
 	_, err = io.Copy(out, in)
 	return err
 }
 
-func asBool(v interface{}, def bool) bool {
-	switch b := v.(type) {
-	case bool:
-		return b
-	}
-	return def
-}
+func PrepareOpenCodeRuntimeConfig(env map[string]string) (*PreparedRuntimeConfig, error) {
+	xdgConfigHome := GetXDGConfigHome(env)
+	sourceConfigDir := filepath.Join(xdgConfigHome, "opencode")
 
-// PrepareOpenCodeRuntimeConfig creates a temporary XDG config directory with
-// permission.external_directory=allow injected (unless dangerouslySkipPermissions
-// is explicitly false in config). The caller must invoke Cleanup() when done.
-func PrepareOpenCodeRuntimeConfig(env map[string]string, config map[string]interface{}) (*PreparedRuntimeConfig, error) {
-	skipPermissions := asBool(config["dangerouslySkipPermissions"], true)
-	if !skipPermissions {
-		// No-op: return the env unchanged with a no-op cleanup.
-		return &PreparedRuntimeConfig{
-			Env:     env,
-			Notes:   nil,
-			Cleanup: func() error { return nil },
-		}, nil
-	}
-
-	sourceConfigDir := filepath.Join(resolveXDGConfigHome(env), "opencode")
-	runtimeConfigHome, err := os.MkdirTemp("", "paperclip-opencode-config-*")
+	// Create temp override directory
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "paperclip-opencode-config-")
 	if err != nil {
-		return nil, fmt.Errorf("create runtime config temp dir: %w", err)
-	}
-	runtimeConfigDir := filepath.Join(runtimeConfigHome, "opencode")
-	runtimeConfigPath := filepath.Join(runtimeConfigDir, "opencode.json")
-
-	if err := os.MkdirAll(runtimeConfigDir, 0o755); err != nil {
-		_ = os.RemoveAll(runtimeConfigHome)
-		return nil, fmt.Errorf("create runtime config dir: %w", err)
+		return nil, fmt.Errorf("failed to create temp config dir: %w", err)
 	}
 
-	// Copy the existing opencode config directory into the temp directory, if
-	// it exists.  ENOENT is acceptable; any other error is propagated.
-	if err := copyDirRecursive(sourceConfigDir, runtimeConfigDir); err != nil && !os.IsNotExist(err) {
-		_ = os.RemoveAll(runtimeConfigHome)
-		return nil, fmt.Errorf("copy opencode config: %w", err)
+	targetConfigDir := filepath.Join(tmpDir, "opencode")
+	targetConfigPath := filepath.Join(targetConfigDir, "opencode.json")
+
+	if err := os.MkdirAll(targetConfigDir, 0755); err != nil {
+		os.RemoveAll(tmpDir)
+		return nil, err
 	}
 
-	// Read existing config, merge permission.external_directory=allow, write back.
-	existingConfig := readJSONObject(runtimeConfigPath)
-	if existingConfig == nil {
-		existingConfig = make(map[string]interface{})
-	}
-	existingPermission, _ := existingConfig["permission"].(map[string]interface{})
-	if existingPermission == nil {
-		existingPermission = make(map[string]interface{})
-	}
-	existingPermission["external_directory"] = "allow"
-	existingConfig["permission"] = existingPermission
-
-	data, err := json.MarshalIndent(existingConfig, "", "  ")
-	if err != nil {
-		_ = os.RemoveAll(runtimeConfigHome)
-		return nil, fmt.Errorf("marshal runtime config: %w", err)
-	}
-	if err := os.WriteFile(runtimeConfigPath, append(data, '\n'), 0o644); err != nil {
-		_ = os.RemoveAll(runtimeConfigHome)
-		return nil, fmt.Errorf("write runtime config: %w", err)
+	// Best-effort copy of the config DBs
+	if _, err := os.Stat(sourceConfigDir); err == nil {
+		copyDir(sourceConfigDir, targetConfigDir)
 	}
 
-	outEnv := make(map[string]string, len(env)+1)
+	// Read existing opencode.json if it exists
+	var config map[string]interface{}
+	data, err := os.ReadFile(targetConfigPath)
+	if err == nil {
+		json.Unmarshal(data, &config)
+	}
+	if config == nil {
+		config = make(map[string]interface{})
+	}
+
+	// Inject auto-affirm permission override
+	perm, ok := config["permission"].(map[string]interface{})
+	if !ok {
+		perm = make(map[string]interface{})
+	}
+	perm["external_directory"] = "allow"
+	config["permission"] = perm
+
+	outData, _ := json.MarshalIndent(config, "", "  ")
+	os.WriteFile(targetConfigPath, []byte(string(outData)+"\n"), 0644)
+
+	newEnv := make(map[string]string)
 	for k, v := range env {
-		outEnv[k] = v
+		newEnv[k] = v
 	}
-	outEnv["XDG_CONFIG_HOME"] = runtimeConfigHome
-
-	cleanup := func() error {
-		return os.RemoveAll(runtimeConfigHome)
-	}
+	newEnv["XDG_CONFIG_HOME"] = tmpDir
 
 	return &PreparedRuntimeConfig{
-		Env: outEnv,
-		Notes: []string{
-			"Injected runtime OpenCode config with permission.external_directory=allow to avoid headless approval prompts.",
+		Env: newEnv,
+		Cleanup: func() {
+			os.RemoveAll(tmpDir)
 		},
-		Cleanup: cleanup,
 	}, nil
+}
+
+func BuildPaperclipEnv(agentId, companyId, runId string) map[string]string {
+	return map[string]string{
+		"PAPERCLIP_AGENT_ID":   agentId,
+		"PAPERCLIP_COMPANY_ID": companyId,
+		"PAPERCLIP_RUN_ID":     runId,
+	}
+}
+
+func EnsurePathInEnv(env map[string]string) map[string]string {
+	path := env["PATH"]
+	if path == "" {
+		path = os.Getenv("PATH")
+	}
+	
+	commonDirs := []string{
+		"/usr/local/bin",
+		"/opt/homebrew/bin",
+		"/usr/bin",
+		"/bin",
+	}
+	
+	existing := strings.Split(path, string(os.PathListSeparator))
+	existingMap := make(map[string]bool)
+	for _, d := range existing {
+		existingMap[d] = true
+	}
+	
+	for _, d := range commonDirs {
+		if !existingMap[d] {
+			path = d + string(os.PathListSeparator) + path
+		}
+	}
+	
+	env["PATH"] = path
+	return env
+}
+
+func MapToSlice(m map[string]string) []string {
+	s := make([]string, 0, len(m))
+	for k, v := range m {
+		s = append(s, k+"="+v)
+	}
+	return s
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
+	"github.com/google/uuid"
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"gorm.io/gorm"
 )
@@ -51,14 +51,18 @@ func isValidTransition(from, to PluginStatus) bool {
 type PluginLifecycleService struct {
 	DB            *gorm.DB
 	WorkerManager *PluginWorkerManager
+	EventBus      *PluginEventBus
+	ToolRegistry  *PluginToolRegistry
 	listeners     map[string][]func(interface{})
 	mu            sync.RWMutex
 }
 
-func NewPluginLifecycleService(db *gorm.DB, wm *PluginWorkerManager) *PluginLifecycleService {
+func NewPluginLifecycleService(db *gorm.DB, wm *PluginWorkerManager, eb *PluginEventBus, tr *PluginToolRegistry) *PluginLifecycleService {
 	return &PluginLifecycleService{
 		DB:            db,
 		WorkerManager: wm,
+		EventBus:      eb,
+		ToolRegistry:  tr,
 		listeners:     make(map[string][]func(interface{})),
 	}
 }
@@ -123,6 +127,22 @@ func (s *PluginLifecycleService) transition(ctx context.Context, pluginID string
 		"newStatus":      to,
 	})
 
+	if s.EventBus != nil {
+		s.EventBus.Publish(ctx, PluginEvent{
+			EventID:    uuid.New().String(),
+			EventType:  fmt.Sprintf("plugin.%s.status_changed", pluginID),
+			OccurredAt: time.Now().UTC().Format(time.RFC3339),
+			ActorType:  "system",
+			ActorID:    "host",
+			Payload: map[string]interface{}{
+				"pluginId":       pluginID,
+				"pluginKey":      plugin.PluginKey,
+				"previousStatus": from,
+				"newStatus":      to,
+			},
+		})
+	}
+
 	return &plugin, nil
 }
 
@@ -134,6 +154,10 @@ func (s *PluginLifecycleService) Load(ctx context.Context, pluginID string) (*mo
 
 	if s.WorkerManager != nil {
 		_ = s.WorkerManager.StartWorker(ctx, pluginID)
+	}
+
+	if s.ToolRegistry != nil {
+		s.ToolRegistry.RegisterPlugin(plugin.PluginKey, plugin.ManifestJSON, plugin.ID)
 	}
 
 	return plugin, nil
@@ -149,6 +173,10 @@ func (s *PluginLifecycleService) Disable(ctx context.Context, pluginID string) (
 		_ = s.WorkerManager.StopWorker(ctx, pluginID)
 	}
 
+	if s.ToolRegistry != nil {
+		s.ToolRegistry.UnregisterPlugin(plugin.PluginKey)
+	}
+
 	return plugin, nil
 }
 
@@ -160,6 +188,10 @@ func (s *PluginLifecycleService) Unload(ctx context.Context, pluginID string, re
 
 	if s.WorkerManager != nil {
 		_ = s.WorkerManager.StopWorker(ctx, pluginID)
+	}
+
+	if s.ToolRegistry != nil {
+		s.ToolRegistry.UnregisterPlugin(plugin.PluginKey)
 	}
 
 	if PluginStatus(plugin.Status) == PluginStatusUninstalled {
