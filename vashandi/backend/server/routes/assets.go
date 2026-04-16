@@ -57,7 +57,7 @@ func sanitizeSVGData(input []byte) ([]byte, error) {
 		switch tok := token.(type) {
 		case xml.StartElement:
 			if rootClosed {
-				return nil, fmt.Errorf("svg must contain a single root element")
+				return nil, fmt.Errorf("unexpected content after svg root element")
 			}
 			if skipDepth > 0 {
 				skipDepth++
