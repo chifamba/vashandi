@@ -512,10 +512,11 @@ func isBudgetPaused(scopeType string, record *budgetScopeRecord) bool {
 	if record == nil || record.PauseReason != "budget" {
 		return false
 	}
+	paused := record.Status == "paused" || record.PausedAt != nil
 	if scopeType == "company" {
-		return record.Status == "paused" || record.PausedAt != nil
+		return paused
 	}
-	return record.PausedAt != nil || record.Status == "paused"
+	return paused
 }
 
 func budgetPausedReason(scopeType string) string {

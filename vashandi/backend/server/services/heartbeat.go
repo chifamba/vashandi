@@ -83,7 +83,9 @@ func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *Activity
 		budgetRunCancels: make(map[string]context.CancelFunc),
 	}
 	svc.BudgetEnforcementHook = svc.CancelBudgetScopeWork
-	svc.Costs.BudgetEnforcementHook = svc.BudgetEnforcementHook
+	if svc.Costs != nil {
+		svc.Costs.BudgetEnforcementHook = svc.BudgetEnforcementHook
+	}
 	return svc
 }
 
@@ -425,9 +427,9 @@ func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.Hear
 	if err == nil && result != nil && result.ExitCode != 0 {
 		err = fmt.Errorf("agent exited with code %d", result.ExitCode)
 	}
-	currentStatus, currentErr := s.loadRunStatus(ctx, run.ID)
-	if currentErr != nil {
-		return currentErr
+	currentStatus, statusErr := s.loadRunStatus(ctx, run.ID)
+	if statusErr != nil {
+		return statusErr
 	}
 	if currentStatus == "cancelled" {
 		run.Status = "cancelled"
