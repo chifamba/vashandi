@@ -347,20 +347,21 @@ func (m *LoggingMiddleware) logToConsole(level slog.Level, method, path string, 
 	durationStr := m.formatDuration(duration, colorEnabled)
 
 	if colorEnabled {
-		fmt.Printf("%s%s%s %s %s%s%s %s%d%s %s\n",
+		fmt.Printf("%s%s%s %s %s%s%s %s %s%d%s %s\n",
 			colorGray, timestamp, colorReset,
 			levelStr,
 			colorCyan, method, colorReset,
+			path,
 			statusColor, status, colorReset,
 			durationStr,
 		)
 	} else {
-		fmt.Printf("%s %s %s %d %s %s\n",
+		fmt.Printf("%s %s %s %s %d %s\n",
 			timestamp,
 			levelStr,
 			method,
-			status,
 			path,
+			status,
 			durationStr,
 		)
 	}

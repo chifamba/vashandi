@@ -47,6 +47,38 @@ func TestCreateAndVerifyLocalAgentJwt(t *testing.T) {
 	}
 }
 
+func TestCreateAndVerifyLocalAgentJwt_OptionalRunID(t *testing.T) {
+	// Set up test environment
+	t.Setenv("PAPERCLIP_AGENT_JWT_SECRET", "test-secret-key-for-jwt-testing-32b")
+
+	agentID := "agent-123"
+	companyID := "company-456"
+	adapterType := "process"
+	runID := "" // Empty run_id should be allowed
+
+	// Create a JWT with empty run_id
+	token := CreateLocalAgentJwt(agentID, companyID, adapterType, runID)
+	if token == "" {
+		t.Fatal("Expected non-empty JWT token even with empty run_id")
+	}
+
+	// Verify the JWT - should succeed even without run_id
+	claims := VerifyLocalAgentJwt(token)
+	if claims == nil {
+		t.Fatal("Expected valid claims from JWT verification even without run_id")
+	}
+
+	if claims.Sub != agentID {
+		t.Errorf("Expected sub=%q, got %q", agentID, claims.Sub)
+	}
+	if claims.CompanyID != companyID {
+		t.Errorf("Expected company_id=%q, got %q", companyID, claims.CompanyID)
+	}
+	if claims.RunID != "" {
+		t.Errorf("Expected empty run_id, got %q", claims.RunID)
+	}
+}
+
 func TestVerifyLocalAgentJwt_NoSecret(t *testing.T) {
 	t.Setenv("PAPERCLIP_AGENT_JWT_SECRET", "")
 	t.Setenv("BETTER_AUTH_SECRET", "")

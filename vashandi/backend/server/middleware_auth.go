@@ -153,6 +153,8 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 
 // tryJwtAgentAuth attempts to verify a JWT token and resolve an agent actor.
 // Returns the actor and true if successful, or an empty actor and false otherwise.
+// Note: JWT authentication is keyless (no API key involved), so there's no
+// last_used_at to update. This matches the Node.js implementation behavior.
 func tryJwtAgentAuth(ctx context.Context, db *gorm.DB, token, headerRunID string) (routes.ActorInfo, bool) {
 	claims := VerifyLocalAgentJwt(token)
 	if claims == nil {

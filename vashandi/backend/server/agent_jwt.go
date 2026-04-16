@@ -180,8 +180,8 @@ func VerifyLocalAgentJwt(token string) *LocalAgentJwtClaims {
 		return nil
 	}
 
-	// Validate required fields
-	if claims.Sub == "" || claims.CompanyID == "" || claims.AdapterType == "" || claims.RunID == "" {
+	// Validate required fields (run_id is optional - can come from header instead)
+	if claims.Sub == "" || claims.CompanyID == "" || claims.AdapterType == "" {
 		return nil
 	}
 	if claims.Iat == 0 || claims.Exp == 0 {
