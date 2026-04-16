@@ -804,6 +804,9 @@ func truncateExcerpt(text string, max int) *string {
 	if normalized == "" {
 		return nil
 	}
+	if max < 4 {
+		return &normalized
+	}
 	if len(normalized) > max {
 		normalized = normalized[:max-3] + "..."
 	}
@@ -904,10 +907,11 @@ func buildIssuePath(identifier *string) *string {
 	if trimmed == "" {
 		return nil
 	}
-	prefix := strings.Split(trimmed, "-")[0]
-	if prefix == "" {
+	hyphen := strings.Index(trimmed, "-")
+	if hyphen <= 0 {
 		return nil
 	}
+	prefix := trimmed[:hyphen]
 	path := fmt.Sprintf("/%s/issues/%s", prefix, trimmed)
 	return &path
 }
