@@ -294,3 +294,484 @@ func hashLegacyPassword(password string) (string, error) {
 	}
 	return hex.EncodeToString(salt) + ":" + hex.EncodeToString(hash), nil
 }
+
+// ============================================================================
+// OAuth Tests
+// ============================================================================
+
+func TestBetterAuthHandler_OAuthSignIn_RedirectsToProvider(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		PublicBaseURL:    "https://app.example.com",
+		Secret:           "test-secret",
+		OAuthProviders: map[string]OAuthProviderConfig{
+			"google": {
+				ClientID:       "test-client-id",
+				ClientSecret:   "test-client-secret",
+				AuthURL:        "https://accounts.google.com/o/oauth2/v2/auth",
+				TokenURL:       "https://oauth2.googleapis.com/token",
+				UserInfoURL:    "https://www.googleapis.com/oauth2/v3/userinfo",
+				Scopes:         []string{"openid", "email", "profile"},
+				AccountIDClaim: "sub",
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/signin/google?callbackURL=/dashboard", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected redirect, got %d: %s", w.Code, w.Body.String())
+	}
+
+	location := w.Header().Get("Location")
+	if !strings.HasPrefix(location, "https://accounts.google.com/o/oauth2/v2/auth") {
+		t.Fatalf("expected Google auth URL, got %s", location)
+	}
+	if !strings.Contains(location, "client_id=test-client-id") {
+		t.Fatalf("expected client_id in URL: %s", location)
+	}
+	if !strings.Contains(location, "redirect_uri=") {
+		t.Fatalf("expected redirect_uri in URL: %s", location)
+	}
+	if !strings.Contains(location, "state=") {
+		t.Fatalf("expected state in URL: %s", location)
+	}
+
+	stateCookie := findCookie(w.Result().Cookies(), oauthStateCookieName)
+	if stateCookie == nil {
+		t.Fatal("expected OAuth state cookie")
+	}
+}
+
+func TestBetterAuthHandler_OAuthSignIn_UnconfiguredProvider(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+		OAuthProviders:   map[string]OAuthProviderConfig{},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/signin/google", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+	if !strings.Contains(resp["error"], "not configured") {
+		t.Fatalf("expected 'not configured' error, got: %s", resp["error"])
+	}
+}
+
+func TestBetterAuthHandler_OAuthCallback_InvalidState(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+		OAuthProviders: map[string]OAuthProviderConfig{
+			"google": {
+				ClientID:       "test-client-id",
+				ClientSecret:   "test-client-secret",
+				AuthURL:        "https://accounts.google.com/o/oauth2/v2/auth",
+				TokenURL:       "https://oauth2.googleapis.com/token",
+				UserInfoURL:    "https://www.googleapis.com/oauth2/v3/userinfo",
+				Scopes:         []string{"openid", "email", "profile"},
+				AccountIDClaim: "sub",
+			},
+		},
+	})
+
+	// Callback without state cookie
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/callback/google?code=test-code&state=test-state", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected redirect, got %d", w.Code)
+	}
+	location := w.Header().Get("Location")
+	if !strings.Contains(location, "error=") {
+		t.Fatalf("expected error in redirect URL: %s", location)
+	}
+}
+
+func TestBetterAuthHandler_ListAccounts_Unauthorized(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/accounts", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestBetterAuthHandler_ListAccounts_WithSession(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+	})
+
+	// Create user and accounts
+	now := time.Now()
+	user := models.User{
+		ID:            "user-1",
+		Name:          "Test User",
+		Email:         "test@example.com",
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	db.Create(&user)
+
+	credentialAccount := models.Account{
+		ID:         "acct-1",
+		AccountID:  user.ID,
+		ProviderID: "credential",
+		UserID:     user.ID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	googleAccount := models.Account{
+		ID:         "acct-2",
+		AccountID:  "google-123",
+		ProviderID: "google",
+		UserID:     user.ID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	db.Create(&credentialAccount)
+	db.Create(&googleAccount)
+
+	// Create session
+	sessionToken := "test-session-token"
+	session := models.Session{
+		ID:        "sess-1",
+		Token:     sessionToken,
+		UserID:    user.ID,
+		ExpiresAt: now.Add(24 * time.Hour),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	db.Create(&session)
+
+	// Request with session cookie
+	cookie := &http.Cookie{
+		Name:  betterAuthCookieBaseName,
+		Value: sessionToken,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/accounts", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var accounts []struct {
+		ID         string `json:"id"`
+		ProviderID string `json:"providerId"`
+		AccountID  string `json:"accountId"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&accounts); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(accounts))
+	}
+}
+
+func TestBetterAuthHandler_UnlinkAccount_PreventLastMethod(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+	})
+
+	// Create user with single account
+	now := time.Now()
+	user := models.User{
+		ID:            "user-1",
+		Name:          "Test User",
+		Email:         "test@example.com",
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	db.Create(&user)
+
+	googleAccount := models.Account{
+		ID:         "acct-1",
+		AccountID:  "google-123",
+		ProviderID: "google",
+		UserID:     user.ID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	db.Create(&googleAccount)
+
+	// Create session
+	sessionToken := "test-session-token"
+	session := models.Session{
+		ID:        "sess-1",
+		Token:     sessionToken,
+		UserID:    user.ID,
+		ExpiresAt: now.Add(24 * time.Hour),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	db.Create(&session)
+
+	// Try to unlink the only account
+	cookie := &http.Cookie{
+		Name:  betterAuthCookieBaseName,
+		Value: sessionToken,
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/auth/unlink/google", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+	if !strings.Contains(resp["error"], "Cannot unlink last") {
+		t.Fatalf("expected 'Cannot unlink last' error, got: %s", resp["error"])
+	}
+}
+
+func TestBetterAuthHandler_UnlinkAccount_Success(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+	})
+
+	// Create user with two accounts
+	now := time.Now()
+	user := models.User{
+		ID:            "user-1",
+		Name:          "Test User",
+		Email:         "test@example.com",
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	db.Create(&user)
+
+	credentialAccount := models.Account{
+		ID:         "acct-1",
+		AccountID:  user.ID,
+		ProviderID: "credential",
+		UserID:     user.ID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	googleAccount := models.Account{
+		ID:         "acct-2",
+		AccountID:  "google-123",
+		ProviderID: "google",
+		UserID:     user.ID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	db.Create(&credentialAccount)
+	db.Create(&googleAccount)
+
+	// Create session
+	sessionToken := "test-session-token"
+	session := models.Session{
+		ID:        "sess-1",
+		Token:     sessionToken,
+		UserID:    user.ID,
+		ExpiresAt: now.Add(24 * time.Hour),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	db.Create(&session)
+
+	// Unlink Google account (credential remains)
+	cookie := &http.Cookie{
+		Name:  betterAuthCookieBaseName,
+		Value: sessionToken,
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/auth/unlink/google", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify account was deleted
+	var count int64
+	db.Model(&models.Account{}).Where("user_id = ? AND provider_id = ?", user.ID, "google").Count(&count)
+	if count != 0 {
+		t.Fatal("expected Google account to be deleted")
+	}
+}
+
+func TestBetterAuthHandler_LinkAccount_AlreadyLinked(t *testing.T) {
+	db := setupAuthTestDB(t)
+	h := NewBetterAuthHandler(db, BetterAuthOptions{
+		AllowedHostnames: []string{"app.example.com"},
+		Secret:           "test-secret",
+		OAuthProviders: map[string]OAuthProviderConfig{
+			"google": {
+				ClientID:       "test-client-id",
+				ClientSecret:   "test-client-secret",
+				AuthURL:        "https://accounts.google.com/o/oauth2/v2/auth",
+				TokenURL:       "https://oauth2.googleapis.com/token",
+				UserInfoURL:    "https://www.googleapis.com/oauth2/v3/userinfo",
+				Scopes:         []string{"openid", "email", "profile"},
+				AccountIDClaim: "sub",
+			},
+		},
+	})
+
+	// Create user with Google already linked
+	now := time.Now()
+	user := models.User{
+		ID:            "user-1",
+		Name:          "Test User",
+		Email:         "test@example.com",
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	db.Create(&user)
+
+	googleAccount := models.Account{
+		ID:         "acct-1",
+		AccountID:  "google-123",
+		ProviderID: "google",
+		UserID:     user.ID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	db.Create(&googleAccount)
+
+	// Create session
+	sessionToken := "test-session-token"
+	session := models.Session{
+		ID:        "sess-1",
+		Token:     sessionToken,
+		UserID:    user.ID,
+		ExpiresAt: now.Add(24 * time.Hour),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	db.Create(&session)
+
+	// Try to link Google again
+	cookie := &http.Cookie{
+		Name:  betterAuthCookieBaseName,
+		Value: sessionToken,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/link/google", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestExtractProviderFromPath(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"/api/auth/signin/google", "google"},
+		{"/api/auth/signin/github", "github"},
+		{"/api/auth/callback/google", "google"},
+		{"/api/auth/callback/github/", "github"},
+		{"/api/auth/link/google", "google"},
+		{"/api/auth/unlink/github", "github"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			result := extractProviderFromPath(tt.path)
+			if result != tt.expected {
+				t.Errorf("extractProviderFromPath(%q) = %q, want %q", tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBuildOAuthAuthorizationURL(t *testing.T) {
+	h := &BetterAuthHandler{}
+	config := OAuthProviderConfig{
+		AuthURL:   "https://accounts.google.com/o/oauth2/v2/auth",
+		Scopes:    []string{"openid", "email", "profile"},
+		ClientID:  "test-client-id",
+	}
+
+	url := h.buildOAuthAuthorizationURL(config, "test-state", "https://example.com/callback")
+
+	if !strings.Contains(url, "client_id=test-client-id") {
+		t.Errorf("expected client_id in URL: %s", url)
+	}
+	if !strings.Contains(url, "state=test-state") {
+		t.Errorf("expected state in URL: %s", url)
+	}
+	if !strings.Contains(url, "response_type=code") {
+		t.Errorf("expected response_type=code in URL: %s", url)
+	}
+	if !strings.Contains(url, "scope=openid+email+profile") && !strings.Contains(url, "scope=openid%20email%20profile") {
+		t.Errorf("expected scope in URL: %s", url)
+	}
+}
+
+func TestExtractStringClaim(t *testing.T) {
+	data := map[string]any{
+		"email":      "test@example.com",
+		"name":       "Test User",
+		"id":         12345.0, // JSON numbers are float64
+		"int_id":     42,
+		"avatar_url": "https://example.com/avatar.jpg",
+	}
+
+	tests := []struct {
+		keys     []string
+		expected string
+	}{
+		{[]string{"email"}, "test@example.com"},
+		{[]string{"name"}, "Test User"},
+		{[]string{"id"}, "12345"},
+		{[]string{"missing", "email"}, "test@example.com"},
+		{[]string{"missing"}, ""},
+		{[]string{""}, ""},
+		{[]string{"avatar_url", "picture"}, "https://example.com/avatar.jpg"},
+	}
+
+	for _, tt := range tests {
+		result := extractStringClaim(data, tt.keys...)
+		if result != tt.expected {
+			t.Errorf("extractStringClaim(%v) = %q, want %q", tt.keys, result, tt.expected)
+		}
+	}
+}
