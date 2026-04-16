@@ -12,12 +12,12 @@ import (
 )
 
 // NewRoutineService creates a RoutineService with all dependencies.
+// Note: HeartbeatService is passed as nil because the routes layer doesn't need
+// agent wakeup functionality. The RoutineService handles nil HeartbeatService gracefully.
 func NewRoutineService(db *gorm.DB) *services.RoutineService {
 	activity := services.NewActivityService(db)
 	issuesSvc := services.NewIssueService(db, activity)
 	secrets := services.NewSecretService(db, activity)
-	// HeartbeatService constructor requires more params. For routines we just need the basic features.
-	// Pass nil for the heartbeat service if we don't need it for wakeup functionality
 	return services.NewRoutineService(db, issuesSvc, activity, nil, secrets)
 }
 

@@ -707,7 +707,9 @@ func (s *AgentInstructionsService) listFilesRecursive(rootPath string) ([]string
 
 	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // Skip errors
+			// Skip permission errors and other file system errors gracefully.
+			// These are expected in some environments (e.g., scanning workspace roots).
+			return nil
 		}
 
 		name := info.Name()
