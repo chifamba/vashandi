@@ -19,6 +19,7 @@ import (
 
 // LiveEventsHandler returns an http.HandlerFunc that upgrades the request to a
 // WebSocket connection and forwards company-scoped live events to the client.
+// If companyId is "*", the client subscribes to global events instead.
 //
 // Authentication order:
 //  1. Actor already resolved by ActorMiddleware (board or agent bearer token in header).
@@ -26,7 +27,7 @@ import (
 //     Authorization header before the upgrade).
 //  3. local_trusted deployment mode — anonymous caller is granted board access.
 //
-// Agents may only subscribe to events for their own company.
+// Agents may only subscribe to events for their own company (not global).
 func (h *Hub) LiveEventsHandler(db *gorm.DB, deploymentMode string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
@@ -52,6 +53,12 @@ func (h *Hub) LiveEventsHandler(db *gorm.DB, deploymentMode string) http.Handler
 
 		if actor.ActorType == "anonymous" {
 			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		// Global channel ("*") is only available to board users, not agents.
+		if companyID == "*" && actor.IsAgent {
+			http.Error(w, "forbidden: agents cannot subscribe to global events", http.StatusForbidden)
 			return
 		}
 
