@@ -230,7 +230,6 @@ func UploadImageAssetHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		hash := fmt.Sprintf("%x", sha256.Sum256(data))
 		fname := header.Filename
 		ct := header.Header.Get("Content-Type")
 		if ct == "" {
@@ -241,7 +240,7 @@ func UploadImageAssetHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "SVG could not be sanitized", http.StatusUnprocessableEntity)
 			return
 		}
-		hash = fmt.Sprintf("%x", sha256.Sum256(data))
+		hash := fmt.Sprintf("%x", sha256.Sum256(data))
 		asset := models.Asset{
 			CompanyID:        companyID,
 			Provider:         "local",
@@ -280,7 +279,6 @@ func UploadCompanyLogoHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		hash := fmt.Sprintf("%x", sha256.Sum256(data))
 		fname := header.Filename
 		ct := header.Header.Get("Content-Type")
 		if ct == "" {
@@ -291,7 +289,7 @@ func UploadCompanyLogoHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "SVG could not be sanitized", http.StatusUnprocessableEntity)
 			return
 		}
-		hash = fmt.Sprintf("%x", sha256.Sum256(data))
+		hash := fmt.Sprintf("%x", sha256.Sum256(data))
 		asset := models.Asset{
 			CompanyID:        companyID,
 			Provider:         "local",
