@@ -1,17 +1,20 @@
 package routes
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 )
 
@@ -22,7 +25,7 @@ func setupFeedbackTracesTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	for _, tbl := range []string{"feedback_exports", "issues", "companies"} {
+	for _, tbl := range []string{"heartbeat_run_events", "heartbeat_runs", "agents", "feedback_votes", "feedback_exports", "document_revisions", "documents", "issue_documents", "issue_comments", "issues", "companies"} {
 		db.Exec("DROP TABLE IF EXISTS " + tbl)
 	}
 	db.Exec(`CREATE TABLE companies (
@@ -77,6 +80,71 @@ func setupFeedbackTracesTestDB(t *testing.T) *gorm.DB {
 		created_at datetime,
 		updated_at datetime
 	)`)
+	db.Exec(`CREATE TABLE issue_comments (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		issue_id text NOT NULL,
+		author_agent_id text,
+		author_user_id text,
+		created_by_run_id text,
+		body text NOT NULL,
+		created_at datetime,
+		updated_at datetime
+	)`)
+	db.Exec(`CREATE TABLE documents (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		title text,
+		format text NOT NULL DEFAULT 'markdown',
+		latest_body text NOT NULL DEFAULT '',
+		latest_revision_id text,
+		latest_revision_number integer NOT NULL DEFAULT 1,
+		created_by_agent_id text,
+		created_by_user_id text,
+		updated_by_agent_id text,
+		updated_by_user_id text,
+		created_at datetime,
+		updated_at datetime
+	)`)
+	db.Exec(`CREATE TABLE document_revisions (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		document_id text NOT NULL,
+		revision_number integer NOT NULL,
+		title text,
+		format text NOT NULL DEFAULT 'markdown',
+		body text NOT NULL,
+		change_summary text,
+		created_by_agent_id text,
+		created_by_user_id text,
+		created_by_run_id text,
+		created_at datetime
+	)`)
+	db.Exec(`CREATE TABLE issue_documents (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		issue_id text NOT NULL,
+		document_id text NOT NULL,
+		key text NOT NULL,
+		created_at datetime,
+		updated_at datetime
+	)`)
+	db.Exec(`CREATE TABLE feedback_votes (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		issue_id text NOT NULL,
+		target_type text NOT NULL,
+		target_id text NOT NULL,
+		author_user_id text NOT NULL,
+		vote text NOT NULL,
+		reason text,
+		shared_with_labs boolean NOT NULL DEFAULT 0,
+		shared_at datetime,
+		consent_version text,
+		redaction_summary text,
+		created_at datetime,
+		updated_at datetime
+	)`)
 	db.Exec(`CREATE TABLE feedback_exports (
 		id text PRIMARY KEY,
 		company_id text NOT NULL,
@@ -105,9 +173,54 @@ func setupFeedbackTracesTestDB(t *testing.T) *gorm.DB {
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
+	db.Exec(`CREATE TABLE agents (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		name text NOT NULL,
+		role text NOT NULL DEFAULT 'general',
+		title text,
+		adapter_type text NOT NULL DEFAULT 'process',
+		created_at datetime,
+		updated_at datetime
+	)`)
+	db.Exec(`CREATE TABLE heartbeat_runs (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		agent_id text NOT NULL,
+		invocation_source text NOT NULL DEFAULT 'on_demand',
+		status text NOT NULL DEFAULT 'queued',
+		started_at datetime,
+		finished_at datetime,
+		error text,
+		usage_json text,
+		result_json text,
+		session_id_before text,
+		session_id_after text,
+		error_code text,
+		external_run_id text,
+		context_snapshot text,
+		created_at datetime,
+		updated_at datetime
+	)`)
+	db.Exec(`CREATE TABLE heartbeat_run_events (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		company_id text NOT NULL,
+		run_id text NOT NULL,
+		agent_id text NOT NULL,
+		seq integer NOT NULL,
+		event_type text NOT NULL,
+		stream text,
+		level text,
+		color text,
+		message text,
+		payload text,
+		created_at datetime
+	)`)
 
 	db.Exec("INSERT INTO companies (id, name, issue_prefix, issue_counter) VALUES ('comp-a', 'Alpha', 'ALP', 5)")
 	db.Exec("INSERT INTO issues (id, company_id, title, identifier, status, priority, origin_kind) VALUES ('issue-1', 'comp-a', 'My Issue', 'ALP-1', 'backlog', 'medium', 'manual')")
+	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type) VALUES ('agent-1', 'comp-a', 'Agent One', 'worker', 'codex_local')")
+	db.Exec("INSERT INTO issue_comments (id, company_id, issue_id, author_agent_id, body) VALUES ('comment-1', 'comp-a', 'issue-1', 'agent-1', 'Nice work')")
 	db.Exec(`INSERT INTO feedback_exports (id, company_id, feedback_vote_id, issue_id, author_user_id, target_type, target_id, vote, status, target_summary)
 		VALUES ('trace-1', 'comp-a', 'vote-1', 'issue-1', 'user-1', 'issue_comment', 'comment-1', 'up', 'local_only', '{}')`)
 	db.Exec(`INSERT INTO feedback_exports (id, company_id, feedback_vote_id, issue_id, author_user_id, target_type, target_id, vote, status, target_summary)
@@ -367,6 +480,33 @@ func TestGetFeedbackTraceBundleHandler_Found(t *testing.T) {
 	}
 }
 
+func TestGetFeedbackTraceBundleHandler_IncludesRunContext(t *testing.T) {
+	db := setupFeedbackTracesTestDB(t)
+	db.Exec("INSERT INTO heartbeat_runs (id, company_id, agent_id, invocation_source, status, created_at, updated_at) VALUES ('run-1', 'comp-a', 'agent-1', 'on_demand', 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")
+	db.Exec("INSERT INTO heartbeat_run_events (company_id, run_id, agent_id, seq, event_type, message, created_at) VALUES ('comp-a', 'run-1', 'agent-1', 1, 'stdout', 'hello', CURRENT_TIMESTAMP)")
+	db.Exec(`UPDATE feedback_exports SET payload_snapshot = '{"target":{"createdByRunId":"run-1"}}' WHERE id = 'trace-1'`)
+	ir := newIssueRoutesForFeedback(t, db)
+	router := chi.NewRouter()
+	router.Get("/feedback-traces/{traceId}/bundle", ir.GetFeedbackTraceBundleHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/feedback-traces/trace-1/bundle", nil)
+	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "board"}))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var bundle map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&bundle)
+	if bundle["captureStatus"] != "full" {
+		t.Fatalf("expected full capture status, got %v", bundle["captureStatus"])
+	}
+	if bundle["paperclipRun"] == nil {
+		t.Fatalf("expected paperclipRun in bundle")
+	}
+}
+
 func TestGetFeedbackTraceBundleHandler_NotFound(t *testing.T) {
 	db := setupFeedbackTracesTestDB(t)
 	ir := newIssueRoutesForFeedback(t, db)
@@ -388,7 +528,7 @@ func TestGetFeedbackTraceBundleHandler_NotFound(t *testing.T) {
 func TestListCompanyFeedbackTracesHandler_BoardOnly(t *testing.T) {
 	db := setupFeedbackTracesTestDB(t)
 	router := chi.NewRouter()
-	router.Get("/companies/{companyId}/feedback-traces", ListCompanyFeedbackTracesHandler(db))
+	router.Get("/companies/{companyId}/feedback-traces", ListCompanyFeedbackTracesHandler(services.NewFeedbackService(db)))
 
 	req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/feedback-traces", nil)
 	w := httptest.NewRecorder()
@@ -402,7 +542,7 @@ func TestListCompanyFeedbackTracesHandler_BoardOnly(t *testing.T) {
 func TestListCompanyFeedbackTracesHandler_ReturnsTraces(t *testing.T) {
 	db := setupFeedbackTracesTestDB(t)
 	router := chi.NewRouter()
-	router.Get("/companies/{companyId}/feedback-traces", ListCompanyFeedbackTracesHandler(db))
+	router.Get("/companies/{companyId}/feedback-traces", ListCompanyFeedbackTracesHandler(services.NewFeedbackService(db)))
 
 	req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/feedback-traces", nil)
 	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "board"}))
@@ -422,7 +562,7 @@ func TestListCompanyFeedbackTracesHandler_ReturnsTraces(t *testing.T) {
 func TestListCompanyFeedbackTracesHandler_VoteFilter(t *testing.T) {
 	db := setupFeedbackTracesTestDB(t)
 	router := chi.NewRouter()
-	router.Get("/companies/{companyId}/feedback-traces", ListCompanyFeedbackTracesHandler(db))
+	router.Get("/companies/{companyId}/feedback-traces", ListCompanyFeedbackTracesHandler(services.NewFeedbackService(db)))
 
 	req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/feedback-traces?vote=up", nil)
 	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "board"}))
@@ -436,5 +576,37 @@ func TestListCompanyFeedbackTracesHandler_VoteFilter(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&traces)
 	if len(traces) != 1 {
 		t.Errorf("expected 1 'up' trace, got %d", len(traces))
+	}
+}
+
+func TestUpsertIssueFeedbackVoteHandler_CreatesTrace(t *testing.T) {
+	db := setupFeedbackTracesTestDB(t)
+	ir := newIssueRoutesForFeedback(t, db)
+	router := chi.NewRouter()
+	router.Post("/issues/{id}/feedback-votes", ir.UpsertIssueFeedbackVoteHandler)
+
+	body := []byte(`{"targetType":"issue_comment","targetId":"comment-1","vote":"down","reason":"Contains sk-abcdefghijklmnop","allowSharing":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/issues/issue-1/feedback-votes", bytes.NewReader(body))
+	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "board"}))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var vote models.FeedbackVote
+	json.NewDecoder(w.Body).Decode(&vote)
+	if vote.Vote != "down" {
+		t.Fatalf("expected saved down vote, got %v", vote.Vote)
+	}
+	var exports int64
+	db.Table("feedback_exports").Where("feedback_vote_id = ?", vote.ID).Count(&exports)
+	if exports != 1 {
+		t.Fatalf("expected 1 feedback export, got %d", exports)
+	}
+	var storedReason string
+	db.Table("feedback_votes").Select("reason").Where("id = ?", vote.ID).Scan(&storedReason)
+	if strings.Contains(storedReason, "sk-abcdefghijklmnop") {
+		t.Fatalf("expected reason to be redacted, got %q", storedReason)
 	}
 }
