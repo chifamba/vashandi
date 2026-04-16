@@ -136,6 +136,8 @@ func NewBetterAuthHandler(db *gorm.DB, opts BetterAuthOptions) *BetterAuthHandle
 	for name, config := range opts.OAuthProviders {
 		if config.ClientID != "" && config.ClientSecret != "" {
 			providers[strings.ToLower(name)] = config
+		} else if config.ClientID != "" || config.ClientSecret != "" {
+			log.Printf("auth: OAuth provider %q skipped: missing ClientID or ClientSecret", name)
 		}
 	}
 	return &BetterAuthHandler{
@@ -1272,8 +1274,11 @@ func (h *BetterAuthHandler) createOAuthUser(w http.ResponseWriter, r *http.Reque
 	email, _ := normalizeEmail(userInfo.Email)
 
 	name := userInfo.Name
-	if name == "" {
+	if name == "" && email != "" {
 		name = strings.Split(email, "@")[0]
+	}
+	if name == "" {
+		name = "User"
 	}
 
 	user := models.User{
@@ -1414,7 +1419,10 @@ func (h *BetterAuthHandler) handleLinkAccount(w http.ResponseWriter, r *http.Req
 	var body struct {
 		CallbackURL string `json:"callbackURL"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
 
 	callbackURL := body.CallbackURL
 	if callbackURL != "" {

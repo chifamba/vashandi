@@ -363,7 +363,9 @@ func TestBetterAuthHandler_OAuthSignIn_UnconfiguredProvider(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if !strings.Contains(resp["error"], "not configured") {
 		t.Fatalf("expected 'not configured' error, got: %s", resp["error"])
 	}
@@ -551,7 +553,9 @@ func TestBetterAuthHandler_UnlinkAccount_PreventLastMethod(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if !strings.Contains(resp["error"], "Cannot unlink last") {
 		t.Fatalf("expected 'Cannot unlink last' error, got: %s", resp["error"])
 	}
