@@ -38,6 +38,9 @@ type RouterOptions struct {
 	// return 501 Not Implemented.
 	AuthHandler http.Handler
 
+	// BetterAuthSecret verifies signed better-auth cookies for session routes.
+	BetterAuthSecret string
+
 	// Hub is the shared realtime event hub used for WebSocket live events and
 	// SSE badge streams. A new Hub is created automatically when nil.
 	Hub *realtime.Hub
@@ -136,14 +139,20 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		BindHost:         opts.BindHost,
 	}))
 
-	r.Use(ActorMiddleware(db, AuthMiddlewareOptions{DeploymentMode: opts.DeploymentMode}))
+	r.Use(ActorMiddleware(db, AuthMiddlewareOptions{
+		DeploymentMode:   opts.DeploymentMode,
+		BetterAuthSecret: opts.BetterAuthSecret,
+	}))
 
 	// Board mutation guard runs after auth so it can inspect the actor type and source.
 	r.Use(BoardMutationGuard)
 
 	// Auth routes — registered before the /api/v1 block so that more-specific
 	// paths (get-session) take precedence over the wildcard catch-all.
-	r.Get("/api/auth/get-session", routes.GetSessionHandler(db))
+	r.Get("/api/auth/get-session", routes.GetSessionHandler(db, routes.GetSessionHandlerOptions{
+		DeploymentMode:   opts.DeploymentMode,
+		BetterAuthSecret: opts.BetterAuthSecret,
+	}))
 	if opts.AuthHandler != nil {
 		r.Handle("/api/auth/*", opts.AuthHandler)
 	} else {

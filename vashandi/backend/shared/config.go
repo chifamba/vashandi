@@ -45,9 +45,10 @@ type ServerConfig struct {
 }
 
 type AuthConfig struct {
-	BaseUrlMode   string `json:"baseUrlMode" validate:"oneof=auto explicit"`
-	PublicBaseUrl string `json:"publicBaseUrl,omitempty" validate:"omitempty,url"`
-	DisableSignUp bool   `json:"disableSignUp"`
+	BaseUrlMode              string `json:"baseUrlMode" validate:"oneof=auto explicit"`
+	PublicBaseUrl            string `json:"publicBaseUrl,omitempty" validate:"omitempty,url"`
+	DisableSignUp            bool   `json:"disableSignUp"`
+	RequireEmailVerification bool   `json:"requireEmailVerification"`
 }
 
 type StorageLocalDiskConfig struct {
