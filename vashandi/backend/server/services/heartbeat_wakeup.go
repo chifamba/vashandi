@@ -251,14 +251,11 @@ func (s *HeartbeatService) finalizeAgentStatus(ctx context.Context, agentID, run
 
 func (s *HeartbeatService) TickTimers(ctx context.Context, now time.Time) (HeartbeatTimerTickResult, error) {
 	var agents []models.Agent
-	if err := s.DB.WithContext(ctx).Find(&agents).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Where("status NOT IN ?", []string{"paused", "terminated", "pending_approval"}).Find(&agents).Error; err != nil {
 		return HeartbeatTimerTickResult{}, err
 	}
 	result := HeartbeatTimerTickResult{}
 	for _, agent := range agents {
-		if agent.Status == "paused" || agent.Status == "terminated" || agent.Status == "pending_approval" {
-			continue
-		}
 		policy := parseHeartbeatPolicy(&agent)
 		if !policy.Enabled || policy.IntervalSec <= 0 {
 			continue

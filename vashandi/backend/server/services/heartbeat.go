@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -523,9 +524,13 @@ func (r *LocalRunner) Execute(ctx context.Context, run *models.HeartbeatRun, env
 	if cwd == "" {
 		cwd = "."
 	}
-	args := []string{"heartbeat", "run", "--agent-id", run.AgentID, "--source", run.InvocationSource}
+	agentID := sanitizeCommandToken(run.AgentID, "")
+	if agentID == "" {
+		return nil, fmt.Errorf("invalid agent id %q", run.AgentID)
+	}
+	args := []string{"heartbeat", "run", "--agent-id", agentID, "--source", sanitizeCommandToken(run.InvocationSource, "on_demand")}
 	if run.TriggerDetail != nil && *run.TriggerDetail != "" {
-		args = append(args, "--trigger", *run.TriggerDetail)
+		args = append(args, "--trigger", sanitizeCommandToken(*run.TriggerDetail, "manual"))
 	}
 	cmd := exec.CommandContext(ctx, "paperclipai", args...)
 	cmd.Dir = cwd
@@ -533,7 +538,9 @@ func (r *LocalRunner) Execute(ctx context.Context, run *models.HeartbeatRun, env
 	// Add env vars
 	cmd.Env = append(cmd.Env, os.Environ()...)
 	for k, v := range env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		if safeEnv, ok := sanitizeEnvVar(k, v); ok {
+			cmd.Env = append(cmd.Env, safeEnv)
+		}
 	}
 
 	// Set execution fields
@@ -600,4 +607,25 @@ func (r *LocalRunner) Execute(ctx context.Context, run *models.HeartbeatRun, env
 	result.ExitCode = exitCode
 
 	return result, err
+}
+
+func sanitizeCommandToken(value, fallback string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fallback
+	}
+	for _, r := range trimmed {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' {
+			return fallback
+		}
+	}
+	return trimmed
+}
+
+func sanitizeEnvVar(key, value string) (string, bool) {
+	key = strings.TrimSpace(key)
+	if key == "" || strings.ContainsAny(key, "=\x00\r\n") || strings.ContainsAny(value, "\x00") {
+		return "", false
+	}
+	return fmt.Sprintf("%s=%s", key, value), true
 }

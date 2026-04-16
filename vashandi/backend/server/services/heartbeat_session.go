@@ -15,6 +15,12 @@ import (
 
 const heartbeatTaskKey = "__heartbeat__"
 
+const (
+	defaultSessionCompactionMaxRuns        = 200
+	defaultSessionCompactionMaxInputTokens = 2_000_000
+	defaultSessionCompactionMaxAgeHours    = 72
+)
+
 type SessionCompactionPolicy struct {
 	Enabled            bool
 	MaxSessionRuns     int
@@ -219,7 +225,7 @@ func (s *HeartbeatService) evaluateSessionCompaction(ctx context.Context, agentI
 	case policy.MaxSessionRuns > 0 && len(runs) > policy.MaxSessionRuns:
 		reason = fmt.Sprintf("session exceeded %d runs", policy.MaxSessionRuns)
 	case policy.MaxRawInputTokens > 0 && readIntValue(usage["rawInputTokens"], usage["inputTokens"]) >= policy.MaxRawInputTokens:
-		reason = fmt.Sprintf("session raw input reached %s tokens (threshold %s)", formatCount(readIntValue(usage["rawInputTokens"], usage["inputTokens"])), formatCount(policy.MaxRawInputTokens))
+		reason = fmt.Sprintf("session raw input reached %d tokens (threshold %d)", readIntValue(usage["rawInputTokens"], usage["inputTokens"]), policy.MaxRawInputTokens)
 	case policy.MaxSessionAgeHours > 0:
 		ageHours := int(latestRun.CreatedAt.Sub(oldestRun.CreatedAt).Hours())
 		if ageHours >= policy.MaxSessionAgeHours {
@@ -257,7 +263,12 @@ func (s *HeartbeatService) evaluateSessionCompaction(ctx context.Context, agentI
 }
 
 func parseSessionCompactionPolicy(agent *models.Agent) SessionCompactionPolicy {
-	base := SessionCompactionPolicy{Enabled: false, MaxSessionRuns: 200, MaxRawInputTokens: 2_000_000, MaxSessionAgeHours: 72}
+	base := SessionCompactionPolicy{
+		Enabled:            false,
+		MaxSessionRuns:     defaultSessionCompactionMaxRuns,
+		MaxRawInputTokens:  defaultSessionCompactionMaxInputTokens,
+		MaxSessionAgeHours: defaultSessionCompactionMaxAgeHours,
+	}
 	switch agent.AdapterType {
 	case "claude_local", "codex_local", "cursor", "gemini_local", "hermes_local", "opencode_local", "pi_local":
 		base.Enabled = true
@@ -434,10 +445,6 @@ func readIntValue(values ...interface{}) int {
 	return 0
 }
 
-func formatCount(value int) string {
-	return strconv.Itoa(value)
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -455,9 +462,9 @@ func derefString(value *string) string {
 }
 
 func stringOrNil(value string) *string {
-	if strings.TrimSpace(value) == "" {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
 		return nil
 	}
-	trimmed := strings.TrimSpace(value)
 	return &trimmed
 }

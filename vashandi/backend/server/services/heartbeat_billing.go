@@ -23,6 +23,8 @@ type UsageTotals struct {
 	OutputTokens      int
 }
 
+// parseAgentRunResultLine extracts structured result fields from a single JSON
+// line emitted by the local runner subprocess.
 func parseAgentRunResultLine(line string) (*AgentRunResult, bool) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(line), &payload); err != nil {

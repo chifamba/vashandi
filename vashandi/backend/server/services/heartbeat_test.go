@@ -310,13 +310,20 @@ func TestHeartbeatService_StartRun_CompletesRunAndRecordsWorkspaceOperation(t *t
 	db.Exec(`INSERT INTO heartbeat_runs (id, company_id, agent_id, invocation_source, status, context_snapshot, task_id)
 		VALUES ('run-1', 'comp-1', 'agent-1', 'api', 'starting', '{}', 'task-1')`)
 
+	sessionParamsJSON, err := json.Marshal(map[string]interface{}{
+		"sessionId": "sess-1",
+		"cwd":       t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("marshal session params: %v", err)
+	}
 	runner := &heartbeatTestRunner{
 		result: &AgentRunResult{
 			ExitCode:          0,
 			CostUsd:           1.25,
 			UsageJSON:         json.RawMessage(`{"inputTokens":123,"cachedInputTokens":4,"outputTokens":56}`),
 			ResultJSON:        json.RawMessage(`{"summary":"done","model":"gpt-test"}`),
-			SessionParamsJSON: json.RawMessage(`{"sessionId":"sess-1","cwd":"` + t.TempDir() + `"}`),
+			SessionParamsJSON: sessionParamsJSON,
 		},
 	}
 	memory := &heartbeatTestMemory{createdCh: make(chan struct{}, 1)}
