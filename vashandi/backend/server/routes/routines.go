@@ -1,138 +1,163 @@
 package routes
 
 import (
-"encoding/json"
-"net/http"
-"time"
+	"encoding/json"
+	"io"
+	"net/http"
+	"os"
 
-"github.com/chifamba/vashandi/vashandi/backend/db/models"
-"github.com/go-chi/chi/v5"
-"gorm.io/gorm"
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
+	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
 )
 
+// NewRoutineService creates a RoutineService with all dependencies.
+func NewRoutineService(db *gorm.DB) *services.RoutineService {
+	activity := services.NewActivityService(db)
+	issuesSvc := services.NewIssueService(db, activity)
+	secrets := services.NewSecretService(db, activity)
+	// HeartbeatService constructor requires more params. For routines we just need the basic features.
+	// Pass nil for the heartbeat service if we don't need it for wakeup functionality
+	return services.NewRoutineService(db, issuesSvc, activity, nil, secrets)
+}
+
 func ListRoutinesHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-companyID := chi.URLParam(r, "companyId")
-var routines []models.Routine
-db.WithContext(r.Context()).Where("company_id = ?", companyID).Order("created_at DESC").Find(&routines)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(routines)
-}
-}
-
-func GetRoutineHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var routine models.Routine
-if err := db.WithContext(r.Context()).First(&routine, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(routine)
-}
-}
-
-func CreateRoutineHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-companyID := chi.URLParam(r, "companyId")
-var routine models.Routine
-if err := json.NewDecoder(r.Body).Decode(&routine); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-routine.CompanyID = companyID
-if err := db.WithContext(r.Context()).Create(&routine).Error; err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusCreated)
-json.NewEncoder(w).Encode(routine)
-}
-}
-
-func UpdateRoutineHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-var routine models.Routine
-if err := db.WithContext(r.Context()).First(&routine, "id = ?", id).Error; err != nil {
-http.Error(w, "Not found", http.StatusNotFound)
-return
-}
-if err := json.NewDecoder(r.Body).Decode(&routine); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
-}
-db.WithContext(r.Context()).Save(&routine)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(routine)
-}
-}
-
-func ListRoutineRunsHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-routineID := chi.URLParam(r, "id")
-var runs []models.HeartbeatRun
-db.WithContext(r.Context()).
-Where("trigger_detail = ?", routineID).
-Order("created_at DESC").Find(&runs)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(runs)
-}
-}
-
-func DeleteRoutineHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-id := chi.URLParam(r, "id")
-if err := db.WithContext(r.Context()).Where("id = ?", id).Delete(&models.Routine{}).Error; err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
-w.WriteHeader(http.StatusNoContent)
-}
-}
-
-func CreateRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		routineID := chi.URLParam(r, "id")
-		var routine models.Routine
-		if err := db.WithContext(r.Context()).First(&routine, "id = ?", routineID).Error; err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		var trigger models.RoutineTrigger
-		if err := json.NewDecoder(r.Body).Decode(&trigger); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		trigger.RoutineID = routineID
-		trigger.CompanyID = routine.CompanyID
-		if err := db.WithContext(r.Context()).Create(&trigger).Error; err != nil {
+		companyID := chi.URLParam(r, "companyId")
+		routines, err := svc.List(r.Context(), companyID)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(routines)
+	}
+}
+
+func GetRoutineHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		detail, err := svc.GetDetail(r.Context(), id)
+		if err != nil || detail == nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(detail)
+	}
+}
+
+func CreateRoutineHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		companyID := chi.URLParam(r, "companyId")
+		actor := getActor(r)
+		var input services.CreateRoutineInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		routine, err := svc.Create(r.Context(), companyID, input, actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(trigger)
+		json.NewEncoder(w).Encode(routine)
+	}
+}
+
+func UpdateRoutineHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		actor := getActor(r)
+		var input services.UpdateRoutineInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		routine, err := svc.Update(r.Context(), id, input, actor)
+		if err != nil || routine == nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(routine)
+	}
+}
+
+func ListRoutineRunsHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		routineID := chi.URLParam(r, "id")
+		runs, err := svc.ListRuns(r.Context(), routineID, 50)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(runs)
+	}
+}
+
+func DeleteRoutineHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if err := svc.Delete(r.Context(), id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func CreateRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		routineID := chi.URLParam(r, "id")
+		actor := getActor(r)
+		apiURL := os.Getenv("PAPERCLIP_API_URL")
+		if apiURL == "" {
+			apiURL = "http://localhost:3100"
+		}
+		var input services.CreateTriggerInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		trigger, secretMaterial, err := svc.CreateTrigger(r.Context(), routineID, input, actor, apiURL)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		result := map[string]interface{}{"trigger": trigger}
+		if secretMaterial != nil {
+			result["secretMaterial"] = secretMaterial
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(result)
 	}
 }
 
 func UpdateRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "triggerId")
-		var trigger models.RoutineTrigger
-		if err := db.WithContext(r.Context()).First(&trigger, "id = ?", id).Error; err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		var updates map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		actor := getActor(r)
+		var input services.UpdateTriggerInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := db.WithContext(r.Context()).Model(&trigger).Updates(updates).Error; err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		trigger, err := svc.UpdateTrigger(r.Context(), id, input, actor)
+		if err != nil || trigger == nil {
+			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -141,9 +166,10 @@ func UpdateRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 func DeleteRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "triggerId")
-		if err := db.WithContext(r.Context()).Delete(&models.RoutineTrigger{}, "id = ?", id).Error; err != nil {
+		if err := svc.DeleteTrigger(r.Context(), id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -151,32 +177,120 @@ func DeleteRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func FirePublicRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
+func RotateTriggerSecretHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		publicID := chi.URLParam(r, "publicId")
-		var trigger models.RoutineTrigger
-		if err := db.WithContext(r.Context()).First(&trigger, "public_id = ? AND enabled = true", publicID).Error; err != nil {
-			http.Error(w, "Trigger not found", http.StatusNotFound)
+		id := chi.URLParam(r, "triggerId")
+		actor := getActor(r)
+		apiURL := os.Getenv("PAPERCLIP_API_URL")
+		if apiURL == "" {
+			apiURL = "http://localhost:3100"
+		}
+		trigger, secretMaterial, err := svc.RotateTriggerSecret(r.Context(), id, actor, apiURL)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		now := time.Now()
-		db.WithContext(r.Context()).Model(&trigger).Update("last_fired_at", now)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"fired": true, "triggerId": trigger.ID})
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"trigger":        trigger,
+			"secretMaterial": secretMaterial,
+		})
+	}
+}
+
+func FirePublicRoutineTriggerHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		publicID := chi.URLParam(r, "publicId")
+		
+		// Read raw body for signature verification
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read body", http.StatusBadRequest)
+			return
+		}
+		
+		var payload map[string]interface{}
+		if len(rawBody) > 0 {
+			json.Unmarshal(rawBody, &payload)
+		}
+
+		idempotencyKey := r.Header.Get("Idempotency-Key")
+		var idempotencyKeyPtr *string
+		if idempotencyKey != "" {
+			idempotencyKeyPtr = &idempotencyKey
+		}
+
+		input := services.FirePublicTriggerInput{
+			AuthorizationHeader: r.Header.Get("Authorization"),
+			SignatureHeader:     r.Header.Get("X-Paperclip-Signature"),
+			HubSignatureHeader:  r.Header.Get("X-Hub-Signature-256"),
+			TimestampHeader:     r.Header.Get("X-Paperclip-Timestamp"),
+			IdempotencyKey:      idempotencyKeyPtr,
+			RawBody:             rawBody,
+			Payload:             payload,
+		}
+
+		run, err := svc.FirePublicTrigger(r.Context(), publicID, input)
+		if err != nil {
+			if err.Error() == "routine trigger not found" || err.Error() == "routine not found" {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			if err.Error() == "unauthorized" {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if err.Error() == "routine trigger is not active" {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(run)
 	}
 }
 
 func RunRoutineNowHandler(db *gorm.DB) http.HandlerFunc {
+	svc := NewRoutineService(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		var routine models.Routine
-		if err := db.WithContext(r.Context()).First(&routine, "id = ?", id).Error; err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
+		var input services.RunRoutineInput
+		if r.Body != nil {
+			json.NewDecoder(r.Body).Decode(&input)
+		}
+		if input.Source == "" {
+			input.Source = services.SourceManual
+		}
+		run, err := svc.RunRoutine(r.Context(), id, input)
+		if err != nil {
+			if err.Error() == "routine not found" {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		now := time.Now()
-		routine.LastTriggeredAt = &now
-		db.WithContext(r.Context()).Save(&routine)
-		w.WriteHeader(http.StatusAccepted)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(run)
 	}
+}
+
+// Helper to extract actor from request
+func getActor(r *http.Request) services.Actor {
+	actor := services.Actor{}
+	// Try to get actor info from context (if middleware sets it)
+	info := GetActorInfo(r)
+	if info.AgentID != "" {
+		agentID := info.AgentID
+		actor.AgentID = &agentID
+	}
+	if info.UserID != "" {
+		userID := info.UserID
+		actor.UserID = &userID
+	}
+	return actor
 }

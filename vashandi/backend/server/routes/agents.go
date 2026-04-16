@@ -847,6 +847,7 @@ func GetAgentConfigurationHandler(db *gorm.DB) http.HandlerFunc {
 
 // GetAgentInstructionsBundleHandler handles GET /agents/:id/instructions-bundle
 func GetAgentInstructionsBundleHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewAgentInstructionsService(db, "")
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		var agent models.Agent
@@ -854,17 +855,19 @@ func GetAgentInstructionsBundleHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
+		bundle, err := svc.GetBundle(&agent)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"agentId": agent.ID,
-			"mode":    "none",
-			"files":   []interface{}{},
-		})
+		json.NewEncoder(w).Encode(bundle)
 	}
 }
 
 // PatchAgentInstructionsBundleHandler handles PATCH /agents/:id/instructions-bundle
 func PatchAgentInstructionsBundleHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewAgentInstructionsService(db, "")
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		var agent models.Agent
@@ -872,54 +875,110 @@ func PatchAgentInstructionsBundleHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
-		var body map[string]interface{}
+		var body services.UpdateBundleInput
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		bundle, adapterConfig, err := svc.UpdateBundle(&agent, body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Persist updated adapter config
+		configJSON, _ := json.Marshal(adapterConfig)
+		db.WithContext(r.Context()).Model(&agent).Update("adapter_config", configJSON)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"agentId": agent.ID,
-			"mode":    body["mode"],
-			"files":   []interface{}{},
-		})
+		json.NewEncoder(w).Encode(bundle)
 	}
 }
 
 // GetAgentInstructionsBundleFileHandler handles GET /agents/:id/instructions-bundle/file
 func GetAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewAgentInstructionsService(db, "")
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		if err := db.WithContext(r.Context()).Select("id").Where("id = ?", id).First(&models.Agent{}).Error; err != nil {
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "No bundle file configured", http.StatusNotFound)
+		// Get path from query param
+		filePath := r.URL.Query().Get("path")
+		if filePath == "" {
+			http.Error(w, "path query parameter required", http.StatusBadRequest)
+			return
+		}
+		file, err := svc.ReadFile(&agent, filePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(file)
 	}
 }
 
 // PutAgentInstructionsBundleFileHandler handles PUT /agents/:id/instructions-bundle/file
 func PutAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewAgentInstructionsService(db, "")
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		if err := db.WithContext(r.Context()).Select("id").Where("id = ?", id).First(&models.Agent{}).Error; err != nil {
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
+		var body struct {
+			Path                     string `json:"path"`
+			Content                  string `json:"content"`
+			ClearLegacyPromptTemplate bool   `json:"clearLegacyPromptTemplate"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		bundle, file, adapterConfig, err := svc.WriteFile(&agent, body.Path, body.Content, body.ClearLegacyPromptTemplate)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Persist updated adapter config
+		configJSON, _ := json.Marshal(adapterConfig)
+		db.WithContext(r.Context()).Model(&agent).Update("adapter_config", configJSON)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"bundle": bundle,
+			"file":   file,
+		})
 	}
 }
 
 // DeleteAgentInstructionsBundleFileHandler handles DELETE /agents/:id/instructions-bundle/file
 func DeleteAgentInstructionsBundleFileHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewAgentInstructionsService(db, "")
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		if err := db.WithContext(r.Context()).Select("id").Where("id = ?", id).First(&models.Agent{}).Error; err != nil {
+		var agent models.Agent
+		if err := db.WithContext(r.Context()).First(&agent, "id = ?", id).Error; err != nil {
 			http.Error(w, "Agent not found", http.StatusNotFound)
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		filePath := r.URL.Query().Get("path")
+		if filePath == "" {
+			http.Error(w, "path query parameter required", http.StatusBadRequest)
+			return
+		}
+		bundle, adapterConfig, err := svc.DeleteFile(&agent, filePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Persist updated adapter config
+		configJSON, _ := json.Marshal(adapterConfig)
+		db.WithContext(r.Context()).Model(&agent).Update("adapter_config", configJSON)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(bundle)
 	}
 }
 
