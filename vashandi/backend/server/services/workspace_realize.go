@@ -11,6 +11,8 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
+// Keep worktree branch names comfortably below Git/path-length limits while still
+// allowing descriptive issue-derived names.
 const maxWorkspaceBranchNameLength = 120
 
 type RealizeExecutionWorkspaceInput struct {

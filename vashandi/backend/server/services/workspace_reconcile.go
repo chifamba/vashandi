@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var runtimeHealthHTTPClient = &http.Client{Timeout: 2 * time.Second}
+
 type WorkspaceRuntimeReconcileResult struct {
 	Reconciled int
 	Adopted    int
@@ -217,13 +219,13 @@ type executionWorkspaceRuntimeConfig struct {
 }
 
 func parseExecutionWorkspaceRuntimeConfig(metadata map[string]interface{}) *executionWorkspaceRuntimeConfig {
-	config := nestedObject(metadata, "config")
-	if len(config) == 0 {
+	rawConfig := nestedObject(metadata, "config")
+	if len(rawConfig) == 0 {
 		return nil
 	}
 	out := &executionWorkspaceRuntimeConfig{
-		WorkspaceRuntime: cloneMapRecord(config["workspaceRuntime"]),
-		DesiredState:     readNonEmptyString(config["desiredState"]),
+		WorkspaceRuntime: cloneMapRecord(rawConfig["workspaceRuntime"]),
+		DesiredState:     readNonEmptyString(rawConfig["desiredState"]),
 	}
 	if out.WorkspaceRuntime == nil && out.DesiredState == "" {
 		return nil
@@ -236,8 +238,7 @@ func isRuntimeServiceURLHealthy(ctx context.Context, url string) bool {
 	if err != nil {
 		return false
 	}
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := runtimeHealthHTTPClient.Do(req)
 	if err != nil {
 		return false
 	}

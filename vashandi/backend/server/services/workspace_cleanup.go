@@ -31,13 +31,13 @@ func CleanupExecutionWorkspaceArtifacts(ctx context.Context, input CleanupExecut
 	workspacePath := firstNonEmpty(derefString(input.Workspace.ProviderRef), derefString(input.Workspace.Cwd))
 	repoRoot := ""
 	if input.Workspace.ProviderType == "git_worktree" && workspacePath != "" {
-		repoRoot = resolveGitRepoRootForWorkspaceCleanup(ctx, workspacePath, derefString(input.projectWorkspacePath()))
+		repoRoot = resolveGitRepoRootForWorkspaceCleanup(ctx, workspacePath, derefString(input.getProjectWorkspaceCwd()))
 	}
 
 	cleanupEnv := buildCleanupWorkspaceEnv(input.Workspace, input.ProjectWorkspace)
 	for _, command := range []string{
 		strings.TrimSpace(input.CleanupCommand),
-		strings.TrimSpace(derefString(input.projectWorkspaceCleanupCommand())),
+		strings.TrimSpace(derefString(input.getProjectWorkspaceCleanupCommand())),
 		strings.TrimSpace(input.TeardownCommand),
 	} {
 		if command == "" {
@@ -47,7 +47,7 @@ func CleanupExecutionWorkspaceArtifacts(ctx context.Context, input CleanupExecut
 		if repoRoot != "" {
 			resolved = resolveRepoManagedWorkspaceCommand(command, repoRoot)
 		}
-		if err := recordShellCommand(ctx, input.Recorder, "workspace_teardown", firstNonEmpty(workspacePath, derefString(input.projectWorkspacePath()), "."), command, resolved, cleanupEnv); err != nil {
+		if err := recordShellCommand(ctx, input.Recorder, "workspace_teardown", firstNonEmpty(workspacePath, derefString(input.getProjectWorkspaceCwd()), "."), command, resolved, cleanupEnv); err != nil {
 			warnings = append(warnings, err.Error())
 		}
 	}
@@ -103,14 +103,14 @@ func resolveGitRepoRootForWorkspaceCleanup(ctx context.Context, worktreePath str
 	return ""
 }
 
-func (input CleanupExecutionWorkspaceInput) projectWorkspacePath() *string {
+func (input CleanupExecutionWorkspaceInput) getProjectWorkspaceCwd() *string {
 	if input.ProjectWorkspace == nil {
 		return nil
 	}
 	return input.ProjectWorkspace.Cwd
 }
 
-func (input CleanupExecutionWorkspaceInput) projectWorkspaceCleanupCommand() *string {
+func (input CleanupExecutionWorkspaceInput) getProjectWorkspaceCleanupCommand() *string {
 	if input.ProjectWorkspace == nil {
 		return nil
 	}
