@@ -13,12 +13,13 @@ import (
 func HeartbeatWakeupHandler(service *services.HeartbeatService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			CompanyID string                 `json:"companyId"`
-			AgentID   string                 `json:"agentId"`
-			Source    string                 `json:"source"`
-			Context   map[string]interface{} `json:"context"`
+			CompanyID     string                 `json:"companyId"`
+			AgentID       string                 `json:"agentId"`
+			Source        string                 `json:"source"`
+			TriggerDetail string                 `json:"triggerDetail"`
+			Context       map[string]interface{} `json:"context"`
 		}
-		
+
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -26,10 +27,10 @@ func HeartbeatWakeupHandler(service *services.HeartbeatService) http.HandlerFunc
 
 		run, err := service.Wakeup(r.Context(), input.CompanyID, input.AgentID, services.WakeupOptions{
 			Source:        input.Source,
-			TriggerDetail: "manual",
+			TriggerDetail: input.TriggerDetail,
 			Context:       input.Context,
 		})
-		
+
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

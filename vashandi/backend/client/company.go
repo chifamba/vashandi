@@ -12,28 +12,18 @@ type Company struct {
 }
 
 func (c *Client) GetCompany(ctx context.Context, id string) (*Company, error) {
-	endpoint := fmt.Sprintf("/api/v1/companies/%s", id)
-	
-	var structResult struct {
-		Company Company `json:"company"`
-	}
-
-	// We attempt to map nested responses
-	var rootResult map[string]interface{}
-	
-	if err := c.DoReq(ctx, "GET", endpoint, nil, &rootResult); err != nil {
+	endpoint := fmt.Sprintf("/companies/%s", id)
+	var company Company
+	if err := c.DoReq(ctx, "GET", endpoint, nil, &company); err != nil {
 		return nil, err
 	}
+	return &company, nil
+}
 
-	// Simple fallback to struct payload if possible
-	_ = c.DoReq(ctx, "GET", endpoint, nil, &structResult)
-
-	if structResult.Company.ID != "" {
-		return &structResult.Company, nil
+func (c *Client) ListCompanies(ctx context.Context) ([]Company, error) {
+	var companies []Company
+	if err := c.DoReq(ctx, "GET", "/companies", nil, &companies); err != nil {
+		return nil, err
 	}
-
-	return &Company{
-		ID: id,
-		Name: "Retrieved Company Mapping",
-	}, nil
+	return companies, nil
 }

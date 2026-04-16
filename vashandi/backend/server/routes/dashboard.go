@@ -62,25 +62,24 @@ func DashboardHandler(db *gorm.DB) http.HandlerFunc {
 		// V3.1 Platform Observability Dashboarding metric mockups:
 		// MTDSpend and BudgetUtilization would typically require complex queries across finance/cost events tables
 		var spend float64
-        db.Table("cost_events").Where("company_id = ?", companyID).Select("sum(amount)").Scan(&spend)
+		db.Table("cost_events").Where("company_id = ?", companyID).Select("sum(amount)").Scan(&spend)
 		summary.MTDSpend = spend
 
-        var limit float64
-        db.Table("budget_policies").Where("company_id = ?", companyID).Select("sum(limit_amount)").Scan(&limit)
-        if limit > 0 {
-		    summary.BudgetUtilization = spend / limit
-        }
+		var limit float64
+		db.Table("budget_policies").Where("company_id = ?", companyID).Select("sum(limit_amount)").Scan(&limit)
+		if limit > 0 {
+			summary.BudgetUtilization = spend / limit
+		}
 
 		db.Table("memory_operations").Where("company_id = ?", companyID).Count(&summary.MemoryOperationCount)
 
-        var memHitCount int64
-        db.Table("memory_operations").Where("company_id = ? AND success = ?", companyID, true).Count(&memHitCount)
+		var memHitCount int64
+		db.Table("memory_operations").Where("company_id = ? AND success = ?", companyID, true).Count(&memHitCount)
 		if summary.MemoryOperationCount > 0 {
-            summary.MemoryHitRate = float64(memHitCount) / float64(summary.MemoryOperationCount)
-        }
+			summary.MemoryHitRate = float64(memHitCount) / float64(summary.MemoryOperationCount)
+		}
 
-		// MCPInvocationCount tracking (stub assuming activity log tracks this)
-		db.Table("activity_logs").Where("company_id = ? AND action = ?", companyID, "mcp_tool_invoked").Count(&summary.MCPInvocationCount)
+		db.Table("activity_log").Where("company_id = ? AND action = ?", companyID, "mcp_tool_invoked").Count(&summary.MCPInvocationCount)
 
 		json.NewEncoder(w).Encode(summary)
 	}
@@ -109,16 +108,16 @@ func PlatformMetricsHandler(db *gorm.DB) http.HandlerFunc {
 		db.Table("heartbeat_runs").Where("status IN ?", []string{"active", "running"}).Count(&metrics.ActiveRuns)
 
 		var spend float64
-        db.Table("cost_events").Select("sum(amount)").Scan(&spend)
+		db.Table("cost_events").Select("sum(amount)").Scan(&spend)
 		metrics.TotalSpendMTD = spend
 
-        var totalRuns int64
-        db.Table("heartbeat_runs").Count(&totalRuns)
-        var errorRuns int64
-        db.Table("heartbeat_runs").Where("status = ?", "error").Count(&errorRuns)
-        if totalRuns > 0 {
-		    metrics.ErrorRate = float64(errorRuns) / float64(totalRuns)
-        }
+		var totalRuns int64
+		db.Table("heartbeat_runs").Count(&totalRuns)
+		var errorRuns int64
+		db.Table("heartbeat_runs").Where("status = ?", "error").Count(&errorRuns)
+		if totalRuns > 0 {
+			metrics.ErrorRate = float64(errorRuns) / float64(totalRuns)
+		}
 
 		json.NewEncoder(w).Encode(metrics)
 	}

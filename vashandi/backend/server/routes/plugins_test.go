@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,15 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type fakePluginToolExecutor struct {
+	result interface{}
+	err    error
+}
+
+func (f fakePluginToolExecutor) ExecuteTool(_ context.Context, _ string, _ interface{}, _ interface{}) (interface{}, error) {
+	return f.result, f.err
+}
 
 func setupPluginsRouteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -230,3 +240,28 @@ func TestGetPluginHandler_NotFound(t *testing.T) {
 	}
 }
 
+func TestExecutePluginToolHandler_LogsMCPInvocation(t *testing.T) {
+	db := setupPluginsRouteTestDB(t)
+	activity := services.NewActivityService(db)
+
+	body := strings.NewReader(`{
+		"tool":"plugin.tool",
+		"parameters":{"q":"search"},
+		"runContext":{"companyId":"comp-a","agentId":"agent-1","runId":"run-1","projectId":"proj-1"}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/plugins/tools/execute", body)
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+
+	ExecutePluginToolHandler(fakePluginToolExecutor{result: map[string]string{"status": "ok"}}, activity)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM activity_log WHERE company_id = ? AND action = ?", "comp-a", "mcp_tool_invoked").Scan(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 logged MCP invocation, got %d", count)
+	}
+}

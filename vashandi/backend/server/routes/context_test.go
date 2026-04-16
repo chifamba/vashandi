@@ -111,3 +111,57 @@ func TestPostRunCaptureHandler(t *testing.T) {
 		t.Errorf("expected status run_complete_forwarded, got %s", resp["status"])
 	}
 }
+
+func TestListContextOperationsHandler(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&context_list=1"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	router := chi.NewRouter()
+	router.Get("/companies/{companyId}/context", ListContextOperationsHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/context", nil)
+	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "user"}))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var operations []ContextOperationDescriptor
+	if err := json.NewDecoder(w.Body).Decode(&operations); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(operations) != 2 {
+		t.Fatalf("expected 2 operations, got %d", len(operations))
+	}
+}
+
+func TestGetContextOperationHandler(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&context_get=1"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	router := chi.NewRouter()
+	router.Get("/companies/{companyId}/context/{operation}", GetContextOperationHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/companies/comp-a/context/hydrate", nil)
+	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "user"}))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var operation ContextOperationDescriptor
+	if err := json.NewDecoder(w.Body).Decode(&operation); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if operation.Name != "hydrate" {
+		t.Fatalf("expected hydrate, got %s", operation.Name)
+	}
+}

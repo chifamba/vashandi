@@ -188,6 +188,30 @@ func TestCreateActivityHandler_BadBody(t *testing.T) {
 	}
 }
 
+func TestGetActivityHandler(t *testing.T) {
+	db := setupActivityTestDB(t)
+	db.Exec("INSERT INTO activity_log (id, company_id, actor_type, actor_id, action, entity_type, entity_id) VALUES ('al1', 'comp-a', 'system', 's', 'issue.created', 'issue', 'i1')")
+
+	router := chi.NewRouter()
+	router.Get("/activity/{id}", GetActivityHandler(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/activity/al1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var activity models.ActivityLog
+	if err := json.NewDecoder(w.Body).Decode(&activity); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if activity.ID != "al1" {
+		t.Fatalf("expected activity al1, got %s", activity.ID)
+	}
+}
+
 func TestListIssueActivityHandler(t *testing.T) {
 	db := setupActivityTestDB(t)
 	db.Exec("INSERT INTO activity_log (id, company_id, actor_type, actor_id, action, entity_type, entity_id) VALUES ('al1', 'comp-a', 'system', 's', 'issue.created', 'issue', 'iss-1')")
