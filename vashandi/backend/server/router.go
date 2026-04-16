@@ -199,11 +199,13 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Plugin Routes
 		// Static sub-paths must be registered before parameterized :pluginId routes.
+		api.Get("/companies", routes.ListCompaniesHandler(db))
+		api.Get("/companies/{id}", routes.GetCompanyHandler(db))
 		api.Get("/plugins", routes.ListPluginsHandler(db, activitySvc))
 		api.Get("/plugins/examples", routes.GetPluginExamplesHandler())
 		api.Get("/plugins/ui-contributions", routes.GetPluginUIContributionsHandler(db))
 		api.Get("/plugins/tools", routes.GetPluginToolsHandler(opts.PluginToolDispatcher))
-		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler(opts.PluginToolDispatcher))
+		api.Post("/plugins/tools/execute", routes.ExecutePluginToolHandler(opts.PluginToolDispatcher, activitySvc))
 		api.Post("/plugins/install", routes.InstallPluginHandler(db, activitySvc, opts.PluginLifecycleService, opts.PluginCapabilityValidator))
 		// Per-plugin routes
 		api.Get("/plugins/{pluginId}", routes.GetPluginHandler(db))
@@ -292,6 +294,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(list)
 		})
+		api.Get("/activity/{id}", routes.GetActivityHandler(db))
 		api.Post("/companies/{companyId}/activity", routes.CreateActivityHandler(db))
 
 		// Agent Routes
@@ -372,6 +375,8 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Delete("/goals/{id}", routes.DeleteGoalHandler(db))
 
 		// Context Routes
+		api.Get("/companies/{companyId}/context", routes.ListContextOperationsHandler(db))
+		api.Get("/companies/{companyId}/context/{operation}", routes.GetContextOperationHandler(db))
 		api.Post("/companies/{companyId}/context/hydrate", routes.PreRunHydrationHandler(db))
 		api.Post("/companies/{companyId}/context/capture", routes.PostRunCaptureHandler(db))
 

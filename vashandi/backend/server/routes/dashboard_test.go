@@ -17,7 +17,7 @@ func setupDashboardTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	for _, tbl := range []string{"activity_logs", "memory_operations", "budget_policies", "cost_events", "approvals", "issues", "agents", "heartbeat_runs"} {
+	for _, tbl := range []string{"activity_log", "memory_operations", "budget_policies", "cost_events", "approvals", "issues", "agents", "heartbeat_runs"} {
 		db.Exec("DROP TABLE IF EXISTS " + tbl)
 	}
 	db.Exec(`CREATE TABLE agents (
@@ -92,7 +92,7 @@ func setupDashboardTestDB(t *testing.T) *gorm.DB {
 		success boolean NOT NULL DEFAULT 0,
 		created_at datetime
 	)`)
-	db.Exec(`CREATE TABLE activity_logs (
+	db.Exec(`CREATE TABLE activity_log (
 		id text PRIMARY KEY,
 		company_id text NOT NULL,
 		actor_type text NOT NULL DEFAULT 'system',
@@ -100,6 +100,8 @@ func setupDashboardTestDB(t *testing.T) *gorm.DB {
 		action text NOT NULL,
 		entity_type text NOT NULL,
 		entity_id text NOT NULL,
+		agent_id text,
+		run_id text,
 		created_at datetime
 	)`)
 	db.Exec(`CREATE TABLE heartbeat_runs (
@@ -126,6 +128,7 @@ func TestDashboardHandler_CompanyScoping(t *testing.T) {
 	db.Exec("INSERT INTO issues (id, company_id, title, status) VALUES ('i2', 'comp-a', 'Issue2', 'done')")
 	db.Exec("INSERT INTO issues (id, company_id, title, status) VALUES ('i3', 'comp-a', 'Issue3', 'in_progress')")
 	db.Exec("INSERT INTO approvals (id, company_id, type, status, payload) VALUES ('ap1', 'comp-a', 'run', 'pending', '{}')")
+	db.Exec("INSERT INTO activity_log (id, company_id, actor_type, actor_id, action, entity_type, entity_id) VALUES ('act-1', 'comp-a', 'board', 'user-1', 'mcp_tool_invoked', 'plugin_tool', 'tool-1')")
 
 	router := chi.NewRouter()
 	router.Get("/companies/{companyId}/dashboard", DashboardHandler(db))
@@ -165,6 +168,9 @@ func TestDashboardHandler_CompanyScoping(t *testing.T) {
 	}
 	if summary.PendingApprovals != 1 {
 		t.Errorf("expected 1 pending approval, got %d", summary.PendingApprovals)
+	}
+	if summary.MCPInvocationCount != 1 {
+		t.Errorf("expected 1 MCP invocation, got %d", summary.MCPInvocationCount)
 	}
 }
 

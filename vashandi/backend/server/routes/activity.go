@@ -44,6 +44,34 @@ func ListActivityHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// GetActivityHandler returns a single activity event by ID.
+func GetActivityHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "id is required"})
+			return
+		}
+
+		var activity models.ActivityLog
+		if err := db.WithContext(r.Context()).First(&activity, "id = ?", id).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]string{"error": "activity not found"})
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to load activity"})
+			return
+		}
+
+		json.NewEncoder(w).Encode(activity)
+	}
+}
+
 // CreateActivityHandler returns an http.HandlerFunc to create a new activity event
 func CreateActivityHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -77,16 +105,16 @@ func CreateActivityHandler(db *gorm.DB) http.HandlerFunc {
 }
 
 func ListIssueActivityHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-issueID := chi.URLParam(r, "id")
-var activities []models.ActivityLog
-db.WithContext(r.Context()).
-Where("entity_type = ? AND entity_id = ?", "issue", issueID).
-Order("created_at ASC").
-Find(&activities)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(activities)
-}
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := chi.URLParam(r, "id")
+		var activities []models.ActivityLog
+		db.WithContext(r.Context()).
+			Where("entity_type = ? AND entity_id = ?", "issue", issueID).
+			Order("created_at ASC").
+			Find(&activities)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(activities)
+	}
 }
 
 func ListIssueRunsHandler(db *gorm.DB) http.HandlerFunc {

@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
+	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
 
@@ -283,7 +284,11 @@ func GetPluginToolsHandler(dispatcher *services.PluginToolDispatcher) http.Handl
 
 // ExecutePluginToolHandler dispatches a tool-execution call to the appropriate
 // plugin worker via the dispatcher.
-func ExecutePluginToolHandler(dispatcher *services.PluginToolDispatcher) http.HandlerFunc {
+type pluginToolExecutor interface {
+	ExecuteTool(ctx context.Context, namespacedName string, parameters interface{}, runContext interface{}) (interface{}, error)
+}
+
+func ExecutePluginToolHandler(dispatcher pluginToolExecutor, activity *services.ActivityService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := AssertBoard(r); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -304,15 +309,52 @@ func ExecutePluginToolHandler(dispatcher *services.PluginToolDispatcher) http.Ha
 			return
 		}
 
+		companyID, _ := body.RunContext["companyId"].(string)
+		agentID, _ := body.RunContext["agentId"].(string)
+		runID, _ := body.RunContext["runId"].(string)
+
 		res, err := dispatcher.ExecuteTool(r.Context(), body.Tool, body.Parameters, body.RunContext)
 		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 
+		if activity != nil && strings.TrimSpace(companyID) != "" {
+			actor := GetActorInfo(r)
+			var agentIDPtr *string
+			if strings.TrimSpace(agentID) != "" {
+				agentIDPtr = &agentID
+			}
+			var runIDPtr *string
+			if strings.TrimSpace(runID) != "" {
+				runIDPtr = &runID
+			}
+			if _, err := activity.Log(r.Context(), services.LogEntry{
+				CompanyID:  companyID,
+				ActorType:  actor.ActorType,
+				ActorID:    actor.UserID,
+				Action:     "mcp_tool_invoked",
+				EntityType: "plugin_tool",
+				EntityID:   body.Tool,
+				AgentID:    agentIDPtr,
+				RunID:      runIDPtr,
+				Details: map[string]interface{}{
+					"tool":       body.Tool,
+					"parameters": body.Parameters,
+					"runContext": body.RunContext,
+				},
+			}); err != nil {
+				slog.Warn("failed to log mcp tool invocation", "tool", body.Tool, "companyId", companyID, "error", err)
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		
+
 		// If the dispatcher returned raw bytes (it does currently since it wraps wm.Call), we write them.
 		if raw, ok := res.([]byte); ok {
 			_, _ = w.Write(raw)
@@ -1450,9 +1492,9 @@ func WebhookIngestionHandler(db *gorm.DB, wm *services.PluginWorkerManager) http
 			params := map[string]interface{}{
 				"endpointKey": endpointKey,
 				"headers":     rawHeaders,
-				"rawBody":      string(rawBody),
-				"parsedBody":   parsedBody,
-				"requestId":    deliveryID, // Use deliveryID as requestId
+				"rawBody":     string(rawBody),
+				"parsedBody":  parsedBody,
+				"requestId":   deliveryID, // Use deliveryID as requestId
 			}
 			_, workerErr = wm.Call(r.Context(), plugin.ID, "handleWebhook", params, 30*time.Second)
 		} else {
@@ -1484,7 +1526,6 @@ func WebhookIngestionHandler(db *gorm.DB, wm *services.PluginWorkerManager) http
 		}
 	}
 }
-
 
 // --------------------------------------------------------------------------
 // GET /plugins/:pluginId/dashboard
@@ -1531,25 +1572,24 @@ func GetPluginDashboardHandler(db *gorm.DB, wm *services.PluginWorkerManager) ht
 		}
 
 		type dashboardResponse struct {
-			PluginID                string                       `json:"pluginId"`
-			Worker                  interface{}                  `json:"worker"`
-			RecentJobRuns           []models.PluginJobRun        `json:"recentJobRuns"`
+			PluginID                string                         `json:"pluginId"`
+			Worker                  interface{}                    `json:"worker"`
+			RecentJobRuns           []models.PluginJobRun          `json:"recentJobRuns"`
 			RecentWebhookDeliveries []models.PluginWebhookDelivery `json:"recentWebhookDeliveries"`
-			Health                  pluginHealthCheck            `json:"health"`
-			CheckedAt               string                       `json:"checkedAt"`
+			Health                  pluginHealthCheck              `json:"health"`
+			CheckedAt               string                         `json:"checkedAt"`
 		}
 
 		writeJSON(w, http.StatusOK, dashboardResponse{
 			PluginID:                plugin.ID,
 			Worker:                  workerInfo,
-			RecentJobRuns:          jobRuns,
+			RecentJobRuns:           jobRuns,
 			RecentWebhookDeliveries: deliveries,
 			Health:                  health,
 			CheckedAt:               time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 }
-
 
 // --------------------------------------------------------------------------
 // Bridge helpers (shared by the bridge/data, bridge/action, data/:key, actions/:key)
@@ -1559,47 +1599,47 @@ func GetPluginDashboardHandler(db *gorm.DB, wm *services.PluginWorkerManager) ht
 // Returns (plugin, errorBody, statusCode) — if errorBody is non-nil the caller should
 // write it and return.
 func resolvePluginForBridge(
-registry *services.PluginRegistryService,
-r *http.Request,
-pluginID string,
+	registry *services.PluginRegistryService,
+	r *http.Request,
+	pluginID string,
 ) (*models.Plugin, interface{}, int) {
-plugin, err := registry.Resolve(r.Context(), pluginID)
-if err != nil {
-return nil, map[string]string{"error": err.Error()}, http.StatusInternalServerError
-}
-if plugin == nil {
-return nil, map[string]string{"error": "Plugin not found"}, http.StatusNotFound
-}
-if plugin.Status != "ready" {
-return nil, pluginBridgeError{
-Code:    "WORKER_UNAVAILABLE",
-Message: fmt.Sprintf("Plugin is not ready (current status: %s)", plugin.Status),
-}, http.StatusBadGateway
-}
-return plugin, nil, 0
+	plugin, err := registry.Resolve(r.Context(), pluginID)
+	if err != nil {
+		return nil, map[string]string{"error": err.Error()}, http.StatusInternalServerError
+	}
+	if plugin == nil {
+		return nil, map[string]string{"error": "Plugin not found"}, http.StatusNotFound
+	}
+	if plugin.Status != "ready" {
+		return nil, pluginBridgeError{
+			Code:    "WORKER_UNAVAILABLE",
+			Message: fmt.Sprintf("Plugin is not ready (current status: %s)", plugin.Status),
+		}, http.StatusBadGateway
+	}
+	return plugin, nil, 0
 }
 
 // proxyBridgeCall calls the given RPC method on the plugin worker and writes the
 // result as { data: <result> } or a bridge-error envelope on failure.
 func proxyBridgeCall(w http.ResponseWriter, ctx context.Context, wm *services.PluginWorkerManager, pluginID, method string, params map[string]interface{}) {
-raw, err := wm.Call(ctx, pluginID, method, params, 30*time.Second)
-if err != nil {
-writeJSON(w, http.StatusBadGateway, pluginBridgeError{
-Code:    "WORKER_UNAVAILABLE",
-Message: err.Error(),
-})
-return
-}
-// Wrap result in { data: ... }
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusOK)
-_, _ = fmt.Fprintf(w, `{"data":%s}`, string(raw))
+	raw, err := wm.Call(ctx, pluginID, method, params, 30*time.Second)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, pluginBridgeError{
+			Code:    "WORKER_UNAVAILABLE",
+			Message: err.Error(),
+		})
+		return
+	}
+	// Wrap result in { data: ... }
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"data":%s}`, string(raw))
 }
 
 // orEmptyMap returns m if non-nil, otherwise an empty map.
 func orEmptyMap(m map[string]interface{}) map[string]interface{} {
-if m != nil {
-return m
-}
-return map[string]interface{}{}
+	if m != nil {
+		return m
+	}
+	return map[string]interface{}{}
 }
