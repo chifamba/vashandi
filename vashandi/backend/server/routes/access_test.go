@@ -190,6 +190,76 @@ func TestInviteAcceptHandler_AlreadyAccepted(t *testing.T) {
 	}
 }
 
+// --- InviteAcceptByPathHandler tests ---
+
+func TestInviteAcceptByPathHandler_Success(t *testing.T) {
+	db := setupAccessTestDB(t)
+	tokenStr := "path-token-123"
+	tokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tokenStr)))
+	futureExpiry := time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05")
+
+	db.Exec("INSERT INTO invites (id, token_hash, expires_at) VALUES ('inv-path-1', ?, ?)", tokenHash, futureExpiry)
+
+	w := httptest.NewRecorder()
+	r := chi.NewRouter()
+	r.Post("/invites/{token}/accept", InviteAcceptByPathHandler(db))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/invites/"+tokenStr+"/accept", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestInviteAcceptByPathHandler_NotFound(t *testing.T) {
+	db := setupAccessTestDB(t)
+
+	w := httptest.NewRecorder()
+	r := chi.NewRouter()
+	r.Post("/invites/{token}/accept", InviteAcceptByPathHandler(db))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/invites/nonexistent/accept", nil))
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestInviteAcceptByPathHandler_Expired(t *testing.T) {
+	db := setupAccessTestDB(t)
+	tokenStr := "path-expired-token"
+	tokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tokenStr)))
+	pastExpiry := time.Now().Add(-24 * time.Hour).Format("2006-01-02 15:04:05")
+
+	db.Exec("INSERT INTO invites (id, token_hash, expires_at) VALUES ('inv-path-exp', ?, ?)", tokenHash, pastExpiry)
+
+	w := httptest.NewRecorder()
+	r := chi.NewRouter()
+	r.Post("/invites/{token}/accept", InviteAcceptByPathHandler(db))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/invites/"+tokenStr+"/accept", nil))
+
+	if w.Code != http.StatusGone {
+		t.Errorf("expected 410 (Gone), got %d", w.Code)
+	}
+}
+
+func TestInviteAcceptByPathHandler_AlreadyAccepted(t *testing.T) {
+	db := setupAccessTestDB(t)
+	tokenStr := "path-accepted-token"
+	tokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tokenStr)))
+	futureExpiry := time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05")
+	acceptedAt := time.Now().Add(-1 * time.Hour).Format("2006-01-02 15:04:05")
+
+	db.Exec("INSERT INTO invites (id, token_hash, expires_at, accepted_at) VALUES ('inv-path-acc', ?, ?, ?)", tokenHash, futureExpiry, acceptedAt)
+
+	w := httptest.NewRecorder()
+	r := chi.NewRouter()
+	r.Post("/invites/{token}/accept", InviteAcceptByPathHandler(db))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/invites/"+tokenStr+"/accept", nil))
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409 (Conflict), got %d", w.Code)
+	}
+}
+
 // --- CLIAuthChallengeHandler tests ---
 
 func TestCLIAuthChallengeHandler_Create(t *testing.T) {
