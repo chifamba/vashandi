@@ -63,10 +63,12 @@ func ListAdaptersHandler(db *gorm.DB, store *services.AdapterPluginStore) http.H
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"builtin": builtin,
 			"plugins": pluginAdapters,
-		})
+		}); err != nil {
+			slog.Warn("adapters: failed to encode response", "error", err)
+		}
 	}
 }
 
