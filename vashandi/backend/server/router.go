@@ -199,6 +199,8 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Plugin Routes
 		// Static sub-paths must be registered before parameterized :pluginId routes.
+		api.Get("/companies", routes.ListCompaniesHandler(db))
+		api.Get("/companies/{id}", routes.GetCompanyHandler(db))
 		api.Get("/plugins", routes.ListPluginsHandler(db, activitySvc))
 		api.Get("/plugins/examples", routes.GetPluginExamplesHandler())
 		api.Get("/plugins/ui-contributions", routes.GetPluginUIContributionsHandler(db))

@@ -12,7 +12,7 @@ type Company struct {
 }
 
 func (c *Client) GetCompany(ctx context.Context, id string) (*Company, error) {
-	endpoint := fmt.Sprintf("/companies/%s", id)
+	endpoint := fmt.Sprintf("/api/v1/companies/%s", id)
 	var company Company
 	if err := c.DoReq(ctx, "GET", endpoint, nil, &company); err != nil {
 		return nil, err
@@ -22,7 +22,7 @@ func (c *Client) GetCompany(ctx context.Context, id string) (*Company, error) {
 
 func (c *Client) ListCompanies(ctx context.Context) ([]Company, error) {
 	var companies []Company
-	if err := c.DoReq(ctx, "GET", "/companies", nil, &companies); err != nil {
+	if err := c.DoReq(ctx, "GET", "/api/v1/companies", nil, &companies); err != nil {
 		return nil, err
 	}
 	return companies, nil
