@@ -445,6 +445,15 @@ func TestSanitizeSVGData_RemovesUnsafeContent(t *testing.T) {
 	if !strings.Contains(output, `<rect width="10" height="10"></rect>`) {
 		t.Fatalf("expected safe svg content to remain, got %q", output)
 	}
+
+	dataURIInput := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><image href="data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;"/></svg>`)
+	dataURISanitized, err := sanitizeSVGData(dataURIInput)
+	if err != nil {
+		t.Fatalf("sanitize data uri svg: %v", err)
+	}
+	if strings.Contains(string(dataURISanitized), `data:text/html`) {
+		t.Fatalf("expected data URI href to be removed, got %q", string(dataURISanitized))
+	}
 }
 
 func TestUploadAssetHandler_SanitizesSVGUpload(t *testing.T) {

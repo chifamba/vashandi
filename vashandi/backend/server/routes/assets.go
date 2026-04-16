@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"strings"
@@ -174,6 +175,7 @@ func UploadAssetHandler(db *gorm.DB) http.HandlerFunc {
 		contentType := header.Header.Get("Content-Type")
 		data, err = sanitizeUploadedData(contentType, data)
 		if err != nil {
+			log.Printf("sanitize asset svg: %v", err)
 			http.Error(w, "SVG could not be sanitized", http.StatusUnprocessableEntity)
 			return
 		}
@@ -237,6 +239,7 @@ func UploadImageAssetHandler(db *gorm.DB) http.HandlerFunc {
 		}
 		data, err = sanitizeUploadedData(ct, data)
 		if err != nil {
+			log.Printf("sanitize image svg: %v", err)
 			http.Error(w, "SVG could not be sanitized", http.StatusUnprocessableEntity)
 			return
 		}
@@ -286,6 +289,7 @@ func UploadCompanyLogoHandler(db *gorm.DB) http.HandlerFunc {
 		}
 		data, err = sanitizeUploadedData(ct, data)
 		if err != nil {
+			log.Printf("sanitize company logo svg: %v", err)
 			http.Error(w, "SVG could not be sanitized", http.StatusUnprocessableEntity)
 			return
 		}
