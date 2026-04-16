@@ -100,12 +100,12 @@ func TestRealizeWorkspace_WorktreeCreatesSeparateCheckout(t *testing.T) {
 		t.Fatalf("RealizeWorkspace returned error: %v", err)
 	}
 
-	expected := primaryCwd + "-worktree-run-123"
-	if worktreeCwd != expected {
-		t.Fatalf("expected worktree %q, got %q", expected, worktreeCwd)
-	}
 	if worktreeCwd == primaryCwd {
 		t.Fatal("expected worktree path to differ from primary workspace")
+	}
+	expected := filepath.Join(primaryCwd, ".paperclip", "worktrees", "run-run-123")
+	if worktreeCwd != expected {
+		t.Fatalf("expected worktree %q, got %q", expected, worktreeCwd)
 	}
 	if _, err := os.Stat(filepath.Join(worktreeCwd, "README.md")); err != nil {
 		t.Fatalf("expected worktree checkout to contain repository files: %v", err)

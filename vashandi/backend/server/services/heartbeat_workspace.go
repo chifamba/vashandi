@@ -25,62 +25,100 @@ func (s *HeartbeatService) resolveWorkspaceForRun(ctx context.Context, run *mode
 	contextWorkspaceID := readNonEmptyString(contextSnapshot["projectWorkspaceId"])
 	resolvedProjectID := contextProjectID
 	preferredWorkspaceID := contextWorkspaceID
+	var issue *models.Issue
 	if issueID != "" {
-		var issue models.Issue
-		if err := s.DB.WithContext(ctx).Where("id = ? AND company_id = ?", issueID, run.CompanyID).First(&issue).Error; err == nil {
+		var loadedIssue models.Issue
+		if err := s.DB.WithContext(ctx).Where("id = ? AND company_id = ?", issueID, run.CompanyID).First(&loadedIssue).Error; err == nil {
+			issue = &loadedIssue
 			resolvedProjectID = firstNonEmpty(derefString(issue.ProjectID), resolvedProjectID)
 			preferredWorkspaceID = firstNonEmpty(derefString(issue.ProjectWorkspaceID), preferredWorkspaceID)
 		}
 	}
 
 	if resolvedProjectID != "" {
+		var project models.Project
+		var projectPolicy *ProjectExecutionWorkspacePolicy
+		if err := s.DB.WithContext(ctx).Where("id = ? AND company_id = ?", resolvedProjectID, run.CompanyID).First(&project).Error; err == nil {
+			projectPolicy = ParseProjectExecutionWorkspacePolicy(project.ExecutionWorkspacePolicy)
+		}
+		var issueSettings *IssueExecutionWorkspaceSettings
+		if issue != nil {
+			issueSettings = ParseIssueExecutionWorkspaceSettings(issue.ExecutionWorkspaceSettings)
+		}
+		mode := ResolveExecutionWorkspaceMode(projectPolicy, issueSettings, nil)
+		effectiveStrategy := (*ExecutionWorkspaceStrategy)(nil)
+		if issueSettings != nil && issueSettings.WorkspaceStrategy != nil {
+			effectiveStrategy = issueSettings.WorkspaceStrategy
+		} else if projectPolicy != nil && projectPolicy.WorkspaceStrategy != nil {
+			effectiveStrategy = projectPolicy.WorkspaceStrategy
+		}
+		if effectiveStrategy == nil && readNonEmptyString(contextSnapshot["workspaceStrategy"]) == "git_worktree" {
+			effectiveStrategy = &ExecutionWorkspaceStrategy{Type: "git_worktree"}
+		}
+		useWorktree := mode == "isolated_workspace" || (effectiveStrategy != nil && effectiveStrategy.Type == "git_worktree")
+
 		var workspaces []models.ProjectWorkspace
 		if err := s.DB.WithContext(ctx).
 			Where("company_id = ? AND project_id = ?", run.CompanyID, resolvedProjectID).
 			Order("created_at asc, id asc").
 			Find(&workspaces).Error; err == nil {
 			workspaces = prioritizeProjectWorkspaces(workspaces, preferredWorkspaceID)
+			repoURL := ""
+			repoRef := ""
+			baseCwd := ""
+			chosenWorkspaceID := preferredWorkspaceID
+
 			for _, workspace := range workspaces {
 				if workspace.Cwd == nil || strings.TrimSpace(*workspace.Cwd) == "" {
 					continue
 				}
 				if info, err := os.Stat(*workspace.Cwd); err == nil && info.IsDir() {
-					return &ResolvedWorkspaceForRun{
-						CWD:         *workspace.Cwd,
-						Source:      "project_primary",
-						ProjectID:   resolvedProjectID,
-						WorkspaceID: workspace.ID,
-						RepoURL:     derefString(workspace.RepoURL),
-						RepoRef:     derefString(workspace.RepoRef),
-					}, nil
+					baseCwd = *workspace.Cwd
+					chosenWorkspaceID = workspace.ID
+					repoURL = derefString(workspace.RepoURL)
+					repoRef = firstNonEmpty(derefString(workspace.DefaultRef), derefString(workspace.RepoRef))
+					if !useWorktree {
+						return &ResolvedWorkspaceForRun{
+							CWD:         *workspace.Cwd,
+							Source:      "project_primary",
+							ProjectID:   resolvedProjectID,
+							WorkspaceID: workspace.ID,
+							RepoURL:     repoURL,
+							RepoRef:     repoRef,
+						}, nil
+					}
+					break
 				}
 			}
-			repoURL := ""
-			if len(workspaces) > 0 {
+			if repoURL == "" && len(workspaces) > 0 {
 				repoURL = derefString(workspaces[0].RepoURL)
+				repoRef = firstNonEmpty(derefString(workspaces[0].DefaultRef), derefString(workspaces[0].RepoRef))
 			}
 			if repoURL == "" {
-				var project models.Project
-				if err := s.DB.WithContext(ctx).Where("id = ?", resolvedProjectID).First(&project).Error; err == nil {
-					projectPolicy := parseJSONObject(project.ExecutionWorkspacePolicy)
-					repoURL = readNonEmptyString(projectPolicy["repoUrl"])
-				}
+				repoURL = readNonEmptyString(parseJSONObject(project.ExecutionWorkspacePolicy)["repoUrl"])
 			}
 			strategy := StrategyPrimary
-			if readNonEmptyString(contextSnapshot["workspaceStrategy"]) == "git_worktree" {
+			if useWorktree {
 				strategy = StrategyWorktree
 			}
 			cwd, err := s.Workspaces.RealizeWorkspace(ctx, run.CompanyID, resolvedProjectID, repoURL, RealizeOptions{
-				Strategy: strategy,
-				RunID:    run.ID,
+				Strategy:                   strategy,
+				RunID:                      run.ID,
+				RepoRef:                    repoRef,
+				BaseCwd:                    baseCwd,
+				ProjectWorkspaceID:         chosenWorkspaceID,
+				Issue:                      issue,
+				Agent:                      &run.Agent,
+				ExecutionWorkspaceStrategy: effectiveStrategy,
 			})
 			if err == nil {
 				return &ResolvedWorkspaceForRun{
 					CWD:         cwd,
-					Source:      "project_primary",
+					Source:      map[bool]string{true: "git_worktree", false: "project_primary"}[useWorktree],
 					ProjectID:   resolvedProjectID,
-					WorkspaceID: preferredWorkspaceID,
+					WorkspaceID: chosenWorkspaceID,
 					RepoURL:     repoURL,
+					RepoRef:     repoRef,
 				}, nil
 			}
 		}
