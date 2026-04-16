@@ -126,11 +126,14 @@ func (r *WorkspaceOperationRecorder) AppendLog(stream, chunk string) error {
 	})
 }
 
-// appendExcerpt keeps the last 4KB of text
+// maxExcerptBytes is the maximum size of stdout/stderr excerpts stored in the database
+const maxExcerptBytes = 4096
+
+// appendExcerpt keeps the last maxExcerptBytes of text
 func appendExcerpt(current, chunk string) string {
 	result := current + chunk
-	if len(result) > 4096 {
-		result = result[len(result)-4096:]
+	if len(result) > maxExcerptBytes {
+		result = result[len(result)-maxExcerptBytes:]
 	}
 	return result
 }

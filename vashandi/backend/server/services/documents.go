@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -553,7 +553,7 @@ func (s *DocumentService) RestoreIssueDocumentRevision(ctx context.Context, issu
 		nextRevisionNumber := doc.LatestRevisionNumber + 1
 
 		// Create new revision (copy of the old one)
-		changeSummary := "Restored from revision " + strconv.Itoa(revision.RevisionNumber)
+		changeSummary := fmt.Sprintf("Restored from revision %d", revision.RevisionNumber)
 		
 		restoredRevision := models.DocumentRevision{
 			CompanyID:        doc.CompanyID,

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -104,11 +105,10 @@ func resolveWithin(basePath, relativePath string) (string, error) {
 	if err != nil {
 		return "", ErrInvalidLogRef
 	}
-	// Check for path traversal (paths starting with ".." or ".")
-	if len(rel) > 0 && rel[0] == '.' {
-		if len(rel) == 1 || (len(rel) > 1 && (rel[1] == '.' || rel[1] == filepath.Separator)) {
-			return "", ErrInvalidLogRef
-		}
+	// Check for path traversal: block paths that traverse up (start with "..")
+	// Also block paths that resolve to the base itself (rel == ".")
+	if strings.HasPrefix(rel, "..") || rel == "." {
+		return "", ErrInvalidLogRef
 	}
 	return resolved, nil
 }
