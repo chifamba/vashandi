@@ -3,11 +3,63 @@ package shared
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 )
+
+// EncryptLocalSecret encrypts a plaintext value using AES-256-GCM.
+// This is compatible with the Node.js local_encrypted provider.
+func EncryptLocalSecret(plaintext string) (string, error) {
+	encryptionSecret := os.Getenv("ENCRYPTION_SECRET")
+	if encryptionSecret == "" {
+		return "", fmt.Errorf("ENCRYPTION_SECRET environment variable is not set")
+	}
+
+	key := []byte(encryptionSecret)
+	if len(key) != 32 {
+		return "", fmt.Errorf("ENCRYPTION_SECRET must be exactly 32 bytes for AES-256")
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	// Generate random IV
+	iv := make([]byte, aesgcm.NonceSize())
+	if _, err := rand.Read(iv); err != nil {
+		return "", fmt.Errorf("failed to generate IV: %w", err)
+	}
+
+	// Encrypt
+	ciphertextWithTag := aesgcm.Seal(nil, iv, []byte(plaintext), nil)
+
+	// Split ciphertext and auth tag (last 16 bytes)
+	tagSize := 16
+	ciphertext := ciphertextWithTag[:len(ciphertextWithTag)-tagSize]
+	authTag := ciphertextWithTag[len(ciphertextWithTag)-tagSize:]
+
+	material := map[string]string{
+		"encrypted": base64.StdEncoding.EncodeToString(ciphertext),
+		"iv":        base64.StdEncoding.EncodeToString(iv),
+		"authTag":   base64.StdEncoding.EncodeToString(authTag),
+	}
+
+	data, err := json.Marshal(material)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
 
 // DecryptLocalSecret decrypts a secret material using the ENCRYPTION_SECRET environment variable.
 // This is compatible with the Node.js local_encrypted provider.
