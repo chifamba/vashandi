@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/mail"
@@ -1419,7 +1420,7 @@ func (h *BetterAuthHandler) handleLinkAccount(w http.ResponseWriter, r *http.Req
 	var body struct {
 		CallbackURL string `json:"callbackURL"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
