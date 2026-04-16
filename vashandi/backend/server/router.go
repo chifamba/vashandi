@@ -456,6 +456,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/approvals/{id}/comments", routes.GetApprovalCommentsHandler(db))
 		api.Post("/approvals/{id}/approve", routes.ApproveHandler(db, heartbeatSvc))
 		api.Post("/approvals/{id}/reject", routes.RejectHandler(db))
+		api.Post("/approvals/{id}/request-revision", routes.RequestRevisionHandler(db, activitySvc))
 		api.Post("/approvals/{id}/comments", routes.AddApprovalCommentHandler(db))
 
 		// Asset Routes
