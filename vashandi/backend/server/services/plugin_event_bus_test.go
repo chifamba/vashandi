@@ -159,3 +159,97 @@ func TestPluginEventBus_PublishSubscribe(t *testing.T) {
 		t.Errorf("expected 2 received events, got %d", len(received))
 	}
 }
+
+func TestPluginEventBus_SubscribeCancelRemovesOnlyTargetSubscription(t *testing.T) {
+	bus := NewPluginEventBus()
+
+	first := make(chan struct{}, 1)
+	second := make(chan struct{}, 1)
+
+	cancel := bus.Subscribe("plugin-1", "issue.created", nil, func(event PluginEvent) {
+		first <- struct{}{}
+	})
+	bus.Subscribe("plugin-1", "issue.created", nil, func(event PluginEvent) {
+		second <- struct{}{}
+	})
+
+	cancel()
+	bus.Publish(context.Background(), PluginEvent{EventType: "issue.created", CompanyID: "comp-1"})
+
+	select {
+	case <-first:
+		t.Fatal("canceled subscription received event")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	select {
+	case <-second:
+	case <-time.After(1 * time.Second):
+		t.Fatal("active subscription did not receive event")
+	}
+}
+
+func TestScopedPluginEventBus_EmitNamespacesEvent(t *testing.T) {
+	bus := NewPluginEventBus()
+	scoped := bus.ForPlugin("acme.linear")
+	received := make(chan PluginEvent, 1)
+
+	bus.Subscribe("listener", "plugin.acme.linear.*", nil, func(event PluginEvent) {
+		received <- event
+	})
+
+	scoped.Emit("sync-done", "comp-1", map[string]interface{}{"projectId": "proj-1"})
+
+	select {
+	case event := <-received:
+		if event.EventType != "plugin.acme.linear.sync-done" {
+			t.Fatalf("unexpected event type %q", event.EventType)
+		}
+		if event.ActorType != "plugin" {
+			t.Fatalf("unexpected actor type %q", event.ActorType)
+		}
+		if event.ActorID != "acme.linear" {
+			t.Fatalf("unexpected actor id %q", event.ActorID)
+		}
+		if event.CompanyID != "comp-1" {
+			t.Fatalf("unexpected company id %q", event.CompanyID)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for scoped emit")
+	}
+}
+
+func TestPluginEventBus_PublishHonorsSubscriptionFilter(t *testing.T) {
+	bus := NewPluginEventBus()
+	projectID := "proj-1"
+	filter := &EventFilter{ProjectID: &projectID}
+	received := make(chan PluginEvent, 1)
+
+	bus.Subscribe("plugin-1", "issue.created", filter, func(event PluginEvent) {
+		received <- event
+	})
+
+	bus.Publish(context.Background(), PluginEvent{
+		EventType: "issue.created",
+		CompanyID: "comp-1",
+		Payload:   map[string]interface{}{"projectId": "proj-2"},
+	})
+
+	select {
+	case <-received:
+		t.Fatal("filter-mismatched event was delivered")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	bus.Publish(context.Background(), PluginEvent{
+		EventType: "issue.created",
+		CompanyID: "comp-1",
+		Payload:   map[string]interface{}{"projectId": "proj-1"},
+	})
+
+	select {
+	case <-received:
+	case <-time.After(1 * time.Second):
+		t.Fatal("filtered matching event was not delivered")
+	}
+}

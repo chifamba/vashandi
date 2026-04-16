@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ type EventFilter struct {
 }
 
 type subscription struct {
+	id      string
 	pattern string
 	filter  *EventFilter
 	handler func(event PluginEvent)
@@ -49,16 +51,53 @@ func NewPluginEventBus() *PluginEventBus {
 
 // Publish emits an event to all matching subscribers across all plugins.
 func (b *PluginEventBus) Publish(ctx context.Context, event PluginEvent) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	type delivery struct {
+		pluginID string
+		sub      subscription
+	}
 
-	for _, subs := range b.registry {
+	b.mu.RLock()
+	deliveries := make([]delivery, 0)
+	for pluginID, subs := range b.registry {
 		for _, sub := range subs {
 			if matchesPattern(event.EventType, sub.pattern) && passesFilter(event, sub.filter) {
-				// Invoke handler in a goroutine to avoid blocking the publisher
-				go sub.handler(event)
+				deliveries = append(deliveries, delivery{pluginID: pluginID, sub: sub})
 			}
 		}
+	}
+	b.mu.RUnlock()
+
+	for _, delivery := range deliveries {
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+
+		go func(pluginID string, sub subscription) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					slog.Error("[plugin-event-bus] subscription handler panicked",
+						"pluginId", pluginID,
+						"pattern", sub.pattern,
+						"eventType", event.EventType,
+						"panic", recovered,
+					)
+				}
+			}()
+
+			if ctx != nil {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+			}
+
+			sub.handler(event)
+		}(delivery.pluginID, delivery.sub)
 	}
 }
 
@@ -68,6 +107,7 @@ func (b *PluginEventBus) Subscribe(pluginID string, pattern string, filter *Even
 	defer b.mu.Unlock()
 
 	sub := subscription{
+		id:      uuid.New().String(),
 		pattern: pattern,
 		filter:  filter,
 		handler: handler,
@@ -81,12 +121,12 @@ func (b *PluginEventBus) Subscribe(pluginID string, pattern string, filter *Even
 		defer b.mu.Unlock()
 		subs := b.registry[pluginID]
 		for i, s := range subs {
-			// We compare by handler and pattern. Since Go funcs aren't directly comparable easily
-			// this is a bit tricky. In practice, we usually clear all on worker shutdown.
-			// For specific cancellation, we'd need a sub ID.
-			if s.pattern == pattern {
+			if s.id == sub.id {
 				// Remove by index
 				b.registry[pluginID] = append(subs[:i], subs[i+1:]...)
+				if len(b.registry[pluginID]) == 0 {
+					delete(b.registry, pluginID)
+				}
 				break
 			}
 		}
