@@ -585,7 +585,7 @@ func TestUpsertIssueFeedbackVoteHandler_CreatesTrace(t *testing.T) {
 	router := chi.NewRouter()
 	router.Post("/issues/{id}/feedback-votes", ir.UpsertIssueFeedbackVoteHandler)
 
-	body := []byte(`{"targetType":"issue_comment","targetId":"comment-1","vote":"down","reason":"Contains sk-abcdefghijklmnop","allowSharing":true}`)
+	body := []byte(`{"targetType":"issue_comment","targetId":"comment-1","vote":"down","reason":"Contains sk-TEST123456789AB","allowSharing":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/issues/issue-1/feedback-votes", bytes.NewReader(body))
 	req = req.WithContext(WithActor(req.Context(), ActorInfo{UserID: "user-1", ActorType: "board"}))
 	w := httptest.NewRecorder()
@@ -606,7 +606,7 @@ func TestUpsertIssueFeedbackVoteHandler_CreatesTrace(t *testing.T) {
 	}
 	var storedReason string
 	db.Table("feedback_votes").Select("reason").Where("id = ?", vote.ID).Scan(&storedReason)
-	if strings.Contains(storedReason, "sk-abcdefghijklmnop") {
+	if strings.Contains(storedReason, "sk-TEST123456789AB") {
 		t.Fatalf("expected reason to be redacted, got %q", storedReason)
 	}
 }
