@@ -58,7 +58,10 @@ func acceptInviteByToken(db *gorm.DB, w http.ResponseWriter, r *http.Request, to
 	}
 	now := time.Now()
 	invite.AcceptedAt = &now
-	db.WithContext(r.Context()).Save(&invite)
+	if err := db.WithContext(r.Context()).Save(&invite).Error; err != nil {
+		http.Error(w, "Failed to accept invite", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(invite)
 }
