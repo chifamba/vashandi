@@ -232,6 +232,16 @@ func assertCanManagePortability(r *http.Request, db *gorm.DB, companyID, capabil
 	return nil
 }
 
+func validateSafeImportRoute(companyID string, req services.ImportRequest) error {
+	if req.Target.Mode == "existing_company" && req.Target.CompanyID != companyID {
+		return fmt.Errorf("safe import route can only target the route company")
+	}
+	if req.CollisionStrategy == "replace" {
+		return fmt.Errorf("safe import route does not allow replace collision strategy")
+	}
+	return nil
+}
+
 // PreviewExportCompanyHandler — POST /companies/:companyId/exports/preview
 func PreviewExportCompanyHandler(db *gorm.DB) http.HandlerFunc {
 	svc := services.NewPortabilityService(db)
@@ -298,6 +308,10 @@ func PreviewImportCompanyHandler(db *gorm.DB) http.HandlerFunc {
 		mode := services.ImportModeBoardFull
 		if actor.IsAgent {
 			mode = services.ImportModeAgentSafe
+			if err := validateSafeImportRoute(companyID, req); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
 		}
 		result, err := svc.PreviewImport(r.Context(), req, mode)
 		if err != nil {
@@ -327,6 +341,10 @@ func ImportCompanyHandler(db *gorm.DB) http.HandlerFunc {
 		mode := services.ImportModeBoardFull
 		if actor.IsAgent {
 			mode = services.ImportModeAgentSafe
+			if err := validateSafeImportRoute(companyID, req); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
 		}
 		actorUserID := actor.UserID
 		result, err := svc.ImportBundle(r.Context(), req, actorUserID, mode)

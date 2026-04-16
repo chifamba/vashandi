@@ -546,6 +546,41 @@ func TestPreviewImportCompanyHandler(t *testing.T) {
 	}
 }
 
+func TestPreviewImportCompanyHandler_AgentSafeRouteRejectsDifferentTargetCompany(t *testing.T) {
+	db := setupPortabilityTestDB(t)
+	db.Exec("INSERT INTO companies (id, name, status, issue_prefix, require_board_approval_for_new_agents) VALUES ('route-company', 'Route Co', 'active', 'RTE', 1)")
+	db.Exec("INSERT INTO companies (id, name, status, issue_prefix, require_board_approval_for_new_agents) VALUES ('other-company', 'Other Co', 'active', 'OTH', 1)")
+	db.Exec("INSERT INTO agents (id, company_id, name, role, status, adapter_type, adapter_config, runtime_config, permissions) VALUES ('ceo-agent-route', 'route-company', 'CEO', 'ceo', 'idle', 'process', '{}', '{}', '{}')")
+
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(WithActor(r.Context(), ActorInfo{
+				AgentID:   "ceo-agent-route",
+				CompanyID: "route-company",
+				IsAgent:   true,
+				ActorType: "agent",
+			}))
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.Post("/companies/{companyId}/imports/preview", PreviewImportCompanyHandler(db))
+
+	body := `{
+		"source": {"type": "inline", "files": {"COMPANY.md": "---\nname: Source Co\n---\n"}},
+		"include": {"company": true},
+		"target": {"mode": "existing_company", "companyId": "other-company"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/companies/route-company/imports/preview", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestImportCompanyHandler(t *testing.T) {
 	db := setupPortabilityTestDB(t)
 	db.Exec("INSERT INTO companies (id, name, status, issue_prefix, require_board_approval_for_new_agents) VALUES ('comp-import-dest', 'Dest Corp', 'active', 'DST', 1)")
@@ -583,6 +618,41 @@ func TestImportCompanyHandler(t *testing.T) {
 	}
 	if result["company"] == nil {
 		t.Error("expected company in response")
+	}
+}
+
+func TestImportCompanyHandler_AgentSafeRouteRejectsReplace(t *testing.T) {
+	db := setupPortabilityTestDB(t)
+	db.Exec("INSERT INTO companies (id, name, status, issue_prefix, require_board_approval_for_new_agents) VALUES ('route-company-import', 'Route Import Co', 'active', 'RTC', 1)")
+	db.Exec("INSERT INTO agents (id, company_id, name, role, status, adapter_type, adapter_config, runtime_config, permissions) VALUES ('ceo-agent-import', 'route-company-import', 'CEO', 'ceo', 'idle', 'process', '{}', '{}', '{}')")
+
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(WithActor(r.Context(), ActorInfo{
+				AgentID:   "ceo-agent-import",
+				CompanyID: "route-company-import",
+				IsAgent:   true,
+				ActorType: "agent",
+			}))
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.Post("/companies/{companyId}/imports/apply", ImportCompanyHandler(db))
+
+	body := `{
+		"source": {"type": "inline", "files": {"COMPANY.md": "---\nname: Imported Co\n---\n"}},
+		"include": {"company": true},
+		"target": {"mode": "existing_company", "companyId": "route-company-import"},
+		"collisionStrategy": "replace"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/companies/route-company-import/imports/apply", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
