@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -107,6 +108,7 @@ func (h *Hub) wrapEvent(companyID, eventType string, payload json.RawMessage) ([
 func (h *Hub) PublishEvent(companyID, eventType string, payload json.RawMessage) {
 	data, err := h.wrapEvent(companyID, eventType, payload)
 	if err != nil {
+		slog.Warn("realtime: failed to wrap event", "company", companyID, "type", eventType, "error", err)
 		return
 	}
 	h.publishRaw(companyID, data)
@@ -204,6 +206,7 @@ func (h *Hub) PublishGlobal(data []byte) {
 func (h *Hub) PublishGlobalEvent(eventType string, payload json.RawMessage) {
 	data, err := h.wrapEvent("*", eventType, payload)
 	if err != nil {
+		slog.Warn("realtime: failed to wrap global event", "type", eventType, "error", err)
 		return
 	}
 	h.PublishGlobal(data)
