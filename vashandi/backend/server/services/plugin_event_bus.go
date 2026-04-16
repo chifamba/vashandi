@@ -39,8 +39,8 @@ type subscription struct {
 }
 
 type PluginEventBus struct {
-	mu        sync.RWMutex
-	registry  map[string][]subscription // pluginID -> subscriptions
+	mu       sync.RWMutex
+	registry map[string][]subscription // pluginID -> subscriptions
 }
 
 func NewPluginEventBus() *PluginEventBus {
@@ -68,12 +68,8 @@ func (b *PluginEventBus) Publish(ctx context.Context, event PluginEvent) {
 	b.mu.RUnlock()
 
 	for _, delivery := range deliveries {
-		if ctx != nil {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
+		if contextCanceled(ctx) {
+			return
 		}
 
 		go func(pluginID string, sub subscription) {
@@ -88,12 +84,8 @@ func (b *PluginEventBus) Publish(ctx context.Context, event PluginEvent) {
 				}
 			}()
 
-			if ctx != nil {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
+			if contextCanceled(ctx) {
+				return
 			}
 
 			sub.handler(event)
@@ -242,4 +234,17 @@ func passesFilter(event PluginEvent, filter *EventFilter) bool {
 	}
 
 	return true
+}
+
+func contextCanceled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }
