@@ -47,17 +47,17 @@ type PortabilityBinaryEntry struct {
 
 // PortabilityManifest is the manifest embedded in a portability package.
 type PortabilityManifest struct {
-	SchemaVersion int                                `json:"schemaVersion"`
-	GeneratedAt   string                             `json:"generatedAt"`
-	Source        *PortabilityManifestSource         `json:"source"`
-	Includes      PortabilityInclude                 `json:"includes"`
-	Company       *PortabilityCompanyManifestEntry   `json:"company"`
-	Sidebar       *PortabilitySidebarOrder           `json:"sidebar"`
-	Agents        []PortabilityAgentManifestEntry    `json:"agents"`
-	Skills        []PortabilitySkillManifestEntry    `json:"skills"`
-	Projects      []PortabilityProjectManifestEntry  `json:"projects"`
-	Issues        []PortabilityIssueManifestEntry    `json:"issues"`
-	EnvInputs     []PortabilityEnvInput              `json:"envInputs"`
+	SchemaVersion int                               `json:"schemaVersion"`
+	GeneratedAt   string                            `json:"generatedAt"`
+	Source        *PortabilityManifestSource        `json:"source"`
+	Includes      PortabilityInclude                `json:"includes"`
+	Company       *PortabilityCompanyManifestEntry  `json:"company"`
+	Sidebar       *PortabilitySidebarOrder          `json:"sidebar"`
+	Agents        []PortabilityAgentManifestEntry   `json:"agents"`
+	Skills        []PortabilitySkillManifestEntry   `json:"skills"`
+	Projects      []PortabilityProjectManifestEntry `json:"projects"`
+	Issues        []PortabilityIssueManifestEntry   `json:"issues"`
+	EnvInputs     []PortabilityEnvInput             `json:"envInputs"`
 }
 
 // PortabilityManifestSource identifies the originating company.
@@ -107,18 +107,18 @@ type PortabilityAgentManifestEntry struct {
 
 // PortabilitySkillManifestEntry holds skill metadata in the manifest.
 type PortabilitySkillManifestEntry struct {
-	Key           string                             `json:"key"`
-	Slug          string                             `json:"slug"`
-	Name          string                             `json:"name"`
-	Path          string                             `json:"path"`
-	Description   *string                            `json:"description"`
-	SourceType    string                             `json:"sourceType"`
-	SourceLocator *string                            `json:"sourceLocator"`
-	SourceRef     *string                            `json:"sourceRef"`
-	TrustLevel    *string                            `json:"trustLevel"`
-	Compatibility *string                            `json:"compatibility"`
-	Metadata      map[string]interface{}             `json:"metadata"`
-	FileInventory []PortabilitySkillFileInventory    `json:"fileInventory"`
+	Key           string                          `json:"key"`
+	Slug          string                          `json:"slug"`
+	Name          string                          `json:"name"`
+	Path          string                          `json:"path"`
+	Description   *string                         `json:"description"`
+	SourceType    string                          `json:"sourceType"`
+	SourceLocator *string                         `json:"sourceLocator"`
+	SourceRef     *string                         `json:"sourceRef"`
+	TrustLevel    *string                         `json:"trustLevel"`
+	Compatibility *string                         `json:"compatibility"`
+	Metadata      map[string]interface{}          `json:"metadata"`
+	FileInventory []PortabilitySkillFileInventory `json:"fileInventory"`
 }
 
 // PortabilitySkillFileInventory is an item in a skill file inventory.
@@ -129,19 +129,19 @@ type PortabilitySkillFileInventory struct {
 
 // PortabilityProjectManifestEntry holds project metadata in the manifest.
 type PortabilityProjectManifestEntry struct {
-	Slug                     string                     `json:"slug"`
-	Name                     string                     `json:"name"`
-	Path                     string                     `json:"path"`
-	Description              *string                    `json:"description"`
-	OwnerAgentSlug           *string                    `json:"ownerAgentSlug"`
-	LeadAgentSlug            *string                    `json:"leadAgentSlug"`
-	TargetDate               *string                    `json:"targetDate"`
-	Color                    *string                    `json:"color"`
-	Status                   *string                    `json:"status"`
-	Env                      map[string]interface{}     `json:"env"`
-	ExecutionWorkspacePolicy map[string]interface{}     `json:"executionWorkspacePolicy"`
+	Slug                     string                      `json:"slug"`
+	Name                     string                      `json:"name"`
+	Path                     string                      `json:"path"`
+	Description              *string                     `json:"description"`
+	OwnerAgentSlug           *string                     `json:"ownerAgentSlug"`
+	LeadAgentSlug            *string                     `json:"leadAgentSlug"`
+	TargetDate               *string                     `json:"targetDate"`
+	Color                    *string                     `json:"color"`
+	Status                   *string                     `json:"status"`
+	Env                      map[string]interface{}      `json:"env"`
+	ExecutionWorkspacePolicy map[string]interface{}      `json:"executionWorkspacePolicy"`
 	Workspaces               []PortabilityWorkspaceEntry `json:"workspaces"`
-	Metadata                 map[string]interface{}     `json:"metadata"`
+	Metadata                 map[string]interface{}      `json:"metadata"`
 }
 
 // PortabilityWorkspaceEntry holds project workspace metadata.
@@ -161,13 +161,13 @@ type PortabilityWorkspaceEntry struct {
 
 // PortabilityIssueRoutineTrigger holds trigger data for a recurring issue.
 type PortabilityIssueRoutineTrigger struct {
-	Kind           string  `json:"kind"`
-	Label          *string `json:"label"`
-	Enabled        bool    `json:"enabled"`
-	CronExpression *string `json:"cronExpression"`
-	Timezone       *string `json:"timezone"`
+	Kind            string  `json:"kind"`
+	Label           *string `json:"label"`
+	Enabled         bool    `json:"enabled"`
+	CronExpression  *string `json:"cronExpression"`
+	Timezone        *string `json:"timezone"`
 	SigningMode     *string `json:"signingMode"`
-	ReplayWindowSec *int   `json:"replayWindowSec"`
+	ReplayWindowSec *int    `json:"replayWindowSec"`
 }
 
 // PortabilityIssueRoutine holds routine configuration for a recurring issue.
@@ -180,24 +180,24 @@ type PortabilityIssueRoutine struct {
 
 // PortabilityIssueManifestEntry holds issue/task metadata in the manifest.
 type PortabilityIssueManifestEntry struct {
-	Slug                     string                   `json:"slug"`
-	Identifier               *string                  `json:"identifier"`
-	Title                    string                   `json:"title"`
-	Path                     string                   `json:"path"`
-	ProjectSlug              *string                  `json:"projectSlug"`
-	ProjectWorkspaceKey      *string                  `json:"projectWorkspaceKey"`
-	AssigneeAgentSlug        *string                  `json:"assigneeAgentSlug"`
-	Description              *string                  `json:"description"`
-	Recurring                bool                     `json:"recurring"`
-	Routine                  *PortabilityIssueRoutine `json:"routine"`
-	LegacyRecurrence         map[string]interface{}   `json:"legacyRecurrence"`
-	Status                   *string                  `json:"status"`
-	Priority                 *string                  `json:"priority"`
-	LabelIds                 []string                 `json:"labelIds"`
-	BillingCode              *string                  `json:"billingCode"`
-	ExecutionWorkspaceSettings map[string]interface{} `json:"executionWorkspaceSettings"`
-	AssigneeAdapterOverrides   map[string]interface{} `json:"assigneeAdapterOverrides"`
-	Metadata                   map[string]interface{} `json:"metadata"`
+	Slug                       string                   `json:"slug"`
+	Identifier                 *string                  `json:"identifier"`
+	Title                      string                   `json:"title"`
+	Path                       string                   `json:"path"`
+	ProjectSlug                *string                  `json:"projectSlug"`
+	ProjectWorkspaceKey        *string                  `json:"projectWorkspaceKey"`
+	AssigneeAgentSlug          *string                  `json:"assigneeAgentSlug"`
+	Description                *string                  `json:"description"`
+	Recurring                  bool                     `json:"recurring"`
+	Routine                    *PortabilityIssueRoutine `json:"routine"`
+	LegacyRecurrence           map[string]interface{}   `json:"legacyRecurrence"`
+	Status                     *string                  `json:"status"`
+	Priority                   *string                  `json:"priority"`
+	LabelIds                   []string                 `json:"labelIds"`
+	BillingCode                *string                  `json:"billingCode"`
+	ExecutionWorkspaceSettings map[string]interface{}   `json:"executionWorkspaceSettings"`
+	AssigneeAdapterOverrides   map[string]interface{}   `json:"assigneeAdapterOverrides"`
+	Metadata                   map[string]interface{}   `json:"metadata"`
 }
 
 // PortabilityEnvInput describes an environment variable needed by the package.
@@ -214,24 +214,24 @@ type PortabilityEnvInput struct {
 
 // ExportRequest is the body of a POST .../exports request.
 type ExportRequest struct {
-	Include            map[string]bool `json:"include"`
-	Agents             []string        `json:"agents"`
-	Skills             []string        `json:"skills"`
-	Projects           []string        `json:"projects"`
-	Issues             []string        `json:"issues"`
-	ProjectIssues      []string        `json:"projectIssues"`
-	SelectedFiles      []string        `json:"selectedFiles"`
-	ExpandReferencedSkills bool        `json:"expandReferencedSkills"`
-	SidebarOrder       *PortabilitySidebarOrder `json:"sidebarOrder"`
+	Include                map[string]bool          `json:"include"`
+	Agents                 []string                 `json:"agents"`
+	Skills                 []string                 `json:"skills"`
+	Projects               []string                 `json:"projects"`
+	Issues                 []string                 `json:"issues"`
+	ProjectIssues          []string                 `json:"projectIssues"`
+	SelectedFiles          []string                 `json:"selectedFiles"`
+	ExpandReferencedSkills bool                     `json:"expandReferencedSkills"`
+	SidebarOrder           *PortabilitySidebarOrder `json:"sidebarOrder"`
 }
 
 // ExportResult is returned by ExportBundle.
 type ExportResult struct {
-	RootPath              string                            `json:"rootPath"`
-	Manifest              PortabilityManifest               `json:"manifest"`
-	Files                 map[string]interface{}            `json:"files"`
-	Warnings              []string                          `json:"warnings"`
-	PaperclipExtensionPath string                           `json:"paperclipExtensionPath"`
+	RootPath               string                 `json:"rootPath"`
+	Manifest               PortabilityManifest    `json:"manifest"`
+	Files                  map[string]interface{} `json:"files"`
+	Warnings               []string               `json:"warnings"`
+	PaperclipExtensionPath string                 `json:"paperclipExtensionPath"`
 }
 
 // ExportPreviewResult extends ExportResult with a file inventory.
@@ -273,13 +273,13 @@ type ImportTarget struct {
 
 // ImportRequest is the body of a POST .../imports/preview or .../imports/apply request.
 type ImportRequest struct {
-	Source            ImportSource            `json:"source"`
-	Include           map[string]bool         `json:"include"`
-	Target            ImportTarget            `json:"target"`
-	Agents            interface{}             `json:"agents"` // "all" | []string
-	CollisionStrategy string                  `json:"collisionStrategy"` // "rename"|"skip"|"replace"
-	NameOverrides     map[string]string       `json:"nameOverrides"`
-	SelectedFiles     []string                `json:"selectedFiles"`
+	Source            ImportSource               `json:"source"`
+	Include           map[string]bool            `json:"include"`
+	Target            ImportTarget               `json:"target"`
+	Agents            interface{}                `json:"agents"`            // "all" | []string
+	CollisionStrategy string                     `json:"collisionStrategy"` // "rename"|"skip"|"replace"
+	NameOverrides     map[string]string          `json:"nameOverrides"`
+	SelectedFiles     []string                   `json:"selectedFiles"`
 	AdapterOverrides  map[string]AdapterOverride `json:"adapterOverrides"`
 }
 
@@ -291,11 +291,11 @@ type AdapterOverride struct {
 
 // AgentPlan describes the planned action for an agent during import.
 type AgentPlan struct {
-	Slug           string  `json:"slug"`
-	Action         string  `json:"action"` // "create"|"update"|"skip"
-	PlannedName    string  `json:"plannedName"`
+	Slug            string  `json:"slug"`
+	Action          string  `json:"action"` // "create"|"update"|"skip"
+	PlannedName     string  `json:"plannedName"`
 	ExistingAgentID *string `json:"existingAgentId"`
-	Reason         *string `json:"reason"`
+	Reason          *string `json:"reason"`
 }
 
 // ProjectPlan describes the planned action for a project during import.
@@ -323,19 +323,34 @@ type ImportPlan struct {
 	IssuePlans    []IssuePlan   `json:"issuePlans"`
 }
 
+// ImportCollision describes an import collision discovered during preview.
+type ImportCollision struct {
+	EntityType                   string   `json:"entityType"`
+	Slug                         string   `json:"slug"`
+	Name                         string   `json:"name"`
+	ExistingID                   *string  `json:"existingId,omitempty"`
+	ExistingName                 *string  `json:"existingName,omitempty"`
+	MatchTypes                   []string `json:"matchTypes"`
+	RequestedCollisionStrategy   string   `json:"requestedCollisionStrategy"`
+	RecommendedCollisionStrategy string   `json:"recommendedCollisionStrategy"`
+	PlannedAction                string   `json:"plannedAction"`
+	Reason                       string   `json:"reason"`
+}
+
 // PreviewResult is returned by PreviewImport.
 type PreviewResult struct {
-	Include             PortabilityInclude     `json:"include"`
-	TargetCompanyID     *string                `json:"targetCompanyId"`
-	TargetCompanyName   *string                `json:"targetCompanyName"`
-	CollisionStrategy   string                 `json:"collisionStrategy"`
-	SelectedAgentSlugs  []string               `json:"selectedAgentSlugs"`
-	Plan                ImportPlan             `json:"plan"`
-	Manifest            PortabilityManifest    `json:"manifest"`
-	Files               map[string]interface{} `json:"files"`
-	EnvInputs           []PortabilityEnvInput  `json:"envInputs"`
-	Warnings            []string               `json:"warnings"`
-	Errors              []string               `json:"errors"`
+	Include            PortabilityInclude     `json:"include"`
+	TargetCompanyID    *string                `json:"targetCompanyId"`
+	TargetCompanyName  *string                `json:"targetCompanyName"`
+	CollisionStrategy  string                 `json:"collisionStrategy"`
+	SelectedAgentSlugs []string               `json:"selectedAgentSlugs"`
+	Plan               ImportPlan             `json:"plan"`
+	Collisions         []ImportCollision      `json:"collisions"`
+	Manifest           PortabilityManifest    `json:"manifest"`
+	Files              map[string]interface{} `json:"files"`
+	EnvInputs          []PortabilityEnvInput  `json:"envInputs"`
+	Warnings           []string               `json:"warnings"`
+	Errors             []string               `json:"errors"`
 }
 
 // ImportResult is returned by ImportBundle.
@@ -394,11 +409,16 @@ type resolvedSource struct {
 
 // internalPlan holds intermediate data passed between buildPreview and importBundle.
 type internalPlan struct {
-	preview         PreviewResult
-	source          resolvedSource
-	include         PortabilityInclude
+	preview           PreviewResult
+	source            resolvedSource
+	include           PortabilityInclude
 	collisionStrategy string
-	selectedAgents  []PortabilityAgentManifestEntry
+	selectedAgents    []PortabilityAgentManifestEntry
+}
+
+type existingCollisionEntity struct {
+	ID   string
+	Name string
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -457,6 +477,109 @@ func deriveProjectSlug(name string) string {
 		return s
 	}
 	return "project"
+}
+
+func recommendedCollisionStrategy(mode ImportMode, requested string, supportsReplace bool) string {
+	if requested == "" {
+		requested = "rename"
+	}
+	if mode == ImportModeAgentSafe && requested == "replace" {
+		requested = "rename"
+	}
+	if requested == "replace" && !supportsReplace {
+		return "rename"
+	}
+	return requested
+}
+
+func buildCollisionMatchTypes(slugMatched, nameMatched bool, identifierMatched bool) []string {
+	matchTypes := []string{}
+	if slugMatched {
+		matchTypes = append(matchTypes, "slug")
+	}
+	if nameMatched {
+		matchTypes = append(matchTypes, "name")
+	}
+	if identifierMatched {
+		matchTypes = append(matchTypes, "identifier")
+	}
+	if len(matchTypes) == 0 {
+		matchTypes = append(matchTypes, "name")
+	}
+	return matchTypes
+}
+
+func deriveManifestSkillKey(frontmatter map[string]interface{}, fallbackSlug string, metadata map[string]interface{}, sourceType string, sourceLocator *string) string {
+	if key := normalizeSkillKey(strVal(frontmatter, "key")); key != "" {
+		return key
+	}
+	if key := normalizeSkillKey(strVal(frontmatter, "skillKey")); key != "" {
+		return key
+	}
+	if metadata != nil {
+		if key := normalizeSkillKey(strVal(metadata, "skillKey")); key != "" {
+			return key
+		}
+		if key := normalizeSkillKey(strVal(metadata, "paperclipSkillKey")); key != "" {
+			return key
+		}
+		if paperclip, ok := metadata["paperclip"].(map[string]interface{}); ok {
+			if key := normalizeSkillKey(strVal(paperclip, "skillKey")); key != "" {
+				return key
+			}
+		}
+	}
+
+	slug := normalizeSlug(strVal(frontmatter, "slug"))
+	if slug == "" {
+		slug = normalizeSlug(fallbackSlug)
+	}
+	if slug == "" {
+		slug = "skill"
+	}
+
+	sourceKind := ""
+	owner := ""
+	repo := ""
+	if metadata != nil {
+		sourceKind = strVal(metadata, "sourceKind")
+		owner = normalizeSlug(strVal(metadata, "owner"))
+		repo = normalizeSlug(strVal(metadata, "repo"))
+	}
+
+	if (sourceType == "github" || sourceType == "skills_sh" || sourceKind == "github" || sourceKind == "skills_sh") && owner != "" && repo != "" {
+		return owner + "/" + repo + "/" + slug
+	}
+	if sourceKind == "paperclip_bundled" {
+		return "paperclipai/paperclip/" + slug
+	}
+	if sourceType == "url" || sourceKind == "url" {
+		host := "unknown"
+		if sourceLocator != nil && *sourceLocator != "" {
+			if u, err := url.Parse(*sourceLocator); err == nil && u.Hostname() != "" {
+				host = normalizeSlug(u.Hostname())
+			}
+		}
+		if host == "" {
+			host = "unknown"
+		}
+		return "url/" + host + "/" + slug
+	}
+	return slug
+}
+
+func normalizeSkillKey(value string) string {
+	if value == "" {
+		return ""
+	}
+	segments := strings.Split(value, "/")
+	out := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		if normalized := normalizeSlug(segment); normalized != "" {
+			out = append(out, normalized)
+		}
+	}
+	return strings.Join(out, "/")
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -524,6 +647,24 @@ func classifyFileKind(p string) string {
 		return "project"
 	case strings.HasPrefix(p, "tasks/"):
 		return "issue"
+	default:
+		return "other"
+	}
+}
+
+func classifySkillInventoryKind(path string) string {
+	path = strings.ReplaceAll(path, "\\", "/")
+	switch {
+	case path == "SKILL.md":
+		return "skill"
+	case strings.HasPrefix(path, "references/"):
+		return "reference"
+	case strings.HasPrefix(path, "scripts/"):
+		return "script"
+	case strings.HasPrefix(path, "assets/"):
+		return "asset"
+	case strings.HasSuffix(strings.ToLower(path), ".md"):
+		return "markdown"
 	default:
 		return "other"
 	}
@@ -949,36 +1090,110 @@ func prunePermissions(cfg map[string]interface{}) map[string]interface{} {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// README generation (Gap 5).
+// README generation and export helpers.
 // ──────────────────────────────────────────────────────────────────────────────
 
-func generatePortableReadme(manifest PortabilityManifest) string {
+var portabilityRoleLabels = map[string]string{
+	"ceo":      "CEO",
+	"cto":      "CTO",
+	"cmo":      "CMO",
+	"cfo":      "CFO",
+	"coo":      "COO",
+	"vp":       "VP",
+	"manager":  "Manager",
+	"engineer": "Engineer",
+	"agent":    "Agent",
+}
+
+func portabilityRoleLabel(role string) string {
+	if label, ok := portabilityRoleLabels[strings.ToLower(strings.TrimSpace(role))]; ok {
+		return label
+	}
+	if role == "" {
+		return "Agent"
+	}
+	return role
+}
+
+func portabilitySkillSourceLabel(skill PortabilitySkillManifestEntry) string {
+	if skill.SourceLocator != nil && *skill.SourceLocator != "" {
+		switch skill.SourceType {
+		case "github", "skills_sh", "url":
+			return fmt.Sprintf("[%s](%s)", skill.SourceType, *skill.SourceLocator)
+		default:
+			return *skill.SourceLocator
+		}
+	}
+	if skill.SourceType == "local" || skill.SourceType == "local_path" {
+		return "local"
+	}
+	if skill.SourceType == "" {
+		return "—"
+	}
+	return skill.SourceType
+}
+
+func generateExportReadme(manifest PortabilityManifest) string {
 	var sb strings.Builder
 	companyName := "Company Package"
+	companyDescription := ""
 	if manifest.Company != nil && manifest.Company.Name != "" {
 		companyName = manifest.Company.Name
 	}
-	sb.WriteString("# " + companyName + "\n\n")
-	if manifest.Company != nil && manifest.Company.Description != nil && *manifest.Company.Description != "" {
-		sb.WriteString(*manifest.Company.Description + "\n\n")
+	if manifest.Company != nil && manifest.Company.Description != nil {
+		companyDescription = strings.TrimSpace(*manifest.Company.Description)
 	}
-	sb.WriteString("---\n\n")
+
+	sb.WriteString("# " + companyName + "\n\n")
+	if companyDescription != "" {
+		sb.WriteString("> " + companyDescription + "\n\n")
+	}
 
 	if len(manifest.Agents) > 0 {
-		sb.WriteString("## Agents\n\n")
-		for _, a := range manifest.Agents {
-			sb.WriteString("- **" + a.Name + "** (`" + a.Slug + "`)")
-			if a.Title != nil && *a.Title != "" {
-				sb.WriteString(" — " + *a.Title)
-			}
-			sb.WriteString("\n")
+		sb.WriteString("![Org Chart](images/org-chart.svg)\n\n")
+	}
+
+	sb.WriteString("## What's Inside\n\n")
+	sb.WriteString("> This is an [Agent Company](https://agentcompanies.io) package from [Paperclip](https://paperclip.ing)\n\n")
+
+	counts := [][2]interface{}{}
+	if len(manifest.Agents) > 0 {
+		counts = append(counts, [2]interface{}{"Agents", len(manifest.Agents)})
+	}
+	if len(manifest.Projects) > 0 {
+		counts = append(counts, [2]interface{}{"Projects", len(manifest.Projects)})
+	}
+	if len(manifest.Skills) > 0 {
+		counts = append(counts, [2]interface{}{"Skills", len(manifest.Skills)})
+	}
+	if len(manifest.Issues) > 0 {
+		counts = append(counts, [2]interface{}{"Tasks", len(manifest.Issues)})
+	}
+	if len(counts) > 0 {
+		sb.WriteString("| Content | Count |\n|---------|-------|\n")
+		for _, entry := range counts {
+			sb.WriteString(fmt.Sprintf("| %s | %d |\n", entry[0], entry[1]))
 		}
 		sb.WriteString("\n")
 	}
+
+	if len(manifest.Agents) > 0 {
+		sb.WriteString("### Agents\n\n")
+		sb.WriteString("| Agent | Role | Reports To |\n|-------|------|------------|\n")
+		for _, a := range manifest.Agents {
+			reportsTo := "—"
+			if a.ReportsToSlug != nil && *a.ReportsToSlug != "" {
+				reportsTo = *a.ReportsToSlug
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", a.Name, portabilityRoleLabel(a.Role), reportsTo))
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(manifest.Projects) > 0 {
-		sb.WriteString("## Projects\n\n")
+		sb.WriteString("### Projects\n\n")
 		for _, p := range manifest.Projects {
-			sb.WriteString("- **" + p.Name + "** (`" + p.Slug + "`)")
+			sb.WriteString("- **" + p.Name + "**")
 			if p.Description != nil && *p.Description != "" {
 				sb.WriteString(" — " + *p.Description)
 			}
@@ -987,16 +1202,192 @@ func generatePortableReadme(manifest PortabilityManifest) string {
 		sb.WriteString("\n")
 	}
 	if len(manifest.Skills) > 0 {
-		sb.WriteString("## Skills\n\n")
+		sb.WriteString("### Skills\n\n")
+		sb.WriteString("| Skill | Description | Source |\n|-------|-------------|--------|\n")
 		for _, sk := range manifest.Skills {
-			sb.WriteString("- **" + sk.Name + "** (`" + sk.Key + "`)\n")
+			description := "—"
+			if sk.Description != nil && *sk.Description != "" {
+				description = *sk.Description
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", sk.Name, description, portabilitySkillSourceLabel(sk)))
 		}
 		sb.WriteString("\n")
 	}
-	if len(manifest.Issues) > 0 {
-		sb.WriteString(fmt.Sprintf("## Tasks\n\n%d task(s) included in this package.\n\n", len(manifest.Issues)))
-	}
+
+	sb.WriteString("## Getting Started\n\n```bash\npnpm paperclipai company import this-github-url-or-folder\n```\n\n")
+	sb.WriteString("See [Paperclip](https://paperclip.ing) for more information.\n\n")
+	sb.WriteString("---\n")
+	sb.WriteString(fmt.Sprintf("Exported from [Paperclip](https://paperclip.ing) on %s\n", strings.Split(time.Now().UTC().Format(time.RFC3339), "T")[0]))
 	return sb.String()
+}
+
+const (
+	// Keeps labels within the fixed SVG node width without overflowing the card.
+	orgChartLabelMaxLength = 20
+	orgChartInitialWidth   = 420
+	orgChartInitialHeight  = 220
+)
+
+func escapeHTMLForSVG(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, `"`, "&quot;")
+	return s
+}
+
+func generateOrgChartSVG(agents []PortabilityAgentManifestEntry) string {
+	if len(agents) == 0 {
+		return ""
+	}
+
+	type nodePos struct{ x, y int }
+	childMap := map[string][]string{}
+	agentBySlug := map[string]PortabilityAgentManifestEntry{}
+	roots := []string{}
+	for _, agent := range agents {
+		agentBySlug[agent.Slug] = agent
+		if agent.ReportsToSlug == nil || *agent.ReportsToSlug == "" {
+			roots = append(roots, agent.Slug)
+			continue
+		}
+		childMap[*agent.ReportsToSlug] = append(childMap[*agent.ReportsToSlug], agent.Slug)
+	}
+	if len(roots) == 0 {
+		for _, agent := range agents {
+			roots = append(roots, agent.Slug)
+		}
+	}
+	sort.Strings(roots)
+
+	nodeW, nodeH := 220, 80
+	hGap, vGap := 20, 60
+	colIdx := map[int]int{}
+	positions := map[string]nodePos{}
+	visited := map[string]bool{}
+	var place func(string, int)
+	place = func(slug string, level int) {
+		if visited[slug] {
+			return
+		}
+		visited[slug] = true
+		col := colIdx[level]
+		colIdx[level]++
+		positions[slug] = nodePos{x: col*(nodeW+hGap) + 10, y: level*(nodeH+vGap) + 10}
+		children := append([]string{}, childMap[slug]...)
+		sort.Strings(children)
+		for _, child := range children {
+			place(child, level+1)
+		}
+	}
+	for _, root := range roots {
+		place(root, 0)
+	}
+	for _, agent := range agents {
+		if visited[agent.Slug] {
+			continue
+		}
+		if agent.ReportsToSlug == nil || *agent.ReportsToSlug == "" || agentBySlug[*agent.ReportsToSlug].Slug == "" {
+			place(agent.Slug, 0)
+		}
+	}
+	for _, agent := range agents {
+		if !visited[agent.Slug] {
+			place(agent.Slug, 0)
+		}
+	}
+
+	maxX, maxY := orgChartInitialWidth, orgChartInitialHeight
+	for _, pos := range positions {
+		if pos.x+nodeW+10 > maxX {
+			maxX = pos.x + nodeW + 10
+		}
+		if pos.y+nodeH+10 > maxY {
+			maxY = pos.y + nodeH + 10
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d">`, maxX, maxY))
+	sb.WriteString(`<rect width="100%" height="100%" fill="white"/>`)
+	for slug, pos := range positions {
+		for _, child := range childMap[slug] {
+			childPos, ok := positions[child]
+			if !ok {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf(`<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#1e1b4b" stroke-width="1.5"/>`, pos.x+nodeW/2, pos.y+nodeH, childPos.x+nodeW/2, childPos.y))
+		}
+	}
+	for slug, pos := range positions {
+		agent := agentBySlug[slug]
+		name := agent.Name
+		nameRunes := []rune(name)
+		if len(nameRunes) > orgChartLabelMaxLength {
+			name = string(nameRunes[:orgChartLabelMaxLength]) + "..."
+		}
+		role := portabilityRoleLabel(agent.Role)
+		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" rx="8" fill="#e0e7ff" stroke="#1e1b4b"/>`, pos.x, pos.y, nodeW, nodeH))
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" fill="#1e1b4b" font-size="13" text-anchor="middle">%s</text>`, pos.x+nodeW/2, pos.y+35, escapeHTMLForSVG(name)))
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" fill="#4338ca" font-size="11" text-anchor="middle">%s</text>`, pos.x+nodeW/2, pos.y+55, escapeHTMLForSVG(role)))
+	}
+	sb.WriteString(`</svg>`)
+	return sb.String()
+}
+
+func buildSkillSourceMetadata(skill models.CompanySkill) map[string]interface{} {
+	metadata := jsonToMap(skill.Metadata)
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+
+	source := map[string]interface{}{}
+	sourceKind := strVal(metadata, "sourceKind")
+	switch {
+	case sourceKind == "paperclip_bundled":
+		source["kind"] = "github-dir"
+		source["repo"] = "paperclipai/paperclip"
+		source["path"] = "skills/" + skill.Slug
+		source["trackingRef"] = "master"
+		source["url"] = fmt.Sprintf("https://github.com/paperclipai/paperclip/tree/master/skills/%s", skill.Slug)
+	case (skill.SourceType == "github" || skill.SourceType == "skills_sh") && strVal(metadata, "owner") != "" && strVal(metadata, "repo") != "":
+		source["kind"] = "github-dir"
+		source["repo"] = fmt.Sprintf("%s/%s", strVal(metadata, "owner"), strVal(metadata, "repo"))
+		if repoSkillDir := strVal(metadata, "repoSkillDir"); repoSkillDir != "" {
+			source["path"] = repoSkillDir
+		}
+		if skill.SourceRef != nil && *skill.SourceRef != "" {
+			source["commit"] = *skill.SourceRef
+		}
+		if trackingRef := strVal(metadata, "trackingRef"); trackingRef != "" {
+			source["trackingRef"] = trackingRef
+		}
+		if skill.SourceLocator != nil && *skill.SourceLocator != "" {
+			source["url"] = *skill.SourceLocator
+		}
+	case skill.SourceType == "url" && skill.SourceLocator != nil && *skill.SourceLocator != "":
+		source["kind"] = "url"
+		source["url"] = *skill.SourceLocator
+	}
+	if len(source) == 0 {
+		source = nil
+	}
+
+	normalized := map[string]interface{}{
+		"skillKey":          skill.Key,
+		"paperclipSkillKey": skill.Key,
+		"paperclip": map[string]interface{}{
+			"skillKey": skill.Key,
+			"slug":     skill.Slug,
+		},
+	}
+	for key, value := range metadata {
+		normalized[key] = value
+	}
+	if source != nil {
+		normalized["sources"] = []interface{}{source}
+	}
+	return normalized
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1030,7 +1421,6 @@ func disableImportedTimerHeartbeat(runtimeConfig map[string]interface{}) map[str
 // ──────────────────────────────────────────────────────────────────────────────
 // GitHub source fetching.
 // ──────────────────────────────────────────────────────────────────────────────
-
 
 type ghParsedURL struct {
 	hostname    string
@@ -1545,7 +1935,7 @@ func buildManifestFromFiles(files map[string]interface{}, sourceLabel *Portabili
 			title = slug
 		}
 		desc := portStrPtr(strVal(fm, "description"))
-		if *desc == "" {
+		if desc == nil || *desc == "" {
 			// Use body as description for markdown-only format
 			_, body := parseFrontmatter(text)
 			if body != "" {
@@ -1657,7 +2047,74 @@ func buildManifestFromFiles(files map[string]interface{}, sourceLabel *Portabili
 			slug = "skill"
 		}
 
-		key := strVal(fm, "key")
+		skillDirPrefix := skillPath
+		if idx := strings.LastIndex(skillPath, "/"); idx >= 0 {
+			skillDirPrefix = skillPath[:idx]
+		}
+		fileInventory := make([]PortabilitySkillFileInventory, 0)
+		for entry := range files {
+			if entry != skillPath && !strings.HasPrefix(entry, skillDirPrefix+"/") {
+				continue
+			}
+			relativePath := "SKILL.md"
+			if entry != skillPath {
+				relativePath = strings.TrimPrefix(entry, skillDirPrefix+"/")
+			}
+			fileInventory = append(fileInventory, PortabilitySkillFileInventory{
+				Path: relativePath,
+				Kind: classifySkillInventoryKind(relativePath),
+			})
+		}
+		sort.Slice(fileInventory, func(i, j int) bool {
+			return fileInventory[i].Path < fileInventory[j].Path
+		})
+
+		metadata, _ := fm["metadata"].(map[string]interface{})
+		var primarySource map[string]interface{}
+		if metadata != nil {
+			if sources, ok := metadata["sources"].([]interface{}); ok {
+				for _, raw := range sources {
+					if source, ok := raw.(map[string]interface{}); ok {
+						primarySource = source
+						break
+					}
+				}
+			}
+		}
+		sourceType := "catalog"
+		var sourceLocator *string
+		var sourceRef *string
+		normalizedMetadata := map[string]interface{}{}
+		for key, value := range metadata {
+			normalizedMetadata[key] = value
+		}
+		if len(normalizedMetadata) == 0 {
+			normalizedMetadata = nil
+		}
+		if primarySource != nil {
+			switch kind := strVal(primarySource, "kind"); kind {
+			case "github-dir", "github-file":
+				sourceType = "github"
+				sourceLocator = portStrPtr(strVal(primarySource, "url"))
+				sourceRef = portStrPtr(strVal(primarySource, "commit"))
+				if sourceRef == nil {
+					sourceRef = portStrPtr(strVal(primarySource, "ref"))
+				}
+			case "url":
+				sourceType = "url"
+				sourceLocator = portStrPtr(strVal(primarySource, "url"))
+			}
+		}
+		if sourceType == "catalog" && metadata != nil {
+			switch strVal(metadata, "sourceKind") {
+			case "github", "skills_sh", "paperclip_bundled":
+				sourceType = "github"
+			case "url":
+				sourceType = "url"
+			}
+		}
+
+		key := deriveManifestSkillKey(fm, slug, metadata, sourceType, sourceLocator)
 		if key == "" {
 			key = slug
 		}
@@ -1673,8 +2130,11 @@ func buildManifestFromFiles(files map[string]interface{}, sourceLabel *Portabili
 			Name:          name,
 			Path:          skillPath,
 			Description:   desc,
-			SourceType:    "local_path",
-			FileInventory: []PortabilitySkillFileInventory{{Path: "SKILL.md", Kind: "agent"}},
+			SourceType:    sourceType,
+			SourceLocator: sourceLocator,
+			SourceRef:     sourceRef,
+			Metadata:      normalizedMetadata,
+			FileInventory: fileInventory,
 		})
 	}
 
@@ -1833,10 +2293,12 @@ func (s *PortabilityService) ExportBundle(ctx context.Context, companyID string,
 				fm := map[string]interface{}{
 					"name": skill.Name,
 					"key":  skill.Key,
+					"slug": skill.Slug,
 				}
 				if skill.Description != nil && *skill.Description != "" {
 					fm["description"] = *skill.Description
 				}
+				fm["metadata"] = buildSkillSourceMetadata(skill)
 				files[skillPath] = buildMarkdown(fm, skill.Markdown)
 			}
 		}
@@ -2310,8 +2772,10 @@ func (s *PortabilityService) ExportBundle(ctx context.Context, companyID string,
 	// Gap 1+2: Assign deduplicated env inputs to manifest.
 	resolved.manifest.EnvInputs = dedupeEnvInputs(envInputs)
 
-	// Gap 5: Generate README.md summarising the package.
-	files["README.md"] = generatePortableReadme(resolved.manifest)
+	if orgChartSVG := generateOrgChartSVG(resolved.manifest.Agents); orgChartSVG != "" {
+		files["images/org-chart.svg"] = orgChartSVG
+	}
+	files["README.md"] = generateExportReadme(resolved.manifest)
 
 	return &ExportResult{
 		RootPath:               rootPath,
@@ -2486,6 +2950,7 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 	manifest := source.manifest
 	warnings := source.warnings[:]
 	errors := []string{}
+	collisions := []ImportCollision{}
 
 	// Resolve include
 	include := resolveInclude(req.Include)
@@ -2494,6 +2959,9 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 	include.Projects = include.Projects && len(manifest.Projects) > 0
 	include.Issues = include.Issues && len(manifest.Issues) > 0
 	include.Skills = include.Skills && len(manifest.Skills) > 0
+	if req.Include["company"] && manifest.Company == nil {
+		errors = append(errors, "Manifest does not include company metadata.")
+	}
 
 	// Select agents
 	var selectedAgents []PortabilityAgentManifestEntry
@@ -2517,6 +2985,26 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 	if selectedAgents == nil {
 		selectedAgents = []PortabilityAgentManifestEntry{}
 	}
+	selectedAgentSet := map[string]bool{}
+	for _, agent := range manifest.Agents {
+		selectedAgentSet[agent.Slug] = true
+	}
+	if include.Agents {
+		if requested, ok := req.Agents.([]interface{}); ok {
+			for _, raw := range requested {
+				slug, ok := raw.(string)
+				if !ok || slug == "" {
+					continue
+				}
+				if !selectedAgentSet[slug] {
+					errors = append(errors, fmt.Sprintf("Selected agent slug not found in manifest: %s", slug))
+				}
+			}
+		}
+		if len(selectedAgents) == 0 {
+			warnings = append(warnings, "No agents selected for import.")
+		}
+	}
 
 	// Determine target company
 	var targetCompanyID *string
@@ -2532,8 +3020,9 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 
 	// Build agent plans
 	agentPlans := []AgentPlan{}
-	existingSlugToAgent := map[string]struct{ ID, Name string }{}
+	existingSlugToAgent := map[string]existingCollisionEntity{}
 	usedSlugsForRename := map[string]bool{}
+	existingAgentNameToAgent := map[string]existingCollisionEntity{}
 
 	if req.Target.Mode == "existing_company" && len(selectedAgents) > 0 {
 		var existingAgents []models.Agent
@@ -2548,14 +3037,27 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 				slug = ag.ID
 			}
 			if _, already := existingSlugToAgent[slug]; !already {
-				existingSlugToAgent[slug] = struct{ ID, Name string }{ag.ID, ag.Name}
+				existingSlugToAgent[slug] = existingCollisionEntity{ID: ag.ID, Name: ag.Name}
 			}
 			usedSlugsForRename[slug] = true
+			if normalizedName := normalizeSlug(ag.Name); normalizedName != "" {
+				if _, already := existingAgentNameToAgent[normalizedName]; !already {
+					existingAgentNameToAgent[normalizedName] = existingCollisionEntity{ID: ag.ID, Name: ag.Name}
+				}
+			}
 		}
 	}
 
 	for _, manifestAgent := range selectedAgents {
 		existing, exists := existingSlugToAgent[manifestAgent.Slug]
+		nameMatch := false
+		if !exists {
+			if candidate, ok := existingAgentNameToAgent[normalizeSlug(manifestAgent.Name)]; ok {
+				existing = candidate
+				exists = true
+				nameMatch = true
+			}
+		}
 		if !exists {
 			agentPlans = append(agentPlans, AgentPlan{
 				Slug:            manifestAgent.Slug,
@@ -2566,6 +3068,8 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 			})
 			continue
 		}
+		recommendedStrategy := recommendedCollisionStrategy(mode, collisionStrategy, true)
+		matchTypes := buildCollisionMatchTypes(!nameMatch, nameMatch, false)
 		switch collisionStrategy {
 		case "replace":
 			if mode == ImportModeBoardFull {
@@ -2577,6 +3081,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 					ExistingAgentID: &existing.ID,
 					Reason:          &reason,
 				})
+				existingID, existingName := existing.ID, existing.Name
+				collisions = append(collisions, ImportCollision{
+					EntityType:                   "agent",
+					Slug:                         manifestAgent.Slug,
+					Name:                         manifestAgent.Name,
+					ExistingID:                   &existingID,
+					ExistingName:                 &existingName,
+					MatchTypes:                   matchTypes,
+					RequestedCollisionStrategy:   collisionStrategy,
+					RecommendedCollisionStrategy: recommendedStrategy,
+					PlannedAction:                "update",
+					Reason:                       reason,
+				})
 			} else {
 				reason := "Existing slug matched; rename strategy."
 				renamed := uniqueName(manifestAgent.Name, usedSlugsForRename)
@@ -2586,6 +3103,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 					PlannedName:     renamed,
 					ExistingAgentID: &existing.ID,
 					Reason:          &reason,
+				})
+				existingID, existingName := existing.ID, existing.Name
+				collisions = append(collisions, ImportCollision{
+					EntityType:                   "agent",
+					Slug:                         manifestAgent.Slug,
+					Name:                         manifestAgent.Name,
+					ExistingID:                   &existingID,
+					ExistingName:                 &existingName,
+					MatchTypes:                   matchTypes,
+					RequestedCollisionStrategy:   collisionStrategy,
+					RecommendedCollisionStrategy: recommendedStrategy,
+					PlannedAction:                "create",
+					Reason:                       reason,
 				})
 			}
 		case "skip":
@@ -2597,6 +3127,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 				ExistingAgentID: &existing.ID,
 				Reason:          &reason,
 			})
+			existingID, existingName := existing.ID, existing.Name
+			collisions = append(collisions, ImportCollision{
+				EntityType:                   "agent",
+				Slug:                         manifestAgent.Slug,
+				Name:                         manifestAgent.Name,
+				ExistingID:                   &existingID,
+				ExistingName:                 &existingName,
+				MatchTypes:                   matchTypes,
+				RequestedCollisionStrategy:   collisionStrategy,
+				RecommendedCollisionStrategy: recommendedStrategy,
+				PlannedAction:                "skip",
+				Reason:                       reason,
+			})
 		default: // "rename"
 			reason := "Existing slug matched; rename strategy."
 			renamed := uniqueName(manifestAgent.Name, usedSlugsForRename)
@@ -2606,6 +3149,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 				PlannedName:     renamed,
 				ExistingAgentID: &existing.ID,
 				Reason:          &reason,
+			})
+			existingID, existingName := existing.ID, existing.Name
+			collisions = append(collisions, ImportCollision{
+				EntityType:                   "agent",
+				Slug:                         manifestAgent.Slug,
+				Name:                         manifestAgent.Name,
+				ExistingID:                   &existingID,
+				ExistingName:                 &existingName,
+				MatchTypes:                   matchTypes,
+				RequestedCollisionStrategy:   collisionStrategy,
+				RecommendedCollisionStrategy: recommendedStrategy,
+				PlannedAction:                "create",
+				Reason:                       reason,
 			})
 		}
 	}
@@ -2626,8 +3182,9 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 
 	// Build project plans
 	projectPlans := []ProjectPlan{}
-	existingProjectSlugToProject := map[string]struct{ ID, Name string }{}
+	existingProjectSlugToProject := map[string]existingCollisionEntity{}
 	usedProjectSlugsForRename := map[string]bool{}
+	existingProjectNameToProject := map[string]existingCollisionEntity{}
 
 	if include.Projects && req.Target.Mode == "existing_company" {
 		var existingProjects []models.Project
@@ -2639,15 +3196,28 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 		for _, p := range existingProjects {
 			slug := deriveProjectSlug(p.Name)
 			if _, already := existingProjectSlugToProject[slug]; !already {
-				existingProjectSlugToProject[slug] = struct{ ID, Name string }{p.ID, p.Name}
+				existingProjectSlugToProject[slug] = existingCollisionEntity{ID: p.ID, Name: p.Name}
 			}
 			usedProjectSlugsForRename[slug] = true
+			if normalizedName := normalizeSlug(p.Name); normalizedName != "" {
+				if _, already := existingProjectNameToProject[normalizedName]; !already {
+					existingProjectNameToProject[normalizedName] = existingCollisionEntity{ID: p.ID, Name: p.Name}
+				}
+			}
 		}
 	}
 
 	if include.Projects {
 		for _, manifestProject := range manifest.Projects {
 			existing, exists := existingProjectSlugToProject[manifestProject.Slug]
+			nameMatch := false
+			if !exists {
+				if candidate, ok := existingProjectNameToProject[normalizeSlug(manifestProject.Name)]; ok {
+					existing = candidate
+					exists = true
+					nameMatch = true
+				}
+			}
 			if !exists {
 				projectPlans = append(projectPlans, ProjectPlan{
 					Slug:              manifestProject.Slug,
@@ -2658,6 +3228,8 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 				})
 				continue
 			}
+			recommendedStrategy := recommendedCollisionStrategy(mode, collisionStrategy, true)
+			matchTypes := buildCollisionMatchTypes(!nameMatch, nameMatch, false)
 			switch collisionStrategy {
 			case "replace":
 				if mode == ImportModeBoardFull {
@@ -2669,6 +3241,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 						ExistingProjectID: &existing.ID,
 						Reason:            &reason,
 					})
+					existingID, existingName := existing.ID, existing.Name
+					collisions = append(collisions, ImportCollision{
+						EntityType:                   "project",
+						Slug:                         manifestProject.Slug,
+						Name:                         manifestProject.Name,
+						ExistingID:                   &existingID,
+						ExistingName:                 &existingName,
+						MatchTypes:                   matchTypes,
+						RequestedCollisionStrategy:   collisionStrategy,
+						RecommendedCollisionStrategy: recommendedStrategy,
+						PlannedAction:                "update",
+						Reason:                       reason,
+					})
 				} else {
 					reason := "Existing slug matched; rename strategy."
 					renamed := uniqueName(manifestProject.Name, usedProjectSlugsForRename)
@@ -2678,6 +3263,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 						PlannedName:       renamed,
 						ExistingProjectID: &existing.ID,
 						Reason:            &reason,
+					})
+					existingID, existingName := existing.ID, existing.Name
+					collisions = append(collisions, ImportCollision{
+						EntityType:                   "project",
+						Slug:                         manifestProject.Slug,
+						Name:                         manifestProject.Name,
+						ExistingID:                   &existingID,
+						ExistingName:                 &existingName,
+						MatchTypes:                   matchTypes,
+						RequestedCollisionStrategy:   collisionStrategy,
+						RecommendedCollisionStrategy: recommendedStrategy,
+						PlannedAction:                "create",
+						Reason:                       reason,
 					})
 				}
 			case "skip":
@@ -2689,6 +3287,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 					ExistingProjectID: &existing.ID,
 					Reason:            &reason,
 				})
+				existingID, existingName := existing.ID, existing.Name
+				collisions = append(collisions, ImportCollision{
+					EntityType:                   "project",
+					Slug:                         manifestProject.Slug,
+					Name:                         manifestProject.Name,
+					ExistingID:                   &existingID,
+					ExistingName:                 &existingName,
+					MatchTypes:                   matchTypes,
+					RequestedCollisionStrategy:   collisionStrategy,
+					RecommendedCollisionStrategy: recommendedStrategy,
+					PlannedAction:                "skip",
+					Reason:                       reason,
+				})
 			default: // "rename"
 				reason := "Existing slug matched; rename strategy."
 				renamed := uniqueName(manifestProject.Name, usedProjectSlugsForRename)
@@ -2698,6 +3309,19 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 					PlannedName:       renamed,
 					ExistingProjectID: &existing.ID,
 					Reason:            &reason,
+				})
+				existingID, existingName := existing.ID, existing.Name
+				collisions = append(collisions, ImportCollision{
+					EntityType:                   "project",
+					Slug:                         manifestProject.Slug,
+					Name:                         manifestProject.Name,
+					ExistingID:                   &existingID,
+					ExistingName:                 &existingName,
+					MatchTypes:                   matchTypes,
+					RequestedCollisionStrategy:   collisionStrategy,
+					RecommendedCollisionStrategy: recommendedStrategy,
+					PlannedAction:                "create",
+					Reason:                       reason,
 				})
 			}
 		}
@@ -2713,19 +3337,200 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 		}
 	}
 
+	if req.Target.Mode == "existing_company" && (include.Skills || include.Agents) {
+		var existingSkills []models.CompanySkill
+		if err := s.db.WithContext(ctx).
+			Where("company_id = ?", req.Target.CompanyID).
+			Find(&existingSkills).Error; err != nil {
+			return nil, err
+		}
+		existingSkillKeyToSkill := map[string]existingCollisionEntity{}
+		existingSkillSlugToSkill := map[string]existingCollisionEntity{}
+		existingSkillNameToSkill := map[string]existingCollisionEntity{}
+		for _, skill := range existingSkills {
+			existingSkillKeyToSkill[skill.Key] = existingCollisionEntity{ID: skill.ID, Name: skill.Name}
+			if normalizedSlug := normalizeSlug(skill.Slug); normalizedSlug != "" {
+				if _, ok := existingSkillSlugToSkill[normalizedSlug]; !ok {
+					existingSkillSlugToSkill[normalizedSlug] = existingCollisionEntity{ID: skill.ID, Name: skill.Name}
+				}
+			}
+			if normalizedName := normalizeSlug(skill.Name); normalizedName != "" {
+				if _, ok := existingSkillNameToSkill[normalizedName]; !ok {
+					existingSkillNameToSkill[normalizedName] = existingCollisionEntity{ID: skill.ID, Name: skill.Name}
+				}
+			}
+		}
+		for _, manifestSkill := range manifest.Skills {
+			existing, exists := existingSkillKeyToSkill[manifestSkill.Key]
+			keyMatch := exists
+			slugMatch := false
+			nameMatch := false
+			if !exists {
+				if candidate, ok := existingSkillSlugToSkill[normalizeSlug(manifestSkill.Slug)]; ok {
+					existing = candidate
+					exists = true
+					slugMatch = true
+				}
+			}
+			if !exists {
+				if candidate, ok := existingSkillNameToSkill[normalizeSlug(manifestSkill.Name)]; ok {
+					existing = candidate
+					exists = true
+					nameMatch = true
+				}
+			}
+			if !exists {
+				continue
+			}
+			recommendedStrategy := recommendedCollisionStrategy(mode, collisionStrategy, true)
+			reason := "Existing skill matched by key or slug."
+			plannedAction := "rename"
+			matchTypes := []string{}
+			if keyMatch {
+				matchTypes = append(matchTypes, "key")
+			}
+			if slugMatch {
+				matchTypes = append(matchTypes, "slug")
+			}
+			if nameMatch {
+				matchTypes = append(matchTypes, "name")
+			}
+			if len(matchTypes) == 0 {
+				matchTypes = append(matchTypes, "key")
+			}
+			switch collisionStrategy {
+			case "skip":
+				reason = "Existing skill matched; skip strategy."
+				plannedAction = "skip"
+			case "replace":
+				if mode == ImportModeBoardFull {
+					reason = "Existing skill matched; replace strategy."
+					plannedAction = "update"
+				} else {
+					reason = "Existing skill matched; rename strategy."
+				}
+			default:
+				reason = "Existing skill matched; rename strategy."
+			}
+			existingID, existingName := existing.ID, existing.Name
+			collisions = append(collisions, ImportCollision{
+				EntityType:                   "skill",
+				Slug:                         manifestSkill.Slug,
+				Name:                         manifestSkill.Name,
+				ExistingID:                   &existingID,
+				ExistingName:                 &existingName,
+				MatchTypes:                   matchTypes,
+				RequestedCollisionStrategy:   collisionStrategy,
+				RecommendedCollisionStrategy: recommendedStrategy,
+				PlannedAction:                plannedAction,
+				Reason:                       reason,
+			})
+			if mode == ImportModeAgentSafe {
+				actionText := "be renamed"
+				if recommendedStrategy == "skip" {
+					actionText = "be skipped"
+				}
+				warnings = append(warnings, fmt.Sprintf("Existing skill %q matched during safe import and will %s instead of overwritten.", manifestSkill.Slug, actionText))
+			} else if collisionStrategy == "replace" {
+				warnings = append(warnings, fmt.Sprintf("Existing skill %q (%s) will be overwritten by import.", manifestSkill.Slug, manifestSkill.Key))
+			}
+		}
+	}
+
 	// Build issue plans
 	issuePlans := []IssuePlan{}
 	if include.Issues {
+		existingIssueSlugToIssue := map[string]existingCollisionEntity{}
+		existingIssueNameToIssue := map[string]existingCollisionEntity{}
+		existingIssueIdentifierToIssue := map[string]existingCollisionEntity{}
+		usedIssueSlugsForRename := map[string]bool{}
+		if req.Target.Mode == "existing_company" {
+			var existingIssues []models.Issue
+			if err := s.db.WithContext(ctx).
+				Where("company_id = ? AND hidden_at IS NULL", req.Target.CompanyID).
+				Find(&existingIssues).Error; err != nil {
+				return nil, err
+			}
+			for _, issue := range existingIssues {
+				slug := normalizeSlug(issue.Title)
+				if slug == "" {
+					slug = issue.ID
+				}
+				if _, exists := existingIssueSlugToIssue[slug]; !exists {
+					existingIssueSlugToIssue[slug] = existingCollisionEntity{ID: issue.ID, Name: issue.Title}
+				}
+				if normalizedTitle := normalizeSlug(issue.Title); normalizedTitle != "" {
+					if _, exists := existingIssueNameToIssue[normalizedTitle]; !exists {
+						existingIssueNameToIssue[normalizedTitle] = existingCollisionEntity{ID: issue.ID, Name: issue.Title}
+					}
+				}
+				if issue.Identifier != nil && *issue.Identifier != "" {
+					existingIssueIdentifierToIssue[*issue.Identifier] = existingCollisionEntity{ID: issue.ID, Name: issue.Title}
+				}
+				usedIssueSlugsForRename[slug] = true
+			}
+		}
 		for _, manifestIssue := range manifest.Issues {
 			reason := (*string)(nil)
 			if manifestIssue.Recurring {
 				r := "Recurring task will be imported as a routine."
 				reason = &r
 			}
+			action := "create"
+			plannedTitle := manifestIssue.Title
+			existing, exists := existingIssueSlugToIssue[manifestIssue.Slug]
+			slugMatch := exists
+			nameMatch := false
+			identifierMatch := false
+			if !exists {
+				if candidate, ok := existingIssueNameToIssue[normalizeSlug(manifestIssue.Title)]; ok {
+					existing = candidate
+					exists = true
+					nameMatch = true
+				}
+			}
+			if !exists && manifestIssue.Identifier != nil && *manifestIssue.Identifier != "" {
+				if candidate, ok := existingIssueIdentifierToIssue[*manifestIssue.Identifier]; ok {
+					existing = candidate
+					exists = true
+					identifierMatch = true
+				}
+			}
+			if exists {
+				recommendedStrategy := recommendedCollisionStrategy(mode, collisionStrategy, false)
+				var reasonText string
+				switch recommendedStrategy {
+				case "skip":
+					action = "skip"
+					reasonText = "Existing task matched; skip strategy."
+				default:
+					plannedTitle = uniqueName(manifestIssue.Title, usedIssueSlugsForRename)
+					reasonText = "Existing task matched; rename strategy."
+					if collisionStrategy == "replace" {
+						warnings = append(warnings, fmt.Sprintf("Task %q matched an existing issue and will be renamed because replace is not supported for tasks.", manifestIssue.Slug))
+					}
+				}
+				reason = &reasonText
+				existingID, existingName := existing.ID, existing.Name
+				collisions = append(collisions, ImportCollision{
+					EntityType:                   "issue",
+					Slug:                         manifestIssue.Slug,
+					Name:                         manifestIssue.Title,
+					ExistingID:                   &existingID,
+					ExistingName:                 &existingName,
+					MatchTypes:                   buildCollisionMatchTypes(slugMatch, nameMatch, identifierMatch),
+					RequestedCollisionStrategy:   collisionStrategy,
+					RecommendedCollisionStrategy: recommendedStrategy,
+					PlannedAction:                action,
+					Reason:                       reasonText,
+				})
+			} else {
+				usedIssueSlugsForRename[normalizeSlug(plannedTitle)] = true
+			}
 			issuePlans = append(issuePlans, IssuePlan{
 				Slug:         manifestIssue.Slug,
-				Action:       "create",
-				PlannedTitle: manifestIssue.Title,
+				Action:       action,
+				PlannedTitle: plannedTitle,
 				Reason:       reason,
 			})
 		}
@@ -2756,11 +3561,12 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 			ProjectPlans:  projectPlans,
 			IssuePlans:    issuePlans,
 		},
-		Manifest:  manifest,
-		Files:     source.files,
-		EnvInputs: manifest.EnvInputs,
-		Warnings:  warnings,
-		Errors:    errors,
+		Collisions: collisions,
+		Manifest:   manifest,
+		Files:      source.files,
+		EnvInputs:  manifest.EnvInputs,
+		Warnings:   warnings,
+		Errors:     errors,
 	}
 
 	return &internalPlan{
@@ -2834,9 +3640,9 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 		}
 
 		newCompany := models.Company{
-			ID:     uuid.New().String(),
-			Name:   companyName,
-			Status: "active",
+			ID:                               uuid.New().String(),
+			Name:                             companyName,
+			Status:                           "active",
 			RequireBoardApprovalForNewAgents: true,
 		}
 		if include.Company && manifest.Company != nil {
@@ -2881,11 +3687,11 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 				Find(&sourceMemberships).Error
 			for _, m := range sourceMemberships {
 				newM := models.CompanyMembership{
-					ID:            uuid.New().String(),
-					CompanyID:     newCompany.ID,
-					PrincipalType: m.PrincipalType,
-					PrincipalID:   m.PrincipalID,
-					Status:        "active",
+					ID:             uuid.New().String(),
+					CompanyID:      newCompany.ID,
+					PrincipalType:  m.PrincipalType,
+					PrincipalID:    m.PrincipalID,
+					Status:         "active",
 					MembershipRole: m.MembershipRole,
 				}
 				_ = s.db.WithContext(ctx).Create(&newM).Error
@@ -3288,12 +4094,12 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 				}
 
 				routine := models.Routine{
-					ID:              uuid.New().String(),
-					CompanyID:       targetCompany.ID,
-					ProjectID:       projectID,
-					Title:           issuePlan.PlannedTitle,
-					AssigneeAgentID: assigneeID,
-					Status:          "active",
+					ID:                uuid.New().String(),
+					CompanyID:         targetCompany.ID,
+					ProjectID:         projectID,
+					Title:             issuePlan.PlannedTitle,
+					AssigneeAgentID:   assigneeID,
+					Status:            "active",
 					ConcurrencyPolicy: "coalesce_if_active",
 					CatchUpPolicy:     "skip_missed",
 					Variables:         datatypes.JSON("[]"),

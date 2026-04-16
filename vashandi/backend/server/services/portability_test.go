@@ -1,7 +1,15 @@
 package services
 
 import (
+	"context"
+	"strings"
 	"testing"
+
+	"gorm.io/datatypes"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
 // ─── TestIsSensitiveEnvKey ────────────────────────────────────────────────────
@@ -215,5 +223,322 @@ func TestDisableImportedTimerHeartbeat(t *testing.T) {
 	origHb := existing["heartbeat"].(map[string]interface{})
 	if origHb["enabled"] != true {
 		t.Error("original config must not be mutated")
+	}
+}
+
+func setupPortabilityServiceTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	statements := []string{
+		`DROP TABLE IF EXISTS companies`,
+		`DROP TABLE IF EXISTS agents`,
+		`DROP TABLE IF EXISTS projects`,
+		`DROP TABLE IF EXISTS issues`,
+		`DROP TABLE IF EXISTS company_skills`,
+		`CREATE TABLE companies (
+			id text PRIMARY KEY,
+			name text NOT NULL,
+			description text,
+			status text NOT NULL DEFAULT 'active',
+			issue_prefix text NOT NULL DEFAULT 'PAP',
+			issue_counter integer NOT NULL DEFAULT 0,
+			budget_monthly_cents integer NOT NULL DEFAULT 0,
+			spent_monthly_cents integer NOT NULL DEFAULT 0,
+			pause_reason text,
+			paused_at datetime,
+			require_board_approval_for_new_agents boolean NOT NULL DEFAULT 1,
+			feedback_data_sharing_enabled boolean NOT NULL DEFAULT 0,
+			feedback_data_sharing_consent_at datetime,
+			feedback_data_sharing_consent_by_user_id text,
+			feedback_data_sharing_terms_version text,
+			brand_color text,
+			created_at datetime,
+			updated_at datetime
+		)`,
+		`CREATE TABLE agents (
+			id text PRIMARY KEY,
+			company_id text NOT NULL,
+			name text NOT NULL,
+			role text NOT NULL DEFAULT 'general',
+			title text,
+			icon text,
+			status text NOT NULL DEFAULT 'idle',
+			reports_to text,
+			capabilities text,
+			adapter_type text NOT NULL DEFAULT 'process',
+			adapter_config text NOT NULL DEFAULT '{}',
+			runtime_config text NOT NULL DEFAULT '{}',
+			budget_monthly_cents integer NOT NULL DEFAULT 0,
+			spent_monthly_cents integer NOT NULL DEFAULT 0,
+			pause_reason text,
+			paused_at datetime,
+			permissions text NOT NULL DEFAULT '{}',
+			last_heartbeat_at datetime,
+			metadata text,
+			created_at datetime,
+			updated_at datetime
+		)`,
+		`CREATE TABLE projects (
+			id text PRIMARY KEY,
+			company_id text NOT NULL,
+			goal_id text,
+			name text NOT NULL,
+			description text,
+			status text NOT NULL DEFAULT 'backlog',
+			lead_agent_id text,
+			target_date datetime,
+			color text,
+			pause_reason text,
+			paused_at datetime,
+			execution_workspace_policy text,
+			archived_at datetime,
+			created_at datetime,
+			updated_at datetime
+		)`,
+		`CREATE TABLE issues (
+			id text PRIMARY KEY,
+			company_id text NOT NULL,
+			project_id text,
+			project_workspace_id text,
+			goal_id text,
+			parent_id text,
+			title text NOT NULL,
+			description text,
+			status text NOT NULL DEFAULT 'backlog',
+			priority text NOT NULL DEFAULT 'medium',
+			assignee_agent_id text,
+			assignee_user_id text,
+			checkout_run_id text,
+			execution_run_id text,
+			execution_agent_name_key text,
+			execution_locked_at datetime,
+			created_by_agent_id text,
+			created_by_user_id text,
+			issue_number integer,
+			identifier text,
+			origin_kind text NOT NULL DEFAULT 'manual',
+			origin_id text,
+			origin_run_id text,
+			request_depth integer NOT NULL DEFAULT 0,
+			billing_code text,
+			assignee_adapter_overrides text,
+			execution_workspace_id text,
+			execution_workspace_preference text,
+			execution_workspace_settings text,
+			started_at datetime,
+			completed_at datetime,
+			cancelled_at datetime,
+			hidden_at datetime,
+			created_at datetime,
+			updated_at datetime
+		)`,
+		`CREATE TABLE company_skills (
+			id text PRIMARY KEY,
+			company_id text NOT NULL,
+			key text NOT NULL,
+			slug text NOT NULL,
+			name text NOT NULL,
+			description text,
+			markdown text NOT NULL,
+			source_type text NOT NULL DEFAULT 'local_path',
+			source_locator text,
+			source_ref text,
+			trust_level text NOT NULL DEFAULT 'markdown_only',
+			compatibility text NOT NULL DEFAULT 'compatible',
+			file_inventory text NOT NULL DEFAULT '[]',
+			metadata text,
+			created_at datetime,
+			updated_at datetime
+		)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("exec %q: %v", statement, err)
+		}
+	}
+	return db
+}
+
+func TestExportBundle_GeneratesReadmeOrgChartAndSkillMetadata(t *testing.T) {
+	db := setupPortabilityServiceTestDB(t)
+	company := models.Company{ID: "company-1", Name: "Acme Labs", Status: "active"}
+	if err := db.Create(&company).Error; err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	if err := db.Create(&models.Agent{
+		ID:            "agent-1",
+		CompanyID:     company.ID,
+		Name:          "Chief Exec",
+		Role:          "ceo",
+		Status:        "idle",
+		AdapterType:   "process",
+		AdapterConfig: datatypes.JSON(`{"skills":["octo/demo/research"]}`),
+		RuntimeConfig: datatypes.JSON(`{}`),
+		Permissions:   datatypes.JSON(`{}`),
+	}).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	description := "Research skill"
+	if err := db.Create(&models.CompanySkill{
+		ID:            "skill-1",
+		CompanyID:     company.ID,
+		Key:           "octo/demo/research",
+		Slug:          "research",
+		Name:          "Research",
+		Description:   &description,
+		Markdown:      "Use trusted sources.",
+		SourceType:    "github",
+		SourceLocator: portStrPtr("https://github.com/octo/demo/tree/main/skills/research"),
+		SourceRef:     portStrPtr("abc123"),
+		Metadata:      datatypes.JSON(`{"sourceKind":"github","owner":"octo","repo":"demo","repoSkillDir":"skills/research","trackingRef":"main"}`),
+	}).Error; err != nil {
+		t.Fatalf("create skill: %v", err)
+	}
+
+	svc := NewPortabilityService(db)
+	result, err := svc.ExportBundle(context.Background(), company.ID, ExportRequest{
+		Include: map[string]bool{
+			"company": true,
+			"agents":  true,
+			"skills":  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("export bundle: %v", err)
+	}
+
+	readme, ok := result.Files["README.md"].(string)
+	if !ok {
+		t.Fatalf("expected README.md text file, got %T", result.Files["README.md"])
+	}
+	if !strings.Contains(readme, "![Org Chart](images/org-chart.svg)") {
+		t.Fatalf("expected README org chart image, got %q", readme)
+	}
+	if !strings.Contains(readme, "| Research | Research skill | [github](https://github.com/octo/demo/tree/main/skills/research) |") {
+		t.Fatalf("expected README skill source link, got %q", readme)
+	}
+
+	orgChart, ok := result.Files["images/org-chart.svg"].(string)
+	if !ok || !strings.Contains(orgChart, "<svg") {
+		t.Fatalf("expected org chart svg export, got %T %q", result.Files["images/org-chart.svg"], orgChart)
+	}
+	if len(result.Manifest.Skills) != 1 {
+		t.Fatalf("expected one skill in manifest, got %d", len(result.Manifest.Skills))
+	}
+	skill := result.Manifest.Skills[0]
+	if skill.SourceType != "github" {
+		t.Fatalf("expected github source type, got %q", skill.SourceType)
+	}
+	if skill.SourceLocator == nil || *skill.SourceLocator != "https://github.com/octo/demo/tree/main/skills/research" {
+		t.Fatalf("unexpected source locator: %#v", skill.SourceLocator)
+	}
+	if len(skill.FileInventory) != 1 || skill.FileInventory[0].Kind != "skill" {
+		t.Fatalf("unexpected skill file inventory: %#v", skill.FileInventory)
+	}
+}
+
+func TestPreviewImport_DetectsDetailedCollisions(t *testing.T) {
+	db := setupPortabilityServiceTestDB(t)
+	company := models.Company{ID: "company-target", Name: "Target", Status: "active"}
+	if err := db.Create(&company).Error; err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	if err := db.Create(&models.Agent{
+		ID:            "existing-agent",
+		CompanyID:     company.ID,
+		Name:          "Alpha Agent",
+		Role:          "ceo",
+		Status:        "idle",
+		AdapterType:   "process",
+		AdapterConfig: datatypes.JSON(`{}`),
+		RuntimeConfig: datatypes.JSON(`{}`),
+		Permissions:   datatypes.JSON(`{}`),
+	}).Error; err != nil {
+		t.Fatalf("create existing agent: %v", err)
+	}
+	if err := db.Create(&models.Project{
+		ID:        "existing-project",
+		CompanyID: company.ID,
+		Name:      "Launch Plan",
+		Status:    "backlog",
+	}).Error; err != nil {
+		t.Fatalf("create existing project: %v", err)
+	}
+	identifier := "TASK-1"
+	if err := db.Create(&models.Issue{
+		ID:         "existing-issue",
+		CompanyID:  company.ID,
+		Title:      "Investigate",
+		Status:     "backlog",
+		Priority:   "medium",
+		OriginKind: "manual",
+		Identifier: &identifier,
+	}).Error; err != nil {
+		t.Fatalf("create existing issue: %v", err)
+	}
+	if err := db.Create(&models.CompanySkill{
+		ID:        "existing-skill",
+		CompanyID: company.ID,
+		Key:       "octo/demo/research",
+		Slug:      "research",
+		Name:      "Research",
+		Markdown:  "Existing skill",
+	}).Error; err != nil {
+		t.Fatalf("create existing skill: %v", err)
+	}
+
+	svc := NewPortabilityService(db)
+	preview, err := svc.PreviewImport(context.Background(), ImportRequest{
+		Source: ImportSource{
+			Type: "inline",
+			Files: map[string]interface{}{
+				"COMPANY.md":                      "---\nname: Imported\n---\n",
+				"agents/alpha-agent/AGENTS.md":    "---\nname: Alpha Agent\n---\nYou are alpha.\n",
+				"projects/launch-plan/PROJECT.md": "---\nname: Launch Plan\n---\n",
+				"tasks/investigate/TASK.md":       "---\nname: Investigate\nidentifier: TASK-1\n---\n",
+				"skills/research/SKILL.md":        "---\nname: Research\nslug: research\nkey: octo/demo/research\ndescription: Research skill\nmetadata:\n  sourceKind: github\n  owner: octo\n  repo: demo\n  repoSkillDir: skills/research\n  sources:\n    - kind: github-dir\n      repo: octo/demo\n      path: skills/research\n      commit: abc123\n      url: https://github.com/octo/demo/tree/main/skills/research\n---\nUse trusted sources.\n",
+			},
+		},
+		Include: map[string]bool{
+			"company":  true,
+			"agents":   true,
+			"projects": true,
+			"issues":   true,
+			"skills":   true,
+		},
+		Target:            ImportTarget{Mode: "existing_company", CompanyID: company.ID},
+		CollisionStrategy: "replace",
+	}, ImportModeBoardFull)
+	if err != nil {
+		t.Fatalf("preview import: %v", err)
+	}
+
+	if len(preview.Collisions) < 4 {
+		t.Fatalf("expected detailed collisions, got %#v", preview.Collisions)
+	}
+	collisionByType := map[string]ImportCollision{}
+	for _, collision := range preview.Collisions {
+		collisionByType[collision.EntityType] = collision
+	}
+	if collisionByType["agent"].PlannedAction != "update" || collisionByType["agent"].RecommendedCollisionStrategy != "replace" {
+		t.Fatalf("unexpected agent collision: %#v", collisionByType["agent"])
+	}
+	if collisionByType["project"].PlannedAction != "update" || collisionByType["project"].RecommendedCollisionStrategy != "replace" {
+		t.Fatalf("unexpected project collision: %#v", collisionByType["project"])
+	}
+	if collisionByType["skill"].PlannedAction != "update" || collisionByType["skill"].RecommendedCollisionStrategy != "replace" {
+		t.Fatalf("unexpected skill collision: %#v", collisionByType["skill"])
+	}
+	if collisionByType["issue"].PlannedAction != "create" || collisionByType["issue"].RecommendedCollisionStrategy != "rename" {
+		t.Fatalf("unexpected issue collision: %#v", collisionByType["issue"])
+	}
+	if len(preview.Plan.IssuePlans) != 1 || preview.Plan.IssuePlans[0].PlannedTitle == "Investigate" {
+		t.Fatalf("expected renamed issue title in plan, got %#v", preview.Plan.IssuePlans)
+	}
+	if len(preview.Errors) != 0 {
+		t.Fatalf("expected no preview errors, got %#v", preview.Errors)
 	}
 }
