@@ -6,14 +6,21 @@ import (
 	"log/slog"
 )
 
+// PluginJobSchedulerIface is satisfied by *PluginJobScheduler and allows
+// alternative implementations (e.g., mocks in tests).
+type PluginJobSchedulerIface interface {
+	RegisterPlugin(ctx context.Context, pluginID string) error
+	UnregisterPlugin(ctx context.Context, pluginID string) error
+}
+
 type PluginJobCoordinator struct {
 	Store     *PluginJobStore
-	Scheduler *PluginJobScheduler
+	Scheduler PluginJobSchedulerIface
 	Registry  *PluginRegistryService
 	Lifecycle *PluginLifecycleService
 }
 
-func NewPluginJobCoordinator(store *PluginJobStore, scheduler *PluginJobScheduler, registry *PluginRegistryService, lifecycle *PluginLifecycleService) *PluginJobCoordinator {
+func NewPluginJobCoordinator(store *PluginJobStore, scheduler PluginJobSchedulerIface, registry *PluginRegistryService, lifecycle *PluginLifecycleService) *PluginJobCoordinator {
 	return &PluginJobCoordinator{
 		Store:     store,
 		Scheduler: scheduler,

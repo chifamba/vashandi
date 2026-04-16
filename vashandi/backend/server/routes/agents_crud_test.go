@@ -202,7 +202,7 @@ func TestCreateAgentHandler_SetsCompanyID(t *testing.T) {
 	db := setupAgentsCRUDTestDB(t)
 
 	router := chi.NewRouter()
-	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil))
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil, nil))
 
 	body, _ := json.Marshal(map[string]string{
 		"name": "New Agent",
@@ -228,7 +228,7 @@ func TestCreateAgentHandler_DefaultsPermissions(t *testing.T) {
 	db := setupAgentsCRUDTestDB(t)
 
 	router := chi.NewRouter()
-	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil))
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil, nil))
 
 	body, _ := json.Marshal(map[string]string{"name": "Perm Agent"})
 	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/agents", bytes.NewBuffer(body))
@@ -252,7 +252,7 @@ func TestCreateAgentHandler_BadBody(t *testing.T) {
 	db := setupAgentsCRUDTestDB(t)
 
 	router := chi.NewRouter()
-	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil))
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil, nil))
 
 	req := httptest.NewRequest(http.MethodPost, "/companies/comp-1/agents", bytes.NewBufferString("notjson"))
 	req.Header.Set("Content-Type", "application/json")
@@ -269,7 +269,7 @@ func TestCreateAgentHandler_RejectsCrossCompanyReportsTo(t *testing.T) {
 	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('parent-2', 'comp-2', 'Parent', 'general', 'process', '{}', '{}', '{}')")
 
 	router := chi.NewRouter()
-	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil))
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil, nil))
 
 	body, _ := json.Marshal(map[string]string{
 		"name":        "Child",
@@ -290,7 +290,7 @@ func TestCreateAgentHandler_RejectsSecondCEO(t *testing.T) {
 	db.Exec("INSERT INTO agents (id, company_id, name, role, adapter_type, adapter_config, runtime_config, permissions) VALUES ('ceo-1', 'comp-1', 'CEO One', 'ceo', 'process', '{}', '{}', '{}')")
 
 	router := chi.NewRouter()
-	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil))
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, nil, nil))
 
 	body, _ := json.Marshal(map[string]string{
 		"name": "CEO Two",

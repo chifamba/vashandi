@@ -18,3 +18,6 @@ func applySandboxConstraints(cmd *exec.Cmd, cfg *PluginSandboxConfig) {
 	// catching signals intended for the host or vice versa.
 	cmd.SysProcAttr.Setpgid = true
 }
+
+// applyPrlimitAfterStart is a no-op on Darwin.
+func applyPrlimitAfterStart(_ *exec.Cmd, _ int) {}

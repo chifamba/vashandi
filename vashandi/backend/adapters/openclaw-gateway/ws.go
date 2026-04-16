@@ -278,7 +278,7 @@ func (c *GatewayWsClient) handleMessage(raw []byte) {
 				}
 			}
 
-			req.Reject(fmt.Errorf(msg))
+			req.Reject(fmt.Errorf("%s", msg))
 		}
 	}
 }

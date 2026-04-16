@@ -22,6 +22,7 @@ type GeneralSettings struct {
 	KeyboardShortcuts             bool            `json:"keyboardShortcuts"`
 	FeedbackDataSharingPreference string          `json:"feedbackDataSharingPreference"`
 	BackupRetention               BackupRetention `json:"backupRetention"`
+	Storage                       map[string]any  `json:"storage,omitempty"`
 }
 
 type ExperimentalSettings struct {

@@ -5,9 +5,25 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
+func setupSessionTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&session_test=1"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	db.Exec("DROP TABLE IF EXISTS users")
+	db.Exec(`CREATE TABLE users (id text PRIMARY KEY, email text, name text)`)
+	return db
+}
+
 func TestGetSessionHandler(t *testing.T) {
+	db := setupSessionTestDB(t)
+
 	tests := []struct {
 		name           string
 		actor          ActorInfo
@@ -49,7 +65,7 @@ func TestGetSessionHandler(t *testing.T) {
 			req = req.WithContext(WithActor(req.Context(), tt.actor))
 			rr := httptest.NewRecorder()
 
-			GetSessionHandler()(rr, req)
+			GetSessionHandler(db)(rr, req)
 
 			if rr.Code != tt.wantStatus {
 				t.Fatalf("want status %d, got %d", tt.wantStatus, rr.Code)

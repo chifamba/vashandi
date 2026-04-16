@@ -84,6 +84,12 @@ func newAdapterPluginStoreAt(baseDir string) *AdapterPluginStore {
 	}
 }
 
+// NewAdapterPluginStoreForTest creates a store rooted at baseDir. Intended for
+// use in tests across packages (e.g., routes) that need a pre-populated store.
+func NewAdapterPluginStoreForTest(baseDir string) *AdapterPluginStore {
+	return newAdapterPluginStoreAt(baseDir)
+}
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 // ensureDirs creates ~/.paperclip/adapter-plugins/ and its package.json

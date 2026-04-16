@@ -75,6 +75,11 @@ type RouterOptions struct {
 
 	// InstanceSettings manages instance-wide configuration.
 	InstanceSettings *services.InstanceSettingsService
+
+	// AdapterPluginStore is the on-disk registry of user-installed external
+	// adapter packages (~/.paperclip/adapter-plugins.json). When non-nil,
+	// ListAdaptersHandler will include these entries alongside the built-ins.
+	AdapterPluginStore *services.AdapterPluginStore
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
@@ -393,7 +398,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Post("/admin/users/{userId}/demote-instance-admin", routes.DemoteInstanceAdminHandler(db))
 
 		// Adapter Routes
-		api.Get("/adapters", routes.ListAdaptersHandler(db))
+		api.Get("/adapters", routes.ListAdaptersHandler(db, opts.AdapterPluginStore))
 		api.Post("/adapters/install", routes.InstallAdapterHandler(db))
 		api.Post("/adapters/{adapterType}/pause", routes.PauseAdapterHandler())
 		api.Post("/adapters/{type}/reload", routes.ReloadAdapterHandler(db))

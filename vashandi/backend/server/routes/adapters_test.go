@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -50,7 +51,7 @@ func TestListAdaptersHandler_BuiltinAdapters(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/adapters", nil)
 	w := httptest.NewRecorder()
 
-	ListAdaptersHandler(db)(w, req)
+	ListAdaptersHandler(db, nil)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -77,7 +78,7 @@ func TestListAdaptersHandler_IncludesPluginAdapters(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/adapters", nil)
 	w := httptest.NewRecorder()
 
-	ListAdaptersHandler(db)(w, req)
+	ListAdaptersHandler(db, nil)(w, req)
 
 	var resp map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&resp)
@@ -97,11 +98,79 @@ func TestListAdaptersHandler_ContentType(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/adapters", nil)
 	w := httptest.NewRecorder()
 
-	ListAdaptersHandler(db)(w, req)
+	ListAdaptersHandler(db, nil)(w, req)
 
 	ct := w.Header().Get("Content-Type")
 	if ct != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
+}
+
+func TestListAdaptersHandler_IncludesStoreAdapters(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+
+	// Set up an on-disk adapter plugin store in a temp directory.
+	tmpDir := t.TempDir()
+	storeJSON := `[{"packageName":"ext-pkg","type":"ext-type","installedAt":"2024-01-01T00:00:00Z"}]`
+	if err := os.WriteFile(filepath.Join(tmpDir, "adapter-plugins.json"), []byte(storeJSON), 0o644); err != nil {
+		t.Fatalf("write store: %v", err)
+	}
+	store := services.NewAdapterPluginStoreForTest(tmpDir)
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters", nil)
+	w := httptest.NewRecorder()
+
+	ListAdaptersHandler(db, store)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	plugins, ok := resp["plugins"].([]interface{})
+	if !ok {
+		t.Fatal("expected 'plugins' array")
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 store adapter, got %d", len(plugins))
+	}
+	entry, ok := plugins[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected plugin entry to be an object")
+	}
+	if entry["type"] != "ext-type" {
+		t.Errorf("expected type 'ext-type', got %v", entry["type"])
+	}
+	if entry["name"] != "ext-pkg" {
+		t.Errorf("expected name 'ext-pkg', got %v", entry["name"])
+	}
+}
+
+func TestListAdaptersHandler_DisabledStoreAdaptersOmitted(t *testing.T) {
+	db := setupAdaptersTestDB(t)
+
+	tmpDir := t.TempDir()
+	storeJSON := `[{"packageName":"ext-pkg","type":"ext-type","installedAt":"2024-01-01T00:00:00Z","disabled":true}]`
+	if err := os.WriteFile(filepath.Join(tmpDir, "adapter-plugins.json"), []byte(storeJSON), 0o644); err != nil {
+		t.Fatalf("write store: %v", err)
+	}
+	store := services.NewAdapterPluginStoreForTest(tmpDir)
+
+	req := httptest.NewRequest(http.MethodGet, "/adapters", nil)
+	w := httptest.NewRecorder()
+
+	ListAdaptersHandler(db, store)(w, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	plugins, _ := resp["plugins"].([]interface{})
+	if len(plugins) != 0 {
+		t.Errorf("expected disabled store adapter to be omitted, got %d", len(plugins))
 	}
 }
 

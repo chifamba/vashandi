@@ -3,49 +3,71 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
 
-func ListAdaptersHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-builtin := []map[string]string{
-{"type": "claude", "name": "Claude (Anthropic)"},
-{"type": "claude_local", "name": "Claude (local CLI)"},
-{"type": "codex", "name": "Codex (OpenAI)"},
-{"type": "codex_local", "name": "Codex (local CLI)"},
-{"type": "gemini", "name": "Gemini (Google)"},
-{"type": "cursor", "name": "Cursor"},
-{"type": "cursor_local", "name": "Cursor (local CLI)"},
-{"type": "windsurf", "name": "Windsurf"},
-{"type": "aider", "name": "Aider"},
-{"type": "opencode_local", "name": "OpenCode (local)"},
-{"type": "pi_local", "name": "PI (local CLI)"},
-{"type": "openclaw_gateway", "name": "OpenClaw Gateway"},
-}
+// ListAdaptersHandler returns all available adapters: built-in types, DB-backed
+// plugin adapters, and user-installed external adapters from the AdapterPluginStore.
+// store may be nil, in which case external adapters are silently omitted.
+func ListAdaptersHandler(db *gorm.DB, store *services.AdapterPluginStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		builtin := []map[string]string{
+			{"type": "claude", "name": "Claude (Anthropic)"},
+			{"type": "claude_local", "name": "Claude (local CLI)"},
+			{"type": "codex", "name": "Codex (OpenAI)"},
+			{"type": "codex_local", "name": "Codex (local CLI)"},
+			{"type": "gemini", "name": "Gemini (Google)"},
+			{"type": "cursor", "name": "Cursor"},
+			{"type": "cursor_local", "name": "Cursor (local CLI)"},
+			{"type": "windsurf", "name": "Windsurf"},
+			{"type": "aider", "name": "Aider"},
+			{"type": "opencode_local", "name": "OpenCode (local)"},
+			{"type": "pi_local", "name": "PI (local CLI)"},
+			{"type": "openclaw_gateway", "name": "OpenClaw Gateway"},
+		}
 
-var plugins []models.Plugin
-db.WithContext(r.Context()).Where("status = ?", "installed").Find(&plugins)
-pluginAdapters := make([]map[string]string, 0, len(plugins))
-for _, p := range plugins {
-pluginAdapters = append(pluginAdapters, map[string]string{
-"type": "plugin:" + p.PluginKey,
-"name": p.PackageName,
-})
-}
+		var plugins []models.Plugin
+		db.WithContext(r.Context()).Where("status = ?", "installed").Find(&plugins)
+		pluginAdapters := make([]map[string]string, 0, len(plugins))
+		for _, p := range plugins {
+			pluginAdapters = append(pluginAdapters, map[string]string{
+				"type": "plugin:" + p.PluginKey,
+				"name": p.PackageName,
+			})
+		}
 
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]interface{}{
-"builtin": builtin,
-"plugins": pluginAdapters,
-})
-}
+		// Append user-installed external adapters from the on-disk registry.
+		if store != nil {
+			entries, err := store.List()
+			if err != nil {
+				slog.Warn("adapter plugin store: List failed", "error", err)
+			} else {
+				for _, e := range entries {
+					if !e.Disabled {
+						pluginAdapters = append(pluginAdapters, map[string]string{
+							"type": e.Type,
+							"name": e.PackageName,
+						})
+					}
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+			"builtin": builtin,
+			"plugins": pluginAdapters,
+		})
+	}
 }
 
 func PauseAdapterHandler() http.HandlerFunc {
