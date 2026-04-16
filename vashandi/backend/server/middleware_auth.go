@@ -16,6 +16,9 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/server/routes"
 )
 
+// runIDHeader is the header name for request correlation.
+const runIDHeader = "x-paperclip-run-id"
+
 // AuthMiddlewareOptions configures ActorMiddleware behaviour.
 type AuthMiddlewareOptions struct {
 	// DeploymentMode is either "local_trusted" or "authenticated".
@@ -38,7 +41,11 @@ type AuthMiddlewareOptions struct {
 // Token prefixes (bearer):
 //   - pcp_board_  → look up in board_api_keys, set board actor (with IsInstanceAdmin)
 //   - pcp_agent_  → look up in agent_api_keys, set agent actor
+//   - JWT tokens  → verify signature, validate agent, set agent actor
 //   - anything else → anonymous actor
+//
+// Headers:
+//   - x-paperclip-run-id → extracted and stored in ActorInfo.RunID for request correlation
 func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler) http.Handler {
 	mode := opts.DeploymentMode
 	if mode == "" {
@@ -47,6 +54,9 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract x-paperclip-run-id header for request correlation
+			runID := r.Header.Get(runIDHeader)
+
 			// local_trusted: treat every request as the board user with full admin rights.
 			if mode == "local_trusted" {
 				actor := routes.ActorInfo{
@@ -55,6 +65,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 					IsInstanceAdmin: true,
 					ActorType:       "board",
 					ActorSource:     "local_implicit",
+					RunID:           runID,
 				}
 				ctx := context.WithValue(r.Context(), routes.ActorKey, actor)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -62,7 +73,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 			}
 
 			// authenticated mode: start anonymous and try to resolve an identity.
-			actor := routes.ActorInfo{ActorType: "anonymous"}
+			actor := routes.ActorInfo{ActorType: "anonymous", RunID: runID}
 
 			authHeader := r.Header.Get("Authorization")
 			if !strings.HasPrefix(authHeader, "Bearer ") {
@@ -70,6 +81,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 				if db != nil {
 					if sessionActor, ok := resolveSessionCookieActor(r, db, opts.BetterAuthSecret); ok {
 						actor = sessionActor
+						actor.RunID = runID
 					}
 				}
 				ctx := context.WithValue(r.Context(), routes.ActorKey, actor)
@@ -97,6 +109,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 						IsInstanceAdmin: isAdmin,
 						ActorType:       "board",
 						ActorSource:     "board_key",
+						RunID:           runID,
 					}
 				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 					log.Printf("auth: board key lookup error: %v", err)
@@ -105,15 +118,30 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 				var key models.AgentAPIKey
 				err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error
 				if err == nil {
-					actor = routes.ActorInfo{
-						AgentID:     key.AgentID,
-						CompanyID:   key.CompanyID,
-						IsAgent:     true,
-						ActorType:   "agent",
-						ActorSource: "agent_key",
+					// Validate that the agent exists and is not terminated or pending_approval
+					if agentValid := validateAgentStatus(db, key.AgentID); agentValid {
+						now := time.Now()
+						if updateErr := db.Model(&key).Update("last_used_at", now).Error; updateErr != nil {
+							log.Printf("auth: agent key touch error: %v", updateErr)
+						}
+						actor = routes.ActorInfo{
+							AgentID:     key.AgentID,
+							CompanyID:   key.CompanyID,
+							IsAgent:     true,
+							ActorType:   "agent",
+							ActorSource: "agent_key",
+							RunID:       runID,
+						}
 					}
 				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 					log.Printf("auth: agent key lookup error: %v", err)
+				}
+			default:
+				// Try JWT verification for agent tokens
+				if db != nil {
+					if jwtActor, ok := tryJwtAgentAuth(r.Context(), db, token, runID); ok {
+						actor = jwtActor
+					}
 				}
 			}
 
@@ -121,6 +149,61 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// tryJwtAgentAuth attempts to verify a JWT token and resolve an agent actor.
+// Returns the actor and true if successful, or an empty actor and false otherwise.
+func tryJwtAgentAuth(ctx context.Context, db *gorm.DB, token, headerRunID string) (routes.ActorInfo, bool) {
+	claims := VerifyLocalAgentJwt(token)
+	if claims == nil {
+		return routes.ActorInfo{}, false
+	}
+
+	// Look up the agent to validate it exists and belongs to the claimed company
+	var agent models.Agent
+	err := db.WithContext(ctx).Where("id = ?", claims.Sub).First(&agent).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("auth: agent lookup error for JWT: %v", err)
+		}
+		return routes.ActorInfo{}, false
+	}
+
+	// Verify the agent belongs to the claimed company
+	if agent.CompanyID != claims.CompanyID {
+		return routes.ActorInfo{}, false
+	}
+
+	// Check agent status - reject terminated or pending_approval agents
+	if agent.Status == "terminated" || agent.Status == "pending_approval" {
+		return routes.ActorInfo{}, false
+	}
+
+	// Determine the run ID - prefer header over JWT claim
+	runID := headerRunID
+	if runID == "" {
+		runID = claims.RunID
+	}
+
+	return routes.ActorInfo{
+		AgentID:     claims.Sub,
+		CompanyID:   claims.CompanyID,
+		IsAgent:     true,
+		ActorType:   "agent",
+		ActorSource: "agent_jwt",
+		RunID:       runID,
+	}, true
+}
+
+// validateAgentStatus checks if an agent exists and is in a valid status.
+func validateAgentStatus(db *gorm.DB, agentID string) bool {
+	var agent models.Agent
+	err := db.Where("id = ?", agentID).First(&agent).Error
+	if err != nil {
+		return false
+	}
+	// Reject terminated or pending_approval agents
+	return agent.Status != "terminated" && agent.Status != "pending_approval"
 }
 
 // resolveSessionCookieActor reads the BetterAuth session cookie from the

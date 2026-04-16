@@ -149,3 +149,55 @@ func TestActorMiddleware(t *testing.T) {
 	}
 }
 
+func TestActorMiddleware_RunIDHeader(t *testing.T) {
+	tests := []struct {
+		name           string
+		deploymentMode string
+		runIDHeader    string
+		expectedRunID  string
+	}{
+		{
+			name:           "local_trusted: extracts x-paperclip-run-id header",
+			deploymentMode: "local_trusted",
+			runIDHeader:    "run-12345",
+			expectedRunID:  "run-12345",
+		},
+		{
+			name:           "local_trusted: empty header results in empty RunID",
+			deploymentMode: "local_trusted",
+			runIDHeader:    "",
+			expectedRunID:  "",
+		},
+		{
+			name:           "authenticated: extracts x-paperclip-run-id header",
+			deploymentMode: "authenticated",
+			runIDHeader:    "run-67890",
+			expectedRunID:  "run-67890",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			if tt.runIDHeader != "" {
+				req.Header.Set("x-paperclip-run-id", tt.runIDHeader)
+			}
+
+			rr := httptest.NewRecorder()
+
+			handler := ActorMiddleware(nil, AuthMiddlewareOptions{DeploymentMode: tt.deploymentMode})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				actor, ok := r.Context().Value(routes.ActorKey).(routes.ActorInfo)
+				if !ok {
+					t.Fatal("Expected routes.ActorInfo in context")
+				}
+
+				if actor.RunID != tt.expectedRunID {
+					t.Errorf("Expected RunID %q, got %q", tt.expectedRunID, actor.RunID)
+				}
+			}))
+
+			handler.ServeHTTP(rr, req)
+		})
+	}
+}
+
