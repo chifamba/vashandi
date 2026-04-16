@@ -69,7 +69,7 @@ func (s *HeartbeatService) GetInvocationBlock(ctx context.Context, companyID, ag
 		if record == nil || record.CompanyID != companyID {
 			continue
 		}
-		if isBudgetPaused(scope.ScopeType, record) {
+		if isBudgetPaused(record) {
 			return &BudgetBlock{
 				ScopeType: scope.ScopeType,
 				ScopeID:   scope.ScopeID,
@@ -224,9 +224,9 @@ func (s *HeartbeatService) listBudgetScopedRuns(ctx context.Context, scope Budge
 		}
 		filtered := make([]models.HeartbeatRun, 0, len(runs))
 		for _, run := range runs {
-			projectID, resolveErr := resolveProjectIDForBudgetScope(ctx, s.DB, scope.CompanyID, readNonEmptyString(parseJSONObject(run.ContextSnapshot)["issueId"]))
-			if resolveErr != nil {
-				return nil, resolveErr
+			projectID, err := resolveProjectIDForBudgetScope(ctx, s.DB, scope.CompanyID, readNonEmptyString(parseJSONObject(run.ContextSnapshot)["issueId"]))
+			if err != nil {
+				return nil, err
 			}
 			if direct := readNonEmptyString(parseJSONObject(run.ContextSnapshot)["projectId"]); direct != "" {
 				projectID = direct
@@ -508,7 +508,7 @@ func loadBudgetScopeRecord(ctx context.Context, db *gorm.DB, scope BudgetScope) 
 	}
 }
 
-func isBudgetPaused(_ string, record *budgetScopeRecord) bool {
+func isBudgetPaused(record *budgetScopeRecord) bool {
 	if record == nil || record.PauseReason != "budget" {
 		return false
 	}

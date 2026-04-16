@@ -83,9 +83,7 @@ func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *Activity
 		budgetRunCancels: make(map[string]context.CancelFunc),
 	}
 	svc.BudgetEnforcementHook = svc.CancelBudgetScopeWork
-	if svc.Costs != nil {
-		svc.Costs.BudgetEnforcementHook = svc.BudgetEnforcementHook
-	}
+	svc.SyncBudgetEnforcementHook()
 	return svc
 }
 
@@ -529,6 +527,13 @@ func (s *HeartbeatService) publishRunStatus(run *models.HeartbeatRun) {
 		return
 	}
 	s.Notify(run.CompanyID, payload)
+}
+
+func (s *HeartbeatService) SyncBudgetEnforcementHook() {
+	if s == nil || s.Costs == nil {
+		return
+	}
+	s.Costs.BudgetEnforcementHook = s.BudgetEnforcementHook
 }
 
 // resumeNextRun picks up the next queued run for the agent and starts it.
