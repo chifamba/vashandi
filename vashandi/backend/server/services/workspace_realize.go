@@ -11,6 +11,8 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 )
 
+const maxWorkspaceBranchNameLength = 120
+
 type RealizeExecutionWorkspaceInput struct {
 	BaseCwd            string
 	ProjectID          string
@@ -179,8 +181,8 @@ func sanitizeBranchName(value string) string {
 		result = strings.ReplaceAll(result, "--", "-")
 	}
 	result = strings.Trim(result, "-/.")
-	if len(result) > 120 {
-		result = result[:120]
+	if len(result) > maxWorkspaceBranchNameLength {
+		result = result[:maxWorkspaceBranchNameLength]
 	}
 	if result == "" {
 		return "paperclip-work"

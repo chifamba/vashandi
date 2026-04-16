@@ -31,7 +31,7 @@ func CleanupExecutionWorkspaceArtifacts(ctx context.Context, input CleanupExecut
 	workspacePath := firstNonEmpty(derefString(input.Workspace.ProviderRef), derefString(input.Workspace.Cwd))
 	repoRoot := ""
 	if input.Workspace.ProviderType == "git_worktree" && workspacePath != "" {
-		repoRoot = resolveGitRepoRootForWorkspaceCleanup(ctx, workspacePath, derefString(input.projectWorkspaceCwd()))
+		repoRoot = resolveGitRepoRootForWorkspaceCleanup(ctx, workspacePath, derefString(input.projectWorkspacePath()))
 	}
 
 	cleanupEnv := buildCleanupWorkspaceEnv(input.Workspace, input.ProjectWorkspace)
@@ -47,7 +47,7 @@ func CleanupExecutionWorkspaceArtifacts(ctx context.Context, input CleanupExecut
 		if repoRoot != "" {
 			resolved = resolveRepoManagedWorkspaceCommand(command, repoRoot)
 		}
-		if err := recordShellCommand(ctx, input.Recorder, "workspace_teardown", firstNonEmpty(workspacePath, derefString(input.projectWorkspaceCwd()), "."), command, resolved, cleanupEnv); err != nil {
+		if err := recordShellCommand(ctx, input.Recorder, "workspace_teardown", firstNonEmpty(workspacePath, derefString(input.projectWorkspacePath()), "."), command, resolved, cleanupEnv); err != nil {
 			warnings = append(warnings, err.Error())
 		}
 	}
@@ -76,8 +76,8 @@ func buildCleanupWorkspaceEnv(workspace *models.ExecutionWorkspace, projectWorks
 	envMap["PAPERCLIP_WORKSPACE_PATH"] = derefString(workspace.Cwd)
 	envMap["PAPERCLIP_WORKSPACE_WORKTREE_PATH"] = firstNonEmpty(derefString(workspace.ProviderRef), derefString(workspace.Cwd))
 	envMap["PAPERCLIP_WORKSPACE_BRANCH"] = derefString(workspace.BranchName)
-	envMap["PAPERCLIP_WORKSPACE_BASE_CWD"] = derefString(projectWorkspaceCwd(projectWorkspace))
-	envMap["PAPERCLIP_WORKSPACE_REPO_ROOT"] = derefString(projectWorkspaceCwd(projectWorkspace))
+	envMap["PAPERCLIP_WORKSPACE_BASE_CWD"] = derefString(extractProjectWorkspaceCwd(projectWorkspace))
+	envMap["PAPERCLIP_WORKSPACE_REPO_ROOT"] = derefString(extractProjectWorkspaceCwd(projectWorkspace))
 	envMap["PAPERCLIP_WORKSPACE_REPO_URL"] = derefString(workspace.RepoURL)
 	envMap["PAPERCLIP_WORKSPACE_REPO_REF"] = derefString(workspace.BaseRef)
 	envMap["PAPERCLIP_PROJECT_ID"] = workspace.ProjectID
@@ -103,7 +103,7 @@ func resolveGitRepoRootForWorkspaceCleanup(ctx context.Context, worktreePath str
 	return ""
 }
 
-func (input CleanupExecutionWorkspaceInput) projectWorkspaceCwd() *string {
+func (input CleanupExecutionWorkspaceInput) projectWorkspacePath() *string {
 	if input.ProjectWorkspace == nil {
 		return nil
 	}
@@ -117,7 +117,7 @@ func (input CleanupExecutionWorkspaceInput) projectWorkspaceCleanupCommand() *st
 	return input.ProjectWorkspace.CleanupCommand
 }
 
-func projectWorkspaceCwd(projectWorkspace *models.ProjectWorkspace) *string {
+func extractProjectWorkspaceCwd(projectWorkspace *models.ProjectWorkspace) *string {
 	if projectWorkspace == nil {
 		return nil
 	}

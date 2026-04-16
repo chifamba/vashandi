@@ -92,7 +92,7 @@ func ReconcileOnStartup(ctx context.Context, db *gorm.DB, manager *WorkspaceRunt
 			providerRef = &ref
 		}
 		if adopted.PID > 0 {
-			pid := stringOrNilInt(adopted.PID)
+			pid := intToStringPtr(adopted.PID)
 			providerRef = pid
 		}
 
@@ -263,7 +263,7 @@ func firstStringPtr(values ...*string) *string {
 	return nil
 }
 
-func stringOrNilInt(value int) *string {
+func intToStringPtr(value int) *string {
 	if value <= 0 {
 		return nil
 	}
