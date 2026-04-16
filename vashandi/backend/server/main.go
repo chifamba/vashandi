@@ -22,6 +22,7 @@ type App struct {
 	Router               *chi.Mux
 	DB                   *gorm.DB
 	Heartbeat            *services.HeartbeatService
+	RuntimeManager       *services.WorkspaceRuntimeManager
 	Scheduler            *services.RoutineSchedulerService
 	LiveEvents           *realtime.Hub
 	PluginWorkerManager  *services.PluginWorkerManager
@@ -39,6 +40,7 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	goalSvc := services.NewGoalService(db)
 	workspaceSvc := services.NewWorkspaceService(db)
 	costSvc := services.NewCostService(db)
+	runtimeMgr := services.NewWorkspaceRuntimeManager(db)
 	registrySvc := services.NewPluginRegistryService(db)
 	stateSvc := services.NewPluginStateStore(db)
 	instanceSettingsSvc := services.NewInstanceSettingsService(db)
@@ -130,12 +132,20 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 		routerOpts.DatabaseBackup.Enabled,
 	)
 
+	routerOpts.RuntimeManager = runtimeMgr
 	r := SetupRouter(db, activitySvc, secretsSvc, heartbeatSvc, routerOpts)
+	if _, err := services.ReconcileOnStartup(context.Background(), db, runtimeMgr); err != nil {
+		slog.Warn("workspace runtime startup reconciliation failed", "error", err)
+	}
+	if _, err := services.RehydratePersistentServices(context.Background(), db, runtimeMgr); err != nil {
+		slog.Warn("workspace runtime service rehydration failed", "error", err)
+	}
 
 	return &App{
 		Router:               r,
 		DB:                   db,
 		Heartbeat:            heartbeatSvc,
+		RuntimeManager:       runtimeMgr,
 		Scheduler:            schedulerSvc,
 		LiveEvents:           hub,
 		PluginWorkerManager:  pluginWorkerManager,

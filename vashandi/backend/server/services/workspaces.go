@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
 	"gorm.io/gorm"
 )
@@ -20,9 +21,16 @@ const (
 )
 
 type RealizeOptions struct {
-	Strategy   WorkspaceStrategy
-	BranchName string
-	RunID      string
+	Strategy                   WorkspaceStrategy
+	BranchName                 string
+	RunID                      string
+	RepoRef                    string
+	BaseCwd                    string
+	ProjectWorkspaceID         string
+	Issue                      *models.Issue
+	Agent                      *models.Agent
+	ExecutionWorkspaceStrategy *ExecutionWorkspaceStrategy
+	Recorder                   *WorkspaceOperationRecorder
 }
 
 type WorkspaceService struct {
@@ -33,12 +41,14 @@ func NewWorkspaceService(db *gorm.DB) *WorkspaceService {
 	return &WorkspaceService{DB: db}
 }
 
-
 // RealizeWorkspace prepares the directory for an agent run.
 func (s *WorkspaceService) RealizeWorkspace(ctx context.Context, companyID, projectID, repoURL string, opts RealizeOptions) (string, error) {
 	// 1. Resolve Primary Path
 	repoName := deriveRepoNameFromURL(repoURL)
 	primaryCwd := shared.ResolveManagedProjectWorkspaceDir(companyID, projectID, repoName)
+	if strings.TrimSpace(opts.BaseCwd) != "" {
+		primaryCwd = opts.BaseCwd
+	}
 
 	// 2. Ensure parent dir
 	if err := os.MkdirAll(filepath.Dir(primaryCwd), 0755); err != nil {
@@ -70,34 +80,33 @@ func (s *WorkspaceService) RealizeWorkspace(ctx context.Context, companyID, proj
 
 	// 6. Git Worktree Logic
 	if opts.Strategy == StrategyWorktree {
-		worktreeDir := fmt.Sprintf("%s-worktree-%s", primaryCwd, opts.RunID)
-		if opts.RunID == "" {
-			worktreeDir = fmt.Sprintf("%s-worktree-temp", primaryCwd)
-		}
-
-		// Ensure worktree doesn't already exist from a stale run
-		os.RemoveAll(worktreeDir)
-
-		branch := opts.BranchName
-		if branch == "" {
-			branch = "main" // Default to main if not specified
-		}
-
-		// git worktree add <path> <branch>
-		// Note: This assumes the branch exists or creates a new one if needed?
-		// Usually we want to create a unique branch for the work or just checkout an existing one.
-		cmd := exec.CommandContext(ctx, "git", "worktree", "add", worktreeDir, branch)
-		cmd.Dir = primaryCwd
-		if _, err := cmd.CombinedOutput(); err != nil {
-			// If it fails, maybe the branch doesn't exist? Try -b
-			cmdRetry := exec.CommandContext(ctx, "git", "worktree", "add", "-b", fmt.Sprintf("run-%s", opts.RunID), worktreeDir)
-			cmdRetry.Dir = primaryCwd
-			if output2, err2 := cmdRetry.CombinedOutput(); err2 != nil {
-				return "", fmt.Errorf("git worktree add failed: %w (output: %s)", err2, string(output2))
+		strategy := opts.ExecutionWorkspaceStrategy
+		if strategy == nil {
+			branchTemplate := "{{issue.identifier}}-{{slug}}"
+			if strings.TrimSpace(opts.RunID) != "" {
+				branchTemplate = "run-" + opts.RunID
+			}
+			strategy = &ExecutionWorkspaceStrategy{
+				Type:           "git_worktree",
+				BaseRef:        firstNonEmpty(opts.BranchName, opts.RepoRef),
+				BranchTemplate: branchTemplate,
 			}
 		}
-
-		return worktreeDir, nil
+		realized, err := RealizeExecutionWorkspace(ctx, RealizeExecutionWorkspaceInput{
+			BaseCwd:            primaryCwd,
+			ProjectID:          projectID,
+			ProjectWorkspaceID: opts.ProjectWorkspaceID,
+			RepoURL:            repoURL,
+			RepoRef:            opts.RepoRef,
+			Strategy:           strategy,
+			Issue:              opts.Issue,
+			Agent:              opts.Agent,
+			Recorder:           opts.Recorder,
+		})
+		if err != nil {
+			return "", err
+		}
+		return realized.Cwd, nil
 	}
 
 	return primaryCwd, nil

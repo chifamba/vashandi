@@ -80,6 +80,9 @@ type RouterOptions struct {
 	// adapter packages (~/.paperclip/adapter-plugins.json). When non-nil,
 	// ListAdaptersHandler will include these entries alongside the built-ins.
 	AdapterPluginStore *services.AdapterPluginStore
+
+	// RuntimeManager manages workspace runtime services and startup rehydration.
+	RuntimeManager *services.WorkspaceRuntimeManager
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
@@ -95,7 +98,10 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
 	costSvc := services.NewCostService(db)
-	runtimeMgr := services.NewWorkspaceRuntimeManager(db)
+	runtimeMgr := opts.RuntimeManager
+	if runtimeMgr == nil {
+		runtimeMgr = services.NewWorkspaceRuntimeManager(db)
+	}
 
 	// A good base middleware stack
 	r.Use(middleware.RequestID)
