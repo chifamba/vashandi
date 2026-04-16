@@ -51,35 +51,35 @@ func NewPluginEventBus() *PluginEventBus {
 
 // Publish emits an event to all matching subscribers across all plugins.
 func (b *PluginEventBus) Publish(ctx context.Context, event PluginEvent) {
-	type delivery struct {
+	type eventDelivery struct {
 		pluginID string
 		sub      subscription
 	}
 
 	b.mu.RLock()
-	deliveries := make([]delivery, 0)
+	deliveries := make([]eventDelivery, 0)
 	for pluginID, subs := range b.registry {
 		for _, sub := range subs {
 			if matchesPattern(event.EventType, sub.pattern) && passesFilter(event, sub.filter) {
-				deliveries = append(deliveries, delivery{pluginID: pluginID, sub: sub})
+				deliveries = append(deliveries, eventDelivery{pluginID: pluginID, sub: sub})
 			}
 		}
 	}
 	b.mu.RUnlock()
 
-	for _, delivery := range deliveries {
+	for _, pending := range deliveries {
 		if contextCanceled(ctx) {
 			return
 		}
 
 		go func(pluginID string, sub subscription) {
 			defer func() {
-				if recovered := recover(); recovered != nil {
+				if panicValue := recover(); panicValue != nil {
 					slog.Error("[plugin-event-bus] subscription handler panicked",
 						"pluginId", pluginID,
 						"pattern", sub.pattern,
 						"eventType", event.EventType,
-						"panic", recovered,
+						"panic", panicValue,
 					)
 				}
 			}()
@@ -89,7 +89,7 @@ func (b *PluginEventBus) Publish(ctx context.Context, event PluginEvent) {
 			}
 
 			sub.handler(event)
-		}(delivery.pluginID, delivery.sub)
+		}(pending.pluginID, pending.sub)
 	}
 }
 
