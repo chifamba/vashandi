@@ -1,5 +1,11 @@
 // Package services provides the routines service for comprehensive routine management,
 // mirroring the Node.js implementation in server/src/services/routines.ts.
+//
+// This file uses several functions and constants defined in routine_scheduler.go:
+//   - validateCron(), nextCronTickInTimezone() for cron expression handling
+//   - isUniqueConstraintError() for database constraint detection
+//   - buildLastResult() for trigger result formatting
+//   - concurrencyPolicy* constants for concurrency handling
 package services
 
 import (
