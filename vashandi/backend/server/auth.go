@@ -40,6 +40,7 @@ const (
 	minPasswordLength        = 8
 	maxPasswordLength        = 128
 	emailVerificationTTL     = time.Hour
+	signedCookieSigLength    = 44 // base64-encoded HMAC-SHA256 digest length, including trailing "="
 )
 
 type BetterAuthOptions struct {
@@ -678,7 +679,7 @@ func verifyBetterAuthCookieValue(rawValue, secret string) (string, bool) {
 	}
 	value := decodedValue[:signatureStart]
 	signature := decodedValue[signatureStart+1:]
-	if len(signature) != 44 || !strings.HasSuffix(signature, "=") {
+	if len(signature) != signedCookieSigLength || !strings.HasSuffix(signature, "=") {
 		return "", false
 	}
 	expected := computeBetterAuthCookieSignature(value, secret)
