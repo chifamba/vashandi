@@ -102,6 +102,12 @@ func normalizeUsageJSON(result *AgentRunResult) (datatypes.JSON, UsageTotals) {
 }
 
 func buildCostEvent(run *models.HeartbeatRun, result *AgentRunResult, usage UsageTotals, occurredAt time.Time) *models.CostEvent {
+	contextSnapshot := parseJSONObject(run.ContextSnapshot)
+	projectID := firstNonEmpty(
+		readNonEmptyString(contextSnapshot["projectId"]),
+		readNonEmptyString(nestedObject(contextSnapshot, "paperclipWorkspace")["projectId"]),
+	)
+	issueID := readNonEmptyString(contextSnapshot["issueId"])
 	event := &models.CostEvent{
 		AgentID:           run.AgentID,
 		HeartbeatRunID:    &run.ID,
@@ -113,6 +119,12 @@ func buildCostEvent(run *models.HeartbeatRun, result *AgentRunResult, usage Usag
 		CachedInputTokens: usage.CachedInputTokens,
 		OutputTokens:      usage.OutputTokens,
 		OccurredAt:        occurredAt,
+	}
+	if projectID != "" {
+		event.ProjectID = &projectID
+	}
+	if issueID != "" {
+		event.IssueID = &issueID
 	}
 	if result != nil {
 		event.CostCents = costUSDToCents(result.CostUsd)

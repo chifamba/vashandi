@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -69,6 +70,9 @@ func (s *HeartbeatService) enqueueWakeup(ctx context.Context, companyID, agentID
 	if issueID := firstNonEmpty(readNonEmptyString(contextSnapshot["issueId"]), readNonEmptyString(payload["issueId"])); issueID != "" {
 		contextSnapshot["issueId"] = issueID
 	}
+	if projectID := firstNonEmpty(readNonEmptyString(contextSnapshot["projectId"]), readNonEmptyString(payload["projectId"])); projectID != "" {
+		contextSnapshot["projectId"] = projectID
+	}
 	taskKey := deriveTaskKeyWithHeartbeatFallback(contextSnapshot, payload)
 	if taskKey != "" && readNonEmptyString(contextSnapshot["taskKey"]) == "" {
 		contextSnapshot["taskKey"] = taskKey
@@ -107,8 +111,20 @@ func (s *HeartbeatService) enqueueWakeup(ctx context.Context, companyID, agentID
 		}
 	}
 
+	budgetScopes, err := s.buildInvocationBudgetScopes(ctx, companyID, agentID, contextSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	budgetBlock, err := s.GetInvocationBlock(ctx, companyID, agentID, budgetScopes)
+	if err != nil {
+		return nil, err
+	}
+	if budgetBlock != nil {
+		return nil, fmt.Errorf("budget blocked: %s", budgetBlock.Reason)
+	}
+
 	var run *models.HeartbeatRun
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var activeRuns []models.HeartbeatRun
 		if err := tx.Where("agent_id = ? AND status IN ?", agentID, []string{"queued", "running"}).Order("created_at desc").Find(&activeRuns).Error; err != nil {
 			return err

@@ -97,7 +97,13 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	r := chi.NewRouter()
 
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
-	costSvc := services.NewCostService(db)
+	costSvc := heartbeatSvc.Costs
+	if costSvc == nil {
+		costSvc = services.NewCostService(db)
+	}
+	if heartbeatSvc != nil && heartbeatSvc.BudgetEnforcementHook != nil {
+		costSvc.BudgetEnforcementHook = heartbeatSvc.BudgetEnforcementHook
+	}
 	runtimeMgr := opts.RuntimeManager
 	if runtimeMgr == nil {
 		runtimeMgr = services.NewWorkspaceRuntimeManager(db)
