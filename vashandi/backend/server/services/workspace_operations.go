@@ -67,16 +67,6 @@ func (r *WorkspaceOperationRecorder) AttachExecutionWorkspaceID(ctx context.Cont
 func (r *WorkspaceOperationRecorder) Begin(ctx context.Context, phase string, command *string) (*models.WorkspaceOperation, error) {
 	now := time.Now()
 
-	// Start a log stream
-	handle, err := r.service.logStore.Begin(WorkspaceOperationLogBeginInput{
-		CompanyID:   r.companyID,
-		OperationID: "", // Will be set after operation is created
-	})
-	if err != nil {
-		// Log store failures shouldn't block the operation
-		handle = nil
-	}
-
 	op := &models.WorkspaceOperation{
 		CompanyID:            r.companyID,
 		HeartbeatRunID:       r.heartbeatRunID,
@@ -91,8 +81,8 @@ func (r *WorkspaceOperationRecorder) Begin(ctx context.Context, phase string, co
 		return nil, err
 	}
 
-	// Now create the log handle with the actual operation ID
-	handle, err = r.service.logStore.Begin(WorkspaceOperationLogBeginInput{
+	// Create the log handle with the operation ID
+	handle, err := r.service.logStore.Begin(WorkspaceOperationLogBeginInput{
 		CompanyID:   r.companyID,
 		OperationID: op.ID,
 	})
@@ -102,11 +92,15 @@ func (r *WorkspaceOperationRecorder) Begin(ctx context.Context, phase string, co
 		op.LogStore = &storeType
 		op.LogRef = &handle.LogRef
 
-		// Update the operation with log store info
-		r.service.DB.WithContext(ctx).Model(&models.WorkspaceOperation{}).Where("id = ?", op.ID).Updates(map[string]interface{}{
+		// Update the operation with log store info (best-effort, non-blocking)
+		if updateErr := r.service.DB.WithContext(ctx).Model(&models.WorkspaceOperation{}).Where("id = ?", op.ID).Updates(map[string]interface{}{
 			"log_store": storeType,
 			"log_ref":   handle.LogRef,
-		})
+		}).Error; updateErr != nil {
+			// Log store metadata update failed but operation can continue
+			// The log will still be written, just not tracked in the DB
+			r.logHandle = nil
+		}
 	}
 
 	r.createdIDs = append(r.createdIDs, op.ID)

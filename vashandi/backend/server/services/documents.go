@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -552,7 +553,7 @@ func (s *DocumentService) RestoreIssueDocumentRevision(ctx context.Context, issu
 		nextRevisionNumber := doc.LatestRevisionNumber + 1
 
 		// Create new revision (copy of the old one)
-		changeSummary := "Restored from revision " + intToString(revision.RevisionNumber)
+		changeSummary := "Restored from revision " + strconv.Itoa(revision.RevisionNumber)
 		
 		restoredRevision := models.DocumentRevision{
 			CompanyID:        doc.CompanyID,
@@ -677,20 +678,4 @@ func (s *DocumentService) DeleteIssueDocument(ctx context.Context, issueID, rawK
 		return nil, err
 	}
 	return result, nil
-}
-
-// intToString converts an integer to string without fmt
-func intToString(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	if n < 0 {
-		return "-" + intToString(-n)
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
 }

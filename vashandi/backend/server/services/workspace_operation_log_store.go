@@ -104,8 +104,11 @@ func resolveWithin(basePath, relativePath string) (string, error) {
 	if err != nil {
 		return "", ErrInvalidLogRef
 	}
-	if len(rel) > 0 && rel[0] == '.' && (len(rel) == 1 || rel[1] == '.') {
-		return "", ErrInvalidLogRef
+	// Check for path traversal (paths starting with ".." or ".")
+	if len(rel) > 0 && rel[0] == '.' {
+		if len(rel) == 1 || (len(rel) > 1 && (rel[1] == '.' || rel[1] == filepath.Separator)) {
+			return "", ErrInvalidLogRef
+		}
 	}
 	return resolved, nil
 }
@@ -348,9 +351,15 @@ func GetWorkspaceOperationLogStore() WorkspaceOperationLogStore {
 			// Default to data/workspace-operation-logs relative to instance root
 			homeDir, err := os.UserHomeDir()
 			if err != nil {
-				homeDir = "/tmp"
+				// Fall back to current working directory if home dir is unavailable
+				cwd, cwdErr := os.Getwd()
+				if cwdErr != nil {
+					cwd = "."
+				}
+				basePath = filepath.Join(cwd, "data", "workspace-operation-logs")
+			} else {
+				basePath = filepath.Join(homeDir, ".paperclipai", "data", "workspace-operation-logs")
 			}
-			basePath = filepath.Join(homeDir, ".paperclipai", "data", "workspace-operation-logs")
 		}
 		globalLogStore = NewLocalFileWorkspaceOperationLogStore(basePath)
 	})

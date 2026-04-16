@@ -1210,7 +1210,7 @@ func GetWorkspaceOperationLogHandler(db *gorm.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"operationId": op.ID,
-			"store":       op.LogStore,
+			"logStore":    op.LogStore,
 			"logRef":      op.LogRef,
 			"content":     result.Content,
 			"nextOffset":  result.NextOffset,

@@ -167,27 +167,6 @@ func TestNormalizeDocumentKey(t *testing.T) {
 	}
 }
 
-func TestIntToString(t *testing.T) {
-	tests := []struct {
-		n    int
-		want string
-	}{
-		{0, "0"},
-		{1, "1"},
-		{10, "10"},
-		{123, "123"},
-		{-1, "-1"},
-		{-123, "-123"},
-	}
-
-	for _, tt := range tests {
-		got := intToString(tt.n)
-		if got != tt.want {
-			t.Errorf("intToString(%d) = %v, want %v", tt.n, got, tt.want)
-		}
-	}
-}
-
 // helper to create string pointer
 func docStringPtr(s string) *string {
 	return &s
