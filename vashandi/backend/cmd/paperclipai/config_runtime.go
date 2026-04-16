@@ -65,8 +65,16 @@ func loadCLIConfig() (*loadedPaperclipConfig, error) {
 	cfg := &shared.PaperclipConfig{}
 	switch strings.ToLower(filepath.Ext(configPath)) {
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, cfg); err != nil {
+		var raw any
+		if err := yaml.Unmarshal(data, &raw); err != nil {
 			return nil, fmt.Errorf("could not parse YAML config file %s: %w", configPath, err)
+		}
+		jsonBytes, err := json.Marshal(raw)
+		if err != nil {
+			return nil, fmt.Errorf("could not normalize YAML config file %s: %w", configPath, err)
+		}
+		if err := json.Unmarshal(jsonBytes, cfg); err != nil {
+			return nil, fmt.Errorf("could not decode YAML config file %s: %w", configPath, err)
 		}
 	default:
 		if err := json.Unmarshal(data, cfg); err != nil {

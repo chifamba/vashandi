@@ -34,7 +34,7 @@ func TestHealthHandler_NilDB(t *testing.T) {
 }
 
 func TestHealthHandler_WithDB(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&health=1"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:health1?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestHealthHandler_WithDB(t *testing.T) {
 }
 
 func TestHealthHandler_AuthenticatedBootstrapPendingWithInvite(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&health=2"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:health2?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestHealthHandler_AuthenticatedBootstrapPendingWithInvite(t *testing.T) {
 }
 
 func TestHealthHandler_AuthenticatedReadyWhenAdminExists(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&health=3"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:health3?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
