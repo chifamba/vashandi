@@ -47,17 +47,17 @@ type PortabilityBinaryEntry struct {
 
 // PortabilityManifest is the manifest embedded in a portability package.
 type PortabilityManifest struct {
-	SchemaVersion int                                `json:"schemaVersion"`
-	GeneratedAt   string                             `json:"generatedAt"`
-	Source        *PortabilityManifestSource         `json:"source"`
-	Includes      PortabilityInclude                 `json:"includes"`
-	Company       *PortabilityCompanyManifestEntry   `json:"company"`
-	Sidebar       *PortabilitySidebarOrder           `json:"sidebar"`
-	Agents        []PortabilityAgentManifestEntry    `json:"agents"`
-	Skills        []PortabilitySkillManifestEntry    `json:"skills"`
-	Projects      []PortabilityProjectManifestEntry  `json:"projects"`
-	Issues        []PortabilityIssueManifestEntry    `json:"issues"`
-	EnvInputs     []PortabilityEnvInput              `json:"envInputs"`
+	SchemaVersion int                               `json:"schemaVersion"`
+	GeneratedAt   string                            `json:"generatedAt"`
+	Source        *PortabilityManifestSource        `json:"source"`
+	Includes      PortabilityInclude                `json:"includes"`
+	Company       *PortabilityCompanyManifestEntry  `json:"company"`
+	Sidebar       *PortabilitySidebarOrder          `json:"sidebar"`
+	Agents        []PortabilityAgentManifestEntry   `json:"agents"`
+	Skills        []PortabilitySkillManifestEntry   `json:"skills"`
+	Projects      []PortabilityProjectManifestEntry `json:"projects"`
+	Issues        []PortabilityIssueManifestEntry   `json:"issues"`
+	EnvInputs     []PortabilityEnvInput             `json:"envInputs"`
 }
 
 // PortabilityManifestSource identifies the originating company.
@@ -107,18 +107,18 @@ type PortabilityAgentManifestEntry struct {
 
 // PortabilitySkillManifestEntry holds skill metadata in the manifest.
 type PortabilitySkillManifestEntry struct {
-	Key           string                             `json:"key"`
-	Slug          string                             `json:"slug"`
-	Name          string                             `json:"name"`
-	Path          string                             `json:"path"`
-	Description   *string                            `json:"description"`
-	SourceType    string                             `json:"sourceType"`
-	SourceLocator *string                            `json:"sourceLocator"`
-	SourceRef     *string                            `json:"sourceRef"`
-	TrustLevel    *string                            `json:"trustLevel"`
-	Compatibility *string                            `json:"compatibility"`
-	Metadata      map[string]interface{}             `json:"metadata"`
-	FileInventory []PortabilitySkillFileInventory    `json:"fileInventory"`
+	Key           string                          `json:"key"`
+	Slug          string                          `json:"slug"`
+	Name          string                          `json:"name"`
+	Path          string                          `json:"path"`
+	Description   *string                         `json:"description"`
+	SourceType    string                          `json:"sourceType"`
+	SourceLocator *string                         `json:"sourceLocator"`
+	SourceRef     *string                         `json:"sourceRef"`
+	TrustLevel    *string                         `json:"trustLevel"`
+	Compatibility *string                         `json:"compatibility"`
+	Metadata      map[string]interface{}          `json:"metadata"`
+	FileInventory []PortabilitySkillFileInventory `json:"fileInventory"`
 }
 
 // PortabilitySkillFileInventory is an item in a skill file inventory.
@@ -129,19 +129,19 @@ type PortabilitySkillFileInventory struct {
 
 // PortabilityProjectManifestEntry holds project metadata in the manifest.
 type PortabilityProjectManifestEntry struct {
-	Slug                     string                     `json:"slug"`
-	Name                     string                     `json:"name"`
-	Path                     string                     `json:"path"`
-	Description              *string                    `json:"description"`
-	OwnerAgentSlug           *string                    `json:"ownerAgentSlug"`
-	LeadAgentSlug            *string                    `json:"leadAgentSlug"`
-	TargetDate               *string                    `json:"targetDate"`
-	Color                    *string                    `json:"color"`
-	Status                   *string                    `json:"status"`
-	Env                      map[string]interface{}     `json:"env"`
-	ExecutionWorkspacePolicy map[string]interface{}     `json:"executionWorkspacePolicy"`
+	Slug                     string                      `json:"slug"`
+	Name                     string                      `json:"name"`
+	Path                     string                      `json:"path"`
+	Description              *string                     `json:"description"`
+	OwnerAgentSlug           *string                     `json:"ownerAgentSlug"`
+	LeadAgentSlug            *string                     `json:"leadAgentSlug"`
+	TargetDate               *string                     `json:"targetDate"`
+	Color                    *string                     `json:"color"`
+	Status                   *string                     `json:"status"`
+	Env                      map[string]interface{}      `json:"env"`
+	ExecutionWorkspacePolicy map[string]interface{}      `json:"executionWorkspacePolicy"`
 	Workspaces               []PortabilityWorkspaceEntry `json:"workspaces"`
-	Metadata                 map[string]interface{}     `json:"metadata"`
+	Metadata                 map[string]interface{}      `json:"metadata"`
 }
 
 // PortabilityWorkspaceEntry holds project workspace metadata.
@@ -161,13 +161,13 @@ type PortabilityWorkspaceEntry struct {
 
 // PortabilityIssueRoutineTrigger holds trigger data for a recurring issue.
 type PortabilityIssueRoutineTrigger struct {
-	Kind           string  `json:"kind"`
-	Label          *string `json:"label"`
-	Enabled        bool    `json:"enabled"`
-	CronExpression *string `json:"cronExpression"`
-	Timezone       *string `json:"timezone"`
+	Kind            string  `json:"kind"`
+	Label           *string `json:"label"`
+	Enabled         bool    `json:"enabled"`
+	CronExpression  *string `json:"cronExpression"`
+	Timezone        *string `json:"timezone"`
 	SigningMode     *string `json:"signingMode"`
-	ReplayWindowSec *int   `json:"replayWindowSec"`
+	ReplayWindowSec *int    `json:"replayWindowSec"`
 }
 
 // PortabilityIssueRoutine holds routine configuration for a recurring issue.
@@ -180,24 +180,24 @@ type PortabilityIssueRoutine struct {
 
 // PortabilityIssueManifestEntry holds issue/task metadata in the manifest.
 type PortabilityIssueManifestEntry struct {
-	Slug                     string                   `json:"slug"`
-	Identifier               *string                  `json:"identifier"`
-	Title                    string                   `json:"title"`
-	Path                     string                   `json:"path"`
-	ProjectSlug              *string                  `json:"projectSlug"`
-	ProjectWorkspaceKey      *string                  `json:"projectWorkspaceKey"`
-	AssigneeAgentSlug        *string                  `json:"assigneeAgentSlug"`
-	Description              *string                  `json:"description"`
-	Recurring                bool                     `json:"recurring"`
-	Routine                  *PortabilityIssueRoutine `json:"routine"`
-	LegacyRecurrence         map[string]interface{}   `json:"legacyRecurrence"`
-	Status                   *string                  `json:"status"`
-	Priority                 *string                  `json:"priority"`
-	LabelIds                 []string                 `json:"labelIds"`
-	BillingCode              *string                  `json:"billingCode"`
-	ExecutionWorkspaceSettings map[string]interface{} `json:"executionWorkspaceSettings"`
-	AssigneeAdapterOverrides   map[string]interface{} `json:"assigneeAdapterOverrides"`
-	Metadata                   map[string]interface{} `json:"metadata"`
+	Slug                       string                   `json:"slug"`
+	Identifier                 *string                  `json:"identifier"`
+	Title                      string                   `json:"title"`
+	Path                       string                   `json:"path"`
+	ProjectSlug                *string                  `json:"projectSlug"`
+	ProjectWorkspaceKey        *string                  `json:"projectWorkspaceKey"`
+	AssigneeAgentSlug          *string                  `json:"assigneeAgentSlug"`
+	Description                *string                  `json:"description"`
+	Recurring                  bool                     `json:"recurring"`
+	Routine                    *PortabilityIssueRoutine `json:"routine"`
+	LegacyRecurrence           map[string]interface{}   `json:"legacyRecurrence"`
+	Status                     *string                  `json:"status"`
+	Priority                   *string                  `json:"priority"`
+	LabelIds                   []string                 `json:"labelIds"`
+	BillingCode                *string                  `json:"billingCode"`
+	ExecutionWorkspaceSettings map[string]interface{}   `json:"executionWorkspaceSettings"`
+	AssigneeAdapterOverrides   map[string]interface{}   `json:"assigneeAdapterOverrides"`
+	Metadata                   map[string]interface{}   `json:"metadata"`
 }
 
 // PortabilityEnvInput describes an environment variable needed by the package.
@@ -214,24 +214,24 @@ type PortabilityEnvInput struct {
 
 // ExportRequest is the body of a POST .../exports request.
 type ExportRequest struct {
-	Include            map[string]bool `json:"include"`
-	Agents             []string        `json:"agents"`
-	Skills             []string        `json:"skills"`
-	Projects           []string        `json:"projects"`
-	Issues             []string        `json:"issues"`
-	ProjectIssues      []string        `json:"projectIssues"`
-	SelectedFiles      []string        `json:"selectedFiles"`
-	ExpandReferencedSkills bool        `json:"expandReferencedSkills"`
-	SidebarOrder       *PortabilitySidebarOrder `json:"sidebarOrder"`
+	Include                map[string]bool          `json:"include"`
+	Agents                 []string                 `json:"agents"`
+	Skills                 []string                 `json:"skills"`
+	Projects               []string                 `json:"projects"`
+	Issues                 []string                 `json:"issues"`
+	ProjectIssues          []string                 `json:"projectIssues"`
+	SelectedFiles          []string                 `json:"selectedFiles"`
+	ExpandReferencedSkills bool                     `json:"expandReferencedSkills"`
+	SidebarOrder           *PortabilitySidebarOrder `json:"sidebarOrder"`
 }
 
 // ExportResult is returned by ExportBundle.
 type ExportResult struct {
-	RootPath              string                            `json:"rootPath"`
-	Manifest              PortabilityManifest               `json:"manifest"`
-	Files                 map[string]interface{}            `json:"files"`
-	Warnings              []string                          `json:"warnings"`
-	PaperclipExtensionPath string                           `json:"paperclipExtensionPath"`
+	RootPath               string                 `json:"rootPath"`
+	Manifest               PortabilityManifest    `json:"manifest"`
+	Files                  map[string]interface{} `json:"files"`
+	Warnings               []string               `json:"warnings"`
+	PaperclipExtensionPath string                 `json:"paperclipExtensionPath"`
 }
 
 // ExportPreviewResult extends ExportResult with a file inventory.
@@ -273,13 +273,13 @@ type ImportTarget struct {
 
 // ImportRequest is the body of a POST .../imports/preview or .../imports/apply request.
 type ImportRequest struct {
-	Source            ImportSource            `json:"source"`
-	Include           map[string]bool         `json:"include"`
-	Target            ImportTarget            `json:"target"`
-	Agents            interface{}             `json:"agents"` // "all" | []string
-	CollisionStrategy string                  `json:"collisionStrategy"` // "rename"|"skip"|"replace"
-	NameOverrides     map[string]string       `json:"nameOverrides"`
-	SelectedFiles     []string                `json:"selectedFiles"`
+	Source            ImportSource               `json:"source"`
+	Include           map[string]bool            `json:"include"`
+	Target            ImportTarget               `json:"target"`
+	Agents            interface{}                `json:"agents"`            // "all" | []string
+	CollisionStrategy string                     `json:"collisionStrategy"` // "rename"|"skip"|"replace"
+	NameOverrides     map[string]string          `json:"nameOverrides"`
+	SelectedFiles     []string                   `json:"selectedFiles"`
 	AdapterOverrides  map[string]AdapterOverride `json:"adapterOverrides"`
 }
 
@@ -291,11 +291,11 @@ type AdapterOverride struct {
 
 // AgentPlan describes the planned action for an agent during import.
 type AgentPlan struct {
-	Slug           string  `json:"slug"`
-	Action         string  `json:"action"` // "create"|"update"|"skip"
-	PlannedName    string  `json:"plannedName"`
+	Slug            string  `json:"slug"`
+	Action          string  `json:"action"` // "create"|"update"|"skip"
+	PlannedName     string  `json:"plannedName"`
 	ExistingAgentID *string `json:"existingAgentId"`
-	Reason         *string `json:"reason"`
+	Reason          *string `json:"reason"`
 }
 
 // ProjectPlan describes the planned action for a project during import.
@@ -325,32 +325,32 @@ type ImportPlan struct {
 
 // ImportCollision describes an import collision discovered during preview.
 type ImportCollision struct {
-	EntityType                  string   `json:"entityType"`
-	Slug                        string   `json:"slug"`
-	Name                        string   `json:"name"`
-	ExistingID                  *string  `json:"existingId,omitempty"`
-	ExistingName                *string  `json:"existingName,omitempty"`
-	MatchTypes                  []string `json:"matchTypes"`
-	RequestedCollisionStrategy  string   `json:"requestedCollisionStrategy"`
-	RecommendedCollisionStrategy string  `json:"recommendedCollisionStrategy"`
-	PlannedAction               string   `json:"plannedAction"`
-	Reason                      string   `json:"reason"`
+	EntityType                   string   `json:"entityType"`
+	Slug                         string   `json:"slug"`
+	Name                         string   `json:"name"`
+	ExistingID                   *string  `json:"existingId,omitempty"`
+	ExistingName                 *string  `json:"existingName,omitempty"`
+	MatchTypes                   []string `json:"matchTypes"`
+	RequestedCollisionStrategy   string   `json:"requestedCollisionStrategy"`
+	RecommendedCollisionStrategy string   `json:"recommendedCollisionStrategy"`
+	PlannedAction                string   `json:"plannedAction"`
+	Reason                       string   `json:"reason"`
 }
 
 // PreviewResult is returned by PreviewImport.
 type PreviewResult struct {
-	Include             PortabilityInclude     `json:"include"`
-	TargetCompanyID     *string                `json:"targetCompanyId"`
-	TargetCompanyName   *string                `json:"targetCompanyName"`
-	CollisionStrategy   string                 `json:"collisionStrategy"`
-	SelectedAgentSlugs  []string               `json:"selectedAgentSlugs"`
-	Plan                ImportPlan             `json:"plan"`
-	Collisions          []ImportCollision      `json:"collisions"`
-	Manifest            PortabilityManifest    `json:"manifest"`
-	Files               map[string]interface{} `json:"files"`
-	EnvInputs           []PortabilityEnvInput  `json:"envInputs"`
-	Warnings            []string               `json:"warnings"`
-	Errors              []string               `json:"errors"`
+	Include            PortabilityInclude     `json:"include"`
+	TargetCompanyID    *string                `json:"targetCompanyId"`
+	TargetCompanyName  *string                `json:"targetCompanyName"`
+	CollisionStrategy  string                 `json:"collisionStrategy"`
+	SelectedAgentSlugs []string               `json:"selectedAgentSlugs"`
+	Plan               ImportPlan             `json:"plan"`
+	Collisions         []ImportCollision      `json:"collisions"`
+	Manifest           PortabilityManifest    `json:"manifest"`
+	Files              map[string]interface{} `json:"files"`
+	EnvInputs          []PortabilityEnvInput  `json:"envInputs"`
+	Warnings           []string               `json:"warnings"`
+	Errors             []string               `json:"errors"`
 }
 
 // ImportResult is returned by ImportBundle.
@@ -409,11 +409,11 @@ type resolvedSource struct {
 
 // internalPlan holds intermediate data passed between buildPreview and importBundle.
 type internalPlan struct {
-	preview         PreviewResult
-	source          resolvedSource
-	include         PortabilityInclude
+	preview           PreviewResult
+	source            resolvedSource
+	include           PortabilityInclude
 	collisionStrategy string
-	selectedAgents  []PortabilityAgentManifestEntry
+	selectedAgents    []PortabilityAgentManifestEntry
 }
 
 type existingCollisionEntity struct {
@@ -1225,7 +1225,9 @@ func generateExportReadme(manifest PortabilityManifest) string {
 	return sb.String()
 }
 
-func htmlEscapePortable(s string) string {
+const orgChartLabelMaxLength = 20
+
+func escapeHTMLForSVG(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	s = strings.ReplaceAll(s, ">", "&gt;")
@@ -1281,7 +1283,17 @@ func generateOrgChartSVG(agents []PortabilityAgentManifestEntry) string {
 		place(root, 0)
 	}
 	for _, agent := range agents {
-		place(agent.Slug, 0)
+		if visited[agent.Slug] {
+			continue
+		}
+		if agent.ReportsToSlug == nil || *agent.ReportsToSlug == "" || agentBySlug[*agent.ReportsToSlug].Slug == "" {
+			place(agent.Slug, 0)
+		}
+	}
+	for _, agent := range agents {
+		if !visited[agent.Slug] {
+			place(agent.Slug, 0)
+		}
 	}
 
 	maxX, maxY := 420, 220
@@ -1309,13 +1321,14 @@ func generateOrgChartSVG(agents []PortabilityAgentManifestEntry) string {
 	for slug, pos := range positions {
 		agent := agentBySlug[slug]
 		name := agent.Name
-		if len(name) > 20 {
-			name = name[:20] + "..."
+		nameRunes := []rune(name)
+		if len(nameRunes) > orgChartLabelMaxLength {
+			name = string(nameRunes[:orgChartLabelMaxLength]) + "..."
 		}
 		role := portabilityRoleLabel(agent.Role)
 		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" rx="8" fill="#e0e7ff" stroke="#1e1b4b"/>`, pos.x, pos.y, nodeW, nodeH))
-		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" fill="#1e1b4b" font-size="13" text-anchor="middle">%s</text>`, pos.x+nodeW/2, pos.y+35, htmlEscapePortable(name)))
-		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" fill="#4338ca" font-size="11" text-anchor="middle">%s</text>`, pos.x+nodeW/2, pos.y+55, htmlEscapePortable(role)))
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" fill="#1e1b4b" font-size="13" text-anchor="middle">%s</text>`, pos.x+nodeW/2, pos.y+35, escapeHTMLForSVG(name)))
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" fill="#4338ca" font-size="11" text-anchor="middle">%s</text>`, pos.x+nodeW/2, pos.y+55, escapeHTMLForSVG(role)))
 	}
 	sb.WriteString(`</svg>`)
 	return sb.String()
@@ -1407,7 +1420,6 @@ func disableImportedTimerHeartbeat(runtimeConfig map[string]interface{}) map[str
 // ──────────────────────────────────────────────────────────────────────────────
 // GitHub source fetching.
 // ──────────────────────────────────────────────────────────────────────────────
-
 
 type ghParsedURL struct {
 	hostname    string
@@ -1922,7 +1934,7 @@ func buildManifestFromFiles(files map[string]interface{}, sourceLabel *Portabili
 			title = slug
 		}
 		desc := portStrPtr(strVal(fm, "description"))
-		if *desc == "" {
+		if desc == nil || *desc == "" {
 			// Use body as description for markdown-only format
 			_, body := parseFrontmatter(text)
 			if body != "" {
@@ -2034,18 +2046,18 @@ func buildManifestFromFiles(files map[string]interface{}, sourceLabel *Portabili
 			slug = "skill"
 		}
 
-		skillDir := skillPath
+		skillDirPrefix := skillPath
 		if idx := strings.LastIndex(skillPath, "/"); idx >= 0 {
-			skillDir = skillPath[:idx]
+			skillDirPrefix = skillPath[:idx]
 		}
 		fileInventory := make([]PortabilitySkillFileInventory, 0)
 		for entry := range files {
-			if entry != skillPath && !strings.HasPrefix(entry, skillDir+"/") {
+			if entry != skillPath && !strings.HasPrefix(entry, skillDirPrefix+"/") {
 				continue
 			}
 			relativePath := "SKILL.md"
 			if entry != skillPath {
-				relativePath = strings.TrimPrefix(entry, skillDir+"/")
+				relativePath = strings.TrimPrefix(entry, skillDirPrefix+"/")
 			}
 			fileInventory = append(fileInventory, PortabilitySkillFileInventory{
 				Path: relativePath,
@@ -3413,7 +3425,11 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 				Reason:                       reason,
 			})
 			if mode == ImportModeAgentSafe {
-				warnings = append(warnings, fmt.Sprintf("Existing skill %q matched during safe import and will %s instead of overwritten.", manifestSkill.Slug, map[string]string{"skip": "be skipped", "rename": "be renamed"}[recommendedStrategy]))
+				actionText := "be renamed"
+				if recommendedStrategy == "skip" {
+					actionText = "be skipped"
+				}
+				warnings = append(warnings, fmt.Sprintf("Existing skill %q matched during safe import and will %s instead of overwritten.", manifestSkill.Slug, actionText))
 			} else if collisionStrategy == "replace" {
 				warnings = append(warnings, fmt.Sprintf("Existing skill %q (%s) will be overwritten by import.", manifestSkill.Slug, manifestSkill.Key))
 			}
@@ -3623,9 +3639,9 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 		}
 
 		newCompany := models.Company{
-			ID:     uuid.New().String(),
-			Name:   companyName,
-			Status: "active",
+			ID:                               uuid.New().String(),
+			Name:                             companyName,
+			Status:                           "active",
 			RequireBoardApprovalForNewAgents: true,
 		}
 		if include.Company && manifest.Company != nil {
@@ -3670,11 +3686,11 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 				Find(&sourceMemberships).Error
 			for _, m := range sourceMemberships {
 				newM := models.CompanyMembership{
-					ID:            uuid.New().String(),
-					CompanyID:     newCompany.ID,
-					PrincipalType: m.PrincipalType,
-					PrincipalID:   m.PrincipalID,
-					Status:        "active",
+					ID:             uuid.New().String(),
+					CompanyID:      newCompany.ID,
+					PrincipalType:  m.PrincipalType,
+					PrincipalID:    m.PrincipalID,
+					Status:         "active",
 					MembershipRole: m.MembershipRole,
 				}
 				_ = s.db.WithContext(ctx).Create(&newM).Error
@@ -4077,12 +4093,12 @@ func (s *PortabilityService) ImportBundle(ctx context.Context, req ImportRequest
 				}
 
 				routine := models.Routine{
-					ID:              uuid.New().String(),
-					CompanyID:       targetCompany.ID,
-					ProjectID:       projectID,
-					Title:           issuePlan.PlannedTitle,
-					AssigneeAgentID: assigneeID,
-					Status:          "active",
+					ID:                uuid.New().String(),
+					CompanyID:         targetCompany.ID,
+					ProjectID:         projectID,
+					Title:             issuePlan.PlannedTitle,
+					AssigneeAgentID:   assigneeID,
+					Status:            "active",
 					ConcurrencyPolicy: "coalesce_if_active",
 					CatchUpPolicy:     "skip_missed",
 					Variables:         datatypes.JSON("[]"),

@@ -234,10 +234,10 @@ func assertCanManagePortability(r *http.Request, db *gorm.DB, companyID, capabil
 
 func validateSafeImportRoute(companyID string, req services.ImportRequest) error {
 	if req.Target.Mode == "existing_company" && req.Target.CompanyID != companyID {
-		return fmt.Errorf("safe import route can only target the route company")
+		return fmt.Errorf("safe import route can only target company %s", companyID)
 	}
 	if req.CollisionStrategy == "replace" {
-		return fmt.Errorf("safe import route does not allow replace collision strategy")
+		return fmt.Errorf("safe import route only allows rename or skip collision strategies")
 	}
 	return nil
 }
