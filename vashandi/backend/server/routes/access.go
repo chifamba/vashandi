@@ -15,34 +15,55 @@ import (
 )
 
 func InviteAcceptHandler(db *gorm.DB) http.HandlerFunc {
-return func(w http.ResponseWriter, r *http.Request) {
-var body struct {
-Token string `json:"token"`
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		acceptInviteByToken(db, w, r, body.Token)
+	}
 }
-if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
+
+// InviteAcceptByPathHandler handles POST /invites/:token/accept
+// It extracts the token from the URL path and calls the shared accept logic.
+func InviteAcceptByPathHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := chi.URLParam(r, "token")
+		if token == "" {
+			http.Error(w, "Token is required", http.StatusBadRequest)
+			return
+		}
+		acceptInviteByToken(db, w, r, token)
+	}
 }
-hash := fmt.Sprintf("%x", sha256.Sum256([]byte(body.Token)))
-var invite models.Invite
-if err := db.WithContext(r.Context()).Where("token_hash = ?", hash).First(&invite).Error; err != nil {
-http.Error(w, "Invite not found", http.StatusNotFound)
-return
-}
-if invite.ExpiresAt.Before(time.Now()) {
-http.Error(w, "Invite expired", http.StatusGone)
-return
-}
-if invite.AcceptedAt != nil {
-http.Error(w, "Invite already accepted", http.StatusConflict)
-return
-}
-now := time.Now()
-invite.AcceptedAt = &now
-db.WithContext(r.Context()).Save(&invite)
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(invite)
-}
+
+// acceptInviteByToken contains the shared invite acceptance logic.
+func acceptInviteByToken(db *gorm.DB, w http.ResponseWriter, r *http.Request, token string) {
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+	var invite models.Invite
+	if err := db.WithContext(r.Context()).Where("token_hash = ?", hash).First(&invite).Error; err != nil {
+		http.Error(w, "Invite not found", http.StatusNotFound)
+		return
+	}
+	if invite.ExpiresAt.Before(time.Now()) {
+		http.Error(w, "Invite expired", http.StatusGone)
+		return
+	}
+	if invite.AcceptedAt != nil {
+		http.Error(w, "Invite already accepted", http.StatusConflict)
+		return
+	}
+	now := time.Now()
+	invite.AcceptedAt = &now
+	if err := db.WithContext(r.Context()).Save(&invite).Error; err != nil {
+		http.Error(w, "Failed to accept invite", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(invite)
 }
 
 func CLIAuthChallengeHandler(db *gorm.DB) http.HandlerFunc {

@@ -395,6 +395,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Access/Auth Routes
 		api.Post("/invites/accept", routes.InviteAcceptHandler(db))
+		api.Post("/invites/{token}/accept", routes.InviteAcceptByPathHandler(db))
 		api.Get("/invites/{token}", routes.GetInviteHandler(db))
 		api.Get("/invites/{token}/onboarding", routes.GetInviteOnboardingHandler(db))
 		api.Get("/invites/{token}/onboarding.txt", routes.GetInviteOnboardingTextHandler(db))
