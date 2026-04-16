@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -93,15 +94,17 @@ func buildAttachmentContentDisposition(disposition, filename string) string {
 
 // IssueRoutes handles HTTP requests for issues
 type IssueRoutes struct {
-	db      *gorm.DB
-	service *services.IssueService
+	db       *gorm.DB
+	service  *services.IssueService
+	feedback *services.FeedbackService
 }
 
 // NewIssueRoutes creates a new IssueRoutes
 func NewIssueRoutes(db *gorm.DB, activity *services.ActivityService) *IssueRoutes {
 	return &IssueRoutes{
-		db:      db,
-		service: services.NewIssueService(db, activity),
+		db:       db,
+		service:  services.NewIssueService(db, activity),
+		feedback: services.NewFeedbackService(db),
 	}
 }
 
@@ -585,8 +588,21 @@ func DeleteAttachmentHandler(db *gorm.DB) http.HandlerFunc {
 // ListIssueFeedbackVotesHandler returns all feedback votes for an issue.
 func (ir *IssueRoutes) ListIssueFeedbackVotesHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var votes []models.FeedbackVote
-	if err := ir.db.WithContext(r.Context()).Where("issue_id = ?", id).Find(&votes).Error; err != nil {
+	var issue models.Issue
+	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
+		http.Error(w, "Issue not found", http.StatusNotFound)
+		return
+	}
+	if err := AssertCompanyAccess(r, issue.CompanyID); err != nil {
+		http.Error(w, "Issue not found", http.StatusNotFound)
+		return
+	}
+	if err := AssertBoard(r); err != nil {
+		http.Error(w, "Only board users can view feedback votes", http.StatusForbidden)
+		return
+	}
+	votes, err := ir.feedback.ListVotesForUser(r.Context(), id, actorUserID(r))
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -597,37 +613,41 @@ func (ir *IssueRoutes) ListIssueFeedbackVotesHandler(w http.ResponseWriter, r *h
 // UpsertIssueFeedbackVoteHandler creates or updates a feedback vote for an issue.
 func (ir *IssueRoutes) UpsertIssueFeedbackVoteHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var issue models.Issue
-	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-		http.Error(w, "Not found", http.StatusNotFound)
+	if err := AssertBoard(r); err != nil {
+		http.Error(w, "Only board users can vote on AI feedback", http.StatusForbidden)
 		return
 	}
 	var body struct {
-		TargetType string  `json:"targetType"`
-		TargetID   string  `json:"targetId"`
-		Vote       string  `json:"vote"`
-		Reason     *string `json:"reason"`
+		TargetType   string  `json:"targetType"`
+		TargetID     string  `json:"targetId"`
+		Vote         string  `json:"vote"`
+		Reason       *string `json:"reason"`
+		AllowSharing bool    `json:"allowSharing"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	userID := actorUserID(r)
-	vote := models.FeedbackVote{
-		CompanyID:    issue.CompanyID,
+	vote, err := ir.feedback.SaveVote(r.Context(), services.FeedbackVoteInput{
 		IssueID:      id,
 		TargetType:   body.TargetType,
 		TargetID:     body.TargetID,
-		AuthorUserID: userID,
 		Vote:         body.Vote,
 		Reason:       body.Reason,
-	}
-	if err := ir.db.WithContext(r.Context()).
-		Where("company_id = ? AND issue_id = ? AND target_type = ? AND target_id = ? AND author_user_id = ?",
-			issue.CompanyID, id, body.TargetType, body.TargetID, userID).
-		Assign(models.FeedbackVote{Vote: body.Vote, Reason: body.Reason}).
-		FirstOrCreate(&vote).Error; err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		AuthorUserID: actorUserID(r),
+		AllowSharing: body.AllowSharing,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			http.Error(w, "Issue not found", http.StatusNotFound)
+		case errors.Is(err, services.ErrFeedbackTargetNotFound):
+			http.Error(w, "Feedback target not found", http.StatusNotFound)
+		case errors.Is(err, services.ErrFeedbackUnsupportedTarget), errors.Is(err, services.ErrFeedbackVoteNotAllowed), errors.Is(err, services.ErrFeedbackInvalidVote):
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -643,34 +663,34 @@ type feedbackTraceRow struct {
 
 // feedbackTraceResponse is the JSON response for a FeedbackTrace.
 type feedbackTraceResponse struct {
-	ID               string          `json:"id"`
-	CompanyID        string          `json:"companyId"`
-	FeedbackVoteID   string          `json:"feedbackVoteId"`
-	IssueID          string          `json:"issueId"`
-	ProjectID        *string         `json:"projectId"`
-	IssueIdentifier  *string         `json:"issueIdentifier"`
-	IssueTitle       string          `json:"issueTitle"`
-	AuthorUserID     string          `json:"authorUserId"`
-	TargetType       string          `json:"targetType"`
-	TargetID         string          `json:"targetId"`
-	Vote             string          `json:"vote"`
-	Status           string          `json:"status"`
-	Destination      *string         `json:"destination"`
-	ExportID         *string         `json:"exportId"`
-	ConsentVersion   *string         `json:"consentVersion"`
-	SchemaVersion    string          `json:"schemaVersion"`
-	BundleVersion    string          `json:"bundleVersion"`
-	PayloadVersion   string          `json:"payloadVersion"`
-	PayloadDigest    *string         `json:"payloadDigest"`
-	PayloadSnapshot  interface{}     `json:"payloadSnapshot"`
-	TargetSummary    interface{}     `json:"targetSummary"`
-	RedactionSummary interface{}     `json:"redactionSummary"`
-	AttemptCount     int             `json:"attemptCount"`
-	LastAttemptedAt  *time.Time      `json:"lastAttemptedAt"`
-	ExportedAt       *time.Time      `json:"exportedAt"`
-	FailureReason    *string         `json:"failureReason"`
-	CreatedAt        time.Time       `json:"createdAt"`
-	UpdatedAt        time.Time       `json:"updatedAt"`
+	ID               string      `json:"id"`
+	CompanyID        string      `json:"companyId"`
+	FeedbackVoteID   string      `json:"feedbackVoteId"`
+	IssueID          string      `json:"issueId"`
+	ProjectID        *string     `json:"projectId"`
+	IssueIdentifier  *string     `json:"issueIdentifier"`
+	IssueTitle       string      `json:"issueTitle"`
+	AuthorUserID     string      `json:"authorUserId"`
+	TargetType       string      `json:"targetType"`
+	TargetID         string      `json:"targetId"`
+	Vote             string      `json:"vote"`
+	Status           string      `json:"status"`
+	Destination      *string     `json:"destination"`
+	ExportID         *string     `json:"exportId"`
+	ConsentVersion   *string     `json:"consentVersion"`
+	SchemaVersion    string      `json:"schemaVersion"`
+	BundleVersion    string      `json:"bundleVersion"`
+	PayloadVersion   string      `json:"payloadVersion"`
+	PayloadDigest    *string     `json:"payloadDigest"`
+	PayloadSnapshot  interface{} `json:"payloadSnapshot"`
+	TargetSummary    interface{} `json:"targetSummary"`
+	RedactionSummary interface{} `json:"redactionSummary"`
+	AttemptCount     int         `json:"attemptCount"`
+	LastAttemptedAt  *time.Time  `json:"lastAttemptedAt"`
+	ExportedAt       *time.Time  `json:"exportedAt"`
+	FailureReason    *string     `json:"failureReason"`
+	CreatedAt        time.Time   `json:"createdAt"`
+	UpdatedAt        time.Time   `json:"updatedAt"`
 }
 
 func buildFeedbackTraceResponse(row feedbackTraceRow, includePayload bool) feedbackTraceResponse {
@@ -742,182 +762,37 @@ func queryFeedbackTraces(ctx context.Context, db *gorm.DB, filters map[string]in
 
 // ListIssueFeedbackTracesHandler returns feedback traces for an issue (board only).
 func (ir *IssueRoutes) ListIssueFeedbackTracesHandler(w http.ResponseWriter, r *http.Request) {
-	if err := AssertBoard(r); err != nil {
-		http.Error(w, "Only board users can view feedback traces", http.StatusForbidden)
-		return
-	}
-	id := chi.URLParam(r, "id")
-	var issue models.Issue
-	if err := ir.db.WithContext(r.Context()).First(&issue, "id = ?", id).Error; err != nil {
-		http.Error(w, "Issue not found", http.StatusNotFound)
-		return
-	}
-
-	q := r.URL.Query()
-	filters := map[string]interface{}{
-		"company_id": issue.CompanyID,
-		"issue_id":   issue.ID,
-	}
-	var extra []string
-	var extraArgs []interface{}
-	if v := q.Get("targetType"); v != "" {
-		filters["target_type"] = v
-	}
-	if v := q.Get("vote"); v != "" {
-		filters["vote"] = v
-	}
-	if v := q.Get("status"); v != "" {
-		filters["status"] = v
-	}
-	if q.Get("sharedOnly") == "true" {
-		extra = append(extra, "fe.status != ?")
-		extraArgs = append(extraArgs, "local_only")
-	}
-	if v := q.Get("from"); v != "" {
-		extra = append(extra, "fe.created_at >= ?")
-		extraArgs = append(extraArgs, v)
-	}
-	if v := q.Get("to"); v != "" {
-		extra = append(extra, "fe.created_at <= ?")
-		extraArgs = append(extraArgs, v)
-	}
-
-	includePayload := q.Get("includePayload") == "true"
-	rows, err := queryFeedbackTraces(r.Context(), ir.db, filters, extra, extraArgs)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	out := make([]feedbackTraceResponse, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, buildFeedbackTraceResponse(row, includePayload))
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	ListIssueFeedbackTracesHandler(ir.feedback).ServeHTTP(w, r)
 }
 
 // GetFeedbackTraceByIDHandler returns a single feedback trace (board only).
 func (ir *IssueRoutes) GetFeedbackTraceByIDHandler(w http.ResponseWriter, r *http.Request) {
-	if err := AssertBoard(r); err != nil {
-		http.Error(w, "Only board users can view feedback traces", http.StatusForbidden)
-		return
-	}
-	traceID := chi.URLParam(r, "traceId")
-	includePayload := r.URL.Query().Get("includePayload") != "false"
-
-	filters := map[string]interface{}{"id": traceID}
-	rows, err := queryFeedbackTraces(r.Context(), ir.db, filters, nil, nil)
-	if err != nil || len(rows) == 0 {
-		http.Error(w, "Feedback trace not found", http.StatusNotFound)
-		return
-	}
-	row := rows[0]
-	if err := AssertCompanyAccess(r, row.CompanyID); err != nil {
-		http.Error(w, "Feedback trace not found", http.StatusNotFound)
-		return
-	}
-	resp := buildFeedbackTraceResponse(row, includePayload)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	GetFeedbackTraceHandler(ir.feedback).ServeHTTP(w, r)
 }
 
 // feedbackTraceBundleResponse is the simplified JSON response for a FeedbackTraceBundle.
 type feedbackTraceBundleResponse struct {
-	TraceID                string          `json:"traceId"`
-	ExportID               *string         `json:"exportId"`
-	CompanyID              string          `json:"companyId"`
-	IssueID                string          `json:"issueId"`
-	IssueIdentifier        *string         `json:"issueIdentifier"`
-	AdapterType            interface{}     `json:"adapterType"`
-	CaptureStatus          string          `json:"captureStatus"`
-	Notes                  []string        `json:"notes"`
-	Envelope               interface{}     `json:"envelope"`
-	Surface                interface{}     `json:"surface"`
-	PaperclipRun           interface{}     `json:"paperclipRun"`
-	RawAdapterTrace        interface{}     `json:"rawAdapterTrace"`
-	NormalizedAdapterTrace interface{}     `json:"normalizedAdapterTrace"`
-	Privacy                interface{}     `json:"privacy"`
-	Integrity              interface{}     `json:"integrity"`
-	Files                  []interface{}   `json:"files"`
+	TraceID                string        `json:"traceId"`
+	ExportID               *string       `json:"exportId"`
+	CompanyID              string        `json:"companyId"`
+	IssueID                string        `json:"issueId"`
+	IssueIdentifier        *string       `json:"issueIdentifier"`
+	AdapterType            interface{}   `json:"adapterType"`
+	CaptureStatus          string        `json:"captureStatus"`
+	Notes                  []string      `json:"notes"`
+	Envelope               interface{}   `json:"envelope"`
+	Surface                interface{}   `json:"surface"`
+	PaperclipRun           interface{}   `json:"paperclipRun"`
+	RawAdapterTrace        interface{}   `json:"rawAdapterTrace"`
+	NormalizedAdapterTrace interface{}   `json:"normalizedAdapterTrace"`
+	Privacy                interface{}   `json:"privacy"`
+	Integrity              interface{}   `json:"integrity"`
+	Files                  []interface{} `json:"files"`
 }
 
 // GetFeedbackTraceBundleHandler returns the bundle for a feedback trace (board only).
 func (ir *IssueRoutes) GetFeedbackTraceBundleHandler(w http.ResponseWriter, r *http.Request) {
-	if err := AssertBoard(r); err != nil {
-		http.Error(w, "Only board users can view feedback trace bundles", http.StatusForbidden)
-		return
-	}
-	traceID := chi.URLParam(r, "traceId")
-
-	filters := map[string]interface{}{"id": traceID}
-	rows, err := queryFeedbackTraces(r.Context(), ir.db, filters, nil, nil)
-	if err != nil || len(rows) == 0 {
-		http.Error(w, "Feedback trace not found", http.StatusNotFound)
-		return
-	}
-	row := rows[0]
-	if err := AssertCompanyAccess(r, row.CompanyID); err != nil {
-		http.Error(w, "Feedback trace not found", http.StatusNotFound)
-		return
-	}
-
-	trace := buildFeedbackTraceResponse(row, true)
-	envelope := map[string]interface{}{
-		"traceId":        trace.ID,
-		"exportId":       trace.ExportID,
-		"companyId":      trace.CompanyID,
-		"feedbackVoteId": trace.FeedbackVoteID,
-		"issueId":        trace.IssueID,
-		"issueIdentifier": trace.IssueIdentifier,
-		"issueTitle":     trace.IssueTitle,
-		"projectId":      trace.ProjectID,
-		"authorUserId":   trace.AuthorUserID,
-		"targetType":     trace.TargetType,
-		"targetId":       trace.TargetID,
-		"vote":           trace.Vote,
-		"status":         trace.Status,
-		"destination":    trace.Destination,
-		"consentVersion": trace.ConsentVersion,
-		"schemaVersion":  trace.SchemaVersion,
-		"bundleVersion":  trace.BundleVersion,
-		"payloadVersion": trace.PayloadVersion,
-		"payloadDigest":  trace.PayloadDigest,
-		"createdAt":      trace.CreatedAt,
-		"exportedAt":     trace.ExportedAt,
-	}
-
-	surface := map[string]interface{}{
-		"target":  nil,
-		"summary": trace.TargetSummary,
-	}
-
-	privacy := map[string]interface{}{}
-	if trace.RedactionSummary != nil {
-		privacy = map[string]interface{}{"bundleRedactionSummary": trace.RedactionSummary}
-	}
-
-	bundle := feedbackTraceBundleResponse{
-		TraceID:                trace.ID,
-		ExportID:               trace.ExportID,
-		CompanyID:              trace.CompanyID,
-		IssueID:                trace.IssueID,
-		IssueIdentifier:        trace.IssueIdentifier,
-		AdapterType:            nil,
-		CaptureStatus:          "unavailable",
-		Notes:                  []string{"source_run_missing"},
-		Envelope:               envelope,
-		Surface:                surface,
-		PaperclipRun:           nil,
-		RawAdapterTrace:        nil,
-		NormalizedAdapterTrace: nil,
-		Privacy:                privacy,
-		Integrity: map[string]interface{}{
-			"payloadDigest": trace.PayloadDigest,
-		},
-		Files: []interface{}{},
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(bundle)
+	GetFeedbackTraceBundleHandler(ir.feedback).ServeHTTP(w, r)
 }
 
 // ListIssueDocumentsHandler returns all documents linked to an issue.

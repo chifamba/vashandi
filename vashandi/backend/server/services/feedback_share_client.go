@@ -15,13 +15,24 @@ import (
 
 const defaultFeedbackExportBackendURL = "https://telemetry.paperclip.ing"
 
-// FeedbackTraceBundle is a bundle of feedback data to upload.
-// The fields mirror the TypeScript FeedbackTraceBundle type.
 type FeedbackTraceBundle struct {
-	CompanyID string      `json:"companyId"`
-	TraceID   string      `json:"traceId"`
-	ExportID  *string     `json:"exportId,omitempty"`
-	Data      interface{} `json:"data,omitempty"`
+	TraceID                string                    `json:"traceId"`
+	ExportID               *string                   `json:"exportId,omitempty"`
+	CompanyID              string                    `json:"companyId"`
+	IssueID                string                    `json:"issueId,omitempty"`
+	IssueIdentifier        *string                   `json:"issueIdentifier,omitempty"`
+	AdapterType            *string                   `json:"adapterType,omitempty"`
+	CaptureStatus          string                    `json:"captureStatus,omitempty"`
+	Notes                  []string                  `json:"notes"`
+	Envelope               interface{}               `json:"envelope,omitempty"`
+	Surface                interface{}               `json:"surface,omitempty"`
+	PaperclipRun           interface{}               `json:"paperclipRun,omitempty"`
+	RawAdapterTrace        interface{}               `json:"rawAdapterTrace,omitempty"`
+	NormalizedAdapterTrace interface{}               `json:"normalizedAdapterTrace,omitempty"`
+	Privacy                interface{}               `json:"privacy,omitempty"`
+	Integrity              interface{}               `json:"integrity,omitempty"`
+	Files                  []FeedbackTraceBundleFile `json:"files"`
+	Data                   interface{}               `json:"data,omitempty"`
 }
 
 // FeedbackTraceUploadResult is returned after a successful upload.

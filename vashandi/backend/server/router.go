@@ -97,6 +97,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	r := chi.NewRouter()
 
 	issueRoutes := routes.NewIssueRoutes(db, activitySvc)
+	feedbackSvc := services.NewFeedbackService(db)
 	costSvc := heartbeatSvc.Costs
 	if costSvc == nil {
 		costSvc = services.NewCostService(db)
@@ -247,10 +248,10 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Delete("/attachments/{attachmentId}", routes.DeleteAttachmentHandler(db))
 		api.Get("/issues/{id}/feedback-votes", issueRoutes.ListIssueFeedbackVotesHandler)
 		api.Post("/issues/{id}/feedback-votes", issueRoutes.UpsertIssueFeedbackVoteHandler)
-		api.Get("/issues/{id}/feedback-traces", issueRoutes.ListIssueFeedbackTracesHandler)
-		api.Get("/feedback-traces/{traceId}", issueRoutes.GetFeedbackTraceByIDHandler)
-		api.Get("/feedback-traces/{traceId}/bundle", issueRoutes.GetFeedbackTraceBundleHandler)
-		api.Get("/companies/{companyId}/feedback-traces", routes.ListCompanyFeedbackTracesHandler(db))
+		api.Get("/issues/{id}/feedback-traces", routes.ListIssueFeedbackTracesHandler(feedbackSvc))
+		api.Get("/feedback-traces/{traceId}", routes.GetFeedbackTraceHandler(feedbackSvc))
+		api.Get("/feedback-traces/{traceId}/bundle", routes.GetFeedbackTraceBundleHandler(feedbackSvc))
+		api.Get("/companies/{companyId}/feedback-traces", routes.ListCompanyFeedbackTracesHandler(feedbackSvc))
 		api.Get("/issues/{id}/documents", issueRoutes.ListIssueDocumentsHandler)
 		api.Get("/issues/{id}/documents/{key}", issueRoutes.GetIssueDocumentHandler)
 		api.Get("/issues/{id}/documents/{key}/revisions", issueRoutes.ListIssueDocumentRevisionsHandler)
