@@ -35,16 +35,16 @@ type AgentRunner interface {
 }
 
 type HeartbeatService struct {
-	DB         *gorm.DB
-	Secrets    *SecretService
-	Runner     AgentRunner
-	Logs       *RunLogStore
-	Costs      *CostService
-	Workspaces *WorkspaceService
-	Activity   *ActivityService
-	Ops        *WorkspaceOperationService
-	Memory     MemoryAdapter
-	EventBus   *PluginEventBus
+	DB                    *gorm.DB
+	Secrets               *SecretService
+	Runner                AgentRunner
+	Logs                  *RunLogStore
+	Costs                 *CostService
+	Workspaces            *WorkspaceService
+	Activity              *ActivityService
+	Ops                   *WorkspaceOperationService
+	Memory                MemoryAdapter
+	EventBus              *PluginEventBus
 	BudgetEnforcementHook func(context.Context, BudgetScope) error
 
 	// Notify, when non-nil, is called after a run's status changes so that

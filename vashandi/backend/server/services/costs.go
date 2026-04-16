@@ -34,14 +34,14 @@ func (s *CostService) CreateEvent(ctx context.Context, companyID string, event *
 
 		// 2. Recalculate Agent Monthly Spend
 		startOfMonth := time.Date(event.OccurredAt.Year(), event.OccurredAt.Month(), 1, 0, 0, 0, 0, time.UTC)
-		
+
 		var agentSpec models.Agent
 		var agentSpend int64
 		tx.Model(&models.CostEvent{}).
 			Where("company_id = ? AND agent_id = ? AND occurred_at >= ?", companyID, event.AgentID, startOfMonth).
 			Select("COALESCE(SUM(cost_cents), 0)").
 			Scan(&agentSpend)
-		
+
 		if err := tx.Model(&agentSpec).Where("id = ?", event.AgentID).Update("spent_monthly_cents", int(agentSpend)).Error; err != nil {
 			return err
 		}
@@ -52,7 +52,7 @@ func (s *CostService) CreateEvent(ctx context.Context, companyID string, event *
 			Where("company_id = ? AND occurred_at >= ?", companyID, startOfMonth).
 			Select("COALESCE(SUM(cost_cents), 0)").
 			Scan(&companySpend)
-		
+
 		if err := tx.Model(&models.Company{}).Where("id = ?", companyID).Update("spent_monthly_cents", int(companySpend)).Error; err != nil {
 			return err
 		}
