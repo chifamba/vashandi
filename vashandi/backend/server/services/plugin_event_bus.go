@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -31,14 +32,15 @@ type EventFilter struct {
 }
 
 type subscription struct {
+	id      string
 	pattern string
 	filter  *EventFilter
 	handler func(event PluginEvent)
 }
 
 type PluginEventBus struct {
-	mu        sync.RWMutex
-	registry  map[string][]subscription // pluginID -> subscriptions
+	mu       sync.RWMutex
+	registry map[string][]subscription // pluginID -> subscriptions
 }
 
 func NewPluginEventBus() *PluginEventBus {
@@ -49,16 +51,45 @@ func NewPluginEventBus() *PluginEventBus {
 
 // Publish emits an event to all matching subscribers across all plugins.
 func (b *PluginEventBus) Publish(ctx context.Context, event PluginEvent) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	type eventDelivery struct {
+		pluginID string
+		sub      subscription
+	}
 
-	for _, subs := range b.registry {
+	b.mu.RLock()
+	deliveries := make([]eventDelivery, 0)
+	for pluginID, subs := range b.registry {
 		for _, sub := range subs {
 			if matchesPattern(event.EventType, sub.pattern) && passesFilter(event, sub.filter) {
-				// Invoke handler in a goroutine to avoid blocking the publisher
-				go sub.handler(event)
+				deliveries = append(deliveries, eventDelivery{pluginID: pluginID, sub: sub})
 			}
 		}
+	}
+	b.mu.RUnlock()
+
+	for _, pending := range deliveries {
+		if contextCanceled(ctx) {
+			return
+		}
+
+		go func(pluginID string, sub subscription) {
+			defer func() {
+				if panicValue := recover(); panicValue != nil {
+					slog.Error("[plugin-event-bus] subscription handler panicked",
+						"pluginId", pluginID,
+						"pattern", sub.pattern,
+						"eventType", event.EventType,
+						"panic", panicValue,
+					)
+				}
+			}()
+
+			if contextCanceled(ctx) {
+				return
+			}
+
+			sub.handler(event)
+		}(pending.pluginID, pending.sub)
 	}
 }
 
@@ -68,6 +99,7 @@ func (b *PluginEventBus) Subscribe(pluginID string, pattern string, filter *Even
 	defer b.mu.Unlock()
 
 	sub := subscription{
+		id:      uuid.New().String(),
 		pattern: pattern,
 		filter:  filter,
 		handler: handler,
@@ -81,12 +113,12 @@ func (b *PluginEventBus) Subscribe(pluginID string, pattern string, filter *Even
 		defer b.mu.Unlock()
 		subs := b.registry[pluginID]
 		for i, s := range subs {
-			// We compare by handler and pattern. Since Go funcs aren't directly comparable easily
-			// this is a bit tricky. In practice, we usually clear all on worker shutdown.
-			// For specific cancellation, we'd need a sub ID.
-			if s.pattern == pattern {
+			if s.id == sub.id {
 				// Remove by index
 				b.registry[pluginID] = append(subs[:i], subs[i+1:]...)
+				if len(b.registry[pluginID]) == 0 {
+					delete(b.registry, pluginID)
+				}
 				break
 			}
 		}
@@ -202,4 +234,17 @@ func passesFilter(event PluginEvent, filter *EventFilter) bool {
 	}
 
 	return true
+}
+
+func contextCanceled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }
