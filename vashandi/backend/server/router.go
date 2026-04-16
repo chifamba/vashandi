@@ -164,7 +164,12 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	}
 
 	// Routes
-	r.Get("/health", routes.HealthHandler(db))
+	r.Get("/health", routes.HealthHandler(db, routes.HealthHandlerOptions{
+		DeploymentMode:         opts.DeploymentMode,
+		DeploymentExposure:     opts.DeploymentExposure,
+		AuthReady:              true,
+		CompanyDeletionEnabled: true,
+	}))
 
 	// Company Routes
 	r.Get("/companies", routes.ListCompaniesHandler(db))
