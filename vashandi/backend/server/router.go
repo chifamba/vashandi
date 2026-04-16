@@ -147,7 +147,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	// Board mutation guard runs after auth so it can inspect the actor type and source.
 	r.Use(BoardMutationGuard)
 
-	// Auth routes — registered before the /api/v1 block so that more-specific
+	// Auth routes — registered before the main /api route block so that more-specific
 	// paths (get-session) take precedence over the wildcard catch-all.
 	r.Get("/api/auth/get-session", routes.GetSessionHandler(db, routes.GetSessionHandlerOptions{
 		DeploymentMode:   opts.DeploymentMode,
@@ -163,7 +163,10 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		})
 	}
 
-	// Routes
+	// Plugin UI static
+	r.Get("/_plugins/{pluginId}/ui/*", routes.PluginUIStaticHandler(db))
+
+	// Root-level health check (backwards compatibility for Docker health checks, etc.)
 	r.Get("/health", routes.HealthHandler(db, routes.HealthHandlerOptions{
 		DeploymentMode:         opts.DeploymentMode,
 		DeploymentExposure:     opts.DeploymentExposure,
@@ -171,26 +174,31 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		CompanyDeletionEnabled: true,
 	}))
 
-	// Company Routes
-	r.Get("/companies", routes.ListCompaniesHandler(db))
-	r.Post("/companies", routes.CreateCompanyHandler(db, secretsSvc, heartbeatSvc.Memory))
-	r.Get("/companies/{id}", routes.GetCompanyHandler(db))
-	r.Patch("/companies/{id}", routes.UpdateCompanyHandler(db))
-	r.Delete("/companies/{id}", routes.DeleteCompanyHandler(db))
-	r.Patch("/companies/{id}/archive", routes.ArchiveCompanyHandler(db, heartbeatSvc.Memory))
-	r.Patch("/companies/{id}/branding", routes.UpdateCompanyBrandingHandler(db))
-	r.Get("/companies/stats", routes.GetCompanyStatsHandler(db))
+	// API Routes - all routes under /api to match UI client expectations
+	r.Route("/api", func(api chi.Router) {
+		// Health check
+		api.Get("/health", routes.HealthHandler(db, routes.HealthHandlerOptions{
+			DeploymentMode:         opts.DeploymentMode,
+			DeploymentExposure:     opts.DeploymentExposure,
+			AuthReady:              true,
+			CompanyDeletionEnabled: true,
+		}))
 
-	// Plugin UI static
-	r.Get("/_plugins/{pluginId}/ui/*", routes.PluginUIStaticHandler(db))
+		// Company Routes
+		api.Get("/companies", routes.ListCompaniesHandler(db))
+		api.Post("/companies", routes.CreateCompanyHandler(db, secretsSvc, heartbeatSvc.Memory))
+		api.Get("/companies/{id}", routes.GetCompanyHandler(db))
+		api.Patch("/companies/{id}", routes.UpdateCompanyHandler(db))
+		api.Delete("/companies/{id}", routes.DeleteCompanyHandler(db))
+		api.Patch("/companies/{id}/archive", routes.ArchiveCompanyHandler(db, heartbeatSvc.Memory))
+		api.Patch("/companies/{id}/branding", routes.UpdateCompanyBrandingHandler(db))
+		api.Get("/companies/stats", routes.GetCompanyStatsHandler(db))
 
-	// Live-events WebSocket — GET /api/companies/{companyId}/events/ws
-	// Path matches the Node.js server and the UI client expectations.
-	// Auth is handled inside the handler (bearer token, ?token= query param, or local_trusted mode).
-	r.Get("/api/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode))
+		// Live-events WebSocket — GET /api/companies/{companyId}/events/ws
+		// Path matches the Node.js server and the UI client expectations.
+		// Auth is handled inside the handler (bearer token, ?token= query param, or local_trusted mode).
+		api.Get("/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode))
 
-	// API v1 Routes
-	r.Route("/api/v1", func(api chi.Router) {
 		// Heartbeat Routes
 		api.Route("/heartbeat", func(h chi.Router) {
 			h.Post("/wakeup", routes.HeartbeatWakeupHandler(heartbeatSvc))
@@ -199,8 +207,6 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 
 		// Plugin Routes
 		// Static sub-paths must be registered before parameterized :pluginId routes.
-		api.Get("/companies", routes.ListCompaniesHandler(db))
-		api.Get("/companies/{id}", routes.GetCompanyHandler(db))
 		api.Get("/plugins", routes.ListPluginsHandler(db, activitySvc))
 		api.Get("/plugins/examples", routes.GetPluginExamplesHandler())
 		api.Get("/plugins/ui-contributions", routes.GetPluginUIContributionsHandler(db))
