@@ -19,16 +19,16 @@ import (
 )
 
 type App struct {
-	Router              *chi.Mux
-	DB                  *gorm.DB
-	Heartbeat           *services.HeartbeatService
-	Scheduler           *services.RoutineSchedulerService
-	LiveEvents          *realtime.Hub
-	PluginWorkerManager *services.PluginWorkerManager
-	PluginJobScheduler  *services.PluginJobScheduler
+	Router               *chi.Mux
+	DB                   *gorm.DB
+	Heartbeat            *services.HeartbeatService
+	Scheduler            *services.RoutineSchedulerService
+	LiveEvents           *realtime.Hub
+	PluginWorkerManager  *services.PluginWorkerManager
+	PluginJobScheduler   *services.PluginJobScheduler
 	PluginJobCoordinator *services.PluginJobCoordinator
-	PluginHostServices  *services.PluginHostServices
-	DatabaseBackup      *services.DatabaseBackupService
+	PluginHostServices   *services.PluginHostServices
+	DatabaseBackup       *services.DatabaseBackupService
 }
 
 func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
@@ -69,18 +69,18 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 
 	// Create PluginHostServices
 	hostServices := services.NewPluginHostServices(services.PluginHostServicesOptions{
-		DB:         db,
-		Issues:     issueSvc,
-		Goals:      goalSvc,
-		Heartbeat:  heartbeatSvc,
-		Activity:   activitySvc,
-		Costs:      costSvc,
-		Secrets:    secretsSvc,
-		Registry:   registrySvc,
-		State:      stateSvc,
-		EventBus:   eventBus,
-		Telemetry:  routerOpts.Telemetry,
-		Validator:  capabilityValidator,
+		DB:             db,
+		Issues:         issueSvc,
+		Goals:          goalSvc,
+		Heartbeat:      heartbeatSvc,
+		Activity:       activitySvc,
+		Costs:          costSvc,
+		Secrets:        secretsSvc,
+		Registry:       registrySvc,
+		State:          stateSvc,
+		EventBus:       eventBus,
+		Telemetry:      routerOpts.Telemetry,
+		Validator:      capabilityValidator,
 		SecretsHandler: pluginSecretsHandler,
 	})
 
@@ -215,6 +215,10 @@ func Run() {
 	if app.Scheduler != nil {
 		slog.Info("Starting routine cron scheduler")
 		services.StartRoutineScheduler(context.Background(), app.Scheduler, 60_000)
+	}
+	if app.Heartbeat != nil {
+		slog.Info("Starting heartbeat timer scheduler")
+		services.StartHeartbeatScheduler(context.Background(), app.Heartbeat, 60_000)
 	}
 
 	// Start plugin workers for all ready plugins.

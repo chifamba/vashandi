@@ -30,7 +30,7 @@ type ProcessHandle struct {
 // This abstraction allows for in-process execution (LocalRunner) or
 // remote execution via microservices/sidecars in the future.
 type AgentRunner interface {
-	Execute(ctx context.Context, run *models.HeartbeatRun, env map[string]string) error
+	Execute(ctx context.Context, run *models.HeartbeatRun, env map[string]string) (*AgentRunResult, error)
 }
 
 type HeartbeatService struct {
@@ -81,39 +81,27 @@ func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *Activity
 
 // WakeupOptions configures an agent wakeup invocation.
 type WakeupOptions struct {
-	Source        string
-	TriggerDetail string
-	Context       map[string]interface{}
+	Source               string
+	TriggerDetail        string
+	Context              map[string]interface{}
+	Reason               string
+	Payload              map[string]interface{}
+	IdempotencyKey       string
+	RequestedByActorType string
+	RequestedByActorID   string
 }
 
 // Wakeup triggers an agent run.
 func (s *HeartbeatService) Wakeup(ctx context.Context, companyID, agentID string, opts WakeupOptions) (*models.HeartbeatRun, error) {
-	var agent models.Agent
-	if err := s.DB.WithContext(ctx).Where("id = ? AND company_id = ?", agentID, companyID).First(&agent).Error; err != nil {
-		return nil, fmt.Errorf("agent not found: %w", err)
+	run, err := s.enqueueWakeup(ctx, companyID, agentID, opts)
+	if err != nil {
+		return nil, err
 	}
-
-	// Create the run record
-	contextJSON, _ := json.Marshal(opts.Context)
-	run := &models.HeartbeatRun{
-		CompanyID:        companyID,
-		AgentID:          agentID,
-		InvocationSource: opts.Source,
-		TriggerDetail:    &opts.TriggerDetail,
-		Status:           "queued",
-		ContextSnapshot:  datatypes.JSON(contextJSON),
-	}
-
-	if err := s.DB.WithContext(ctx).Create(run).Error; err != nil {
-		return nil, fmt.Errorf("failed to create heartbeat run: %w", err)
-	}
-
-	// Log activity
-	if s.Activity != nil {
+	if run != nil && s.Activity != nil {
 		_, _ = s.Activity.Log(ctx, LogEntry{
 			CompanyID:  companyID,
-			ActorType:  "system",
-			ActorID:    "system",
+			ActorType:  firstNonEmpty(opts.RequestedByActorType, "system"),
+			ActorID:    firstNonEmpty(opts.RequestedByActorID, "system"),
 			Action:     "heartbeat.wakeup",
 			EntityType: "agent",
 			EntityID:   agentID,
@@ -121,17 +109,10 @@ func (s *HeartbeatService) Wakeup(ctx context.Context, companyID, agentID string
 			RunID:      &run.ID,
 			Details: map[string]interface{}{
 				"source": opts.Source,
+				"reason": opts.Reason,
 			},
 		})
 	}
-
-	// Trigger execution (asynchronously)
-	// In production, we would check concurrency limits here before starting.
-	go func() {
-		// For now, we resume queued runs for this agent
-		s.ResumeQueuedRuns(context.Background(), agentID)
-	}()
-
 	return run, nil
 }
 
@@ -142,11 +123,11 @@ func (s *HeartbeatService) ResumeQueuedRuns(ctx context.Context, agentID string)
 		return
 	}
 
-	// Simple concurrency check: default 1
+	policy := parseHeartbeatPolicy(&agent)
 	var runningCount int64
 	s.DB.Model(&models.HeartbeatRun{}).Where("agent_id = ? AND status = ?", agentID, "running").Count(&runningCount)
 
-	if runningCount >= 1 {
+	if runningCount >= int64(policy.MaxConcurrentRuns) {
 		return
 	}
 
@@ -164,10 +145,10 @@ func (s *HeartbeatService) claimQueuedRun(ctx context.Context, runID string) *mo
 	result := s.DB.WithContext(ctx).Model(&run).
 		Where("id = ? AND status = ?", runID, "queued").
 		Updates(map[string]interface{}{
-			"status": "starting",
+			"status":     "starting",
 			"started_at": time.Now(),
 		})
-	
+
 	if result.Error != nil || result.RowsAffected == 0 {
 		return nil
 	}
@@ -248,10 +229,46 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 		run = *claimed
 	}
 
+	contextData := parseJSONObject(run.ContextSnapshot)
+	taskKey := firstNonEmpty(deriveTaskKeyWithHeartbeatFallback(contextData, nil), run.TaskID)
+	resetTaskSession := shouldResetTaskSessionForWake(contextData)
+	var existingTaskSession *models.AgentTaskSession
+	if taskKey != "" && !resetTaskSession {
+		existingTaskSession, _ = s.getTaskSession(ctx, run.CompanyID, run.AgentID, run.Agent.AdapterType, taskKey)
+	}
+	previousSessionParams := map[string]interface{}{}
+	if existingTaskSession != nil {
+		previousSessionParams = parseJSONObject(existingTaskSession.SessionParamsJSON)
+	}
+	sessionIDBefore := ""
+	if existingTaskSession != nil {
+		sessionIDBefore = firstNonEmpty(derefString(existingTaskSession.SessionDisplayID), sessionIDFromParams(previousSessionParams))
+	}
+	if sessionIDBefore == "" && !resetTaskSession {
+		if runtimeState, err := s.getRuntimeState(ctx, run.AgentID); err == nil && runtimeState != nil && runtimeState.SessionID != nil {
+			sessionIDBefore = *runtimeState.SessionID
+		}
+	}
+
+	decision, err := s.evaluateSessionCompaction(ctx, run.AgentID, sessionIDBefore)
+	if err != nil {
+		return err
+	}
+	if decision != nil && decision.Rotate {
+		contextData["paperclipSessionHandoffMarkdown"] = decision.HandoffMarkdown
+		contextData["paperclipSessionRotationReason"] = decision.Reason
+		contextData["paperclipPreviousSessionId"] = sessionIDBefore
+		sessionIDBefore = ""
+	} else {
+		delete(contextData, "paperclipSessionHandoffMarkdown")
+		delete(contextData, "paperclipSessionRotationReason")
+		delete(contextData, "paperclipPreviousSessionId")
+	}
+
 	// Resolve environment from agent config and secrets
 	runtimeConfig := make(map[string]interface{})
 	_ = json.Unmarshal(run.Agent.RuntimeConfig, &runtimeConfig)
-	
+
 	// 1. Resolve secrets in the adapter config itself
 	resolvedConfig, err := s.Secrets.ResolveAdapterConfigForRuntime(ctx, run.CompanyID, runtimeConfig)
 	if err == nil {
@@ -266,32 +283,33 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 		}
 	}
 
-	// 1. Realize Workspace
-	recorder := s.Ops.CreateRecorder(run.CompanyID, &run.ID, nil)
-	phase := "realize_workspace"
-	op, _ := recorder.Begin(ctx, phase, nil)
-
-	var project models.Project
-	repoURL := ""
-	
-	// Extract projectId from contextSnapshot
-	contextData := make(map[string]interface{})
-	_ = json.Unmarshal(run.ContextSnapshot, &contextData)
-	contextProjectID, _ := contextData["projectId"].(string)
-
-	if contextProjectID != "" {
-		if err := s.DB.WithContext(ctx).Where("id = ?", contextProjectID).First(&project).Error; err == nil {
-			policy := make(map[string]interface{})
-			_ = json.Unmarshal(project.ExecutionWorkspacePolicy, &policy)
-			if url, ok := policy["repoUrl"].(string); ok {
-				repoURL = url
-			}
+	var resolvedWorkspace *ResolvedWorkspaceForRun
+	if s.Ops != nil {
+		recorder := s.Ops.CreateRecorder(run.CompanyID, &run.ID, nil)
+		op, _ := recorder.Begin(ctx, "realize_workspace", nil)
+		resolvedWorkspace, err = s.resolveWorkspaceForRun(ctx, &run, contextData, previousSessionParams)
+		if err != nil {
+			recorder.Finish(ctx, op.ID, 1, err)
+			return err
+		}
+		recorder.Finish(ctx, op.ID, 0, nil)
+	} else {
+		resolvedWorkspace, err = s.resolveWorkspaceForRun(ctx, &run, contextData, previousSessionParams)
+		if err != nil {
+			return err
 		}
 	}
 
-	// 1. Budget Check
-	if contextProjectID != "" {
-		blocked, err := CheckProjectBudget(s.DB, contextProjectID)
+	resolvedProjectID := ""
+	if resolvedWorkspace != nil {
+		resolvedProjectID = resolvedWorkspace.ProjectID
+	}
+	if resolvedProjectID == "" {
+		resolvedProjectID = readNonEmptyString(contextData["projectId"])
+	}
+
+	if resolvedProjectID != "" {
+		blocked, err := CheckProjectBudget(s.DB, resolvedProjectID)
 		if err != nil {
 			return err
 		}
@@ -304,23 +322,6 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 		}
 	}
 
-	strategy := StrategyPrimary
-	if strategyStr, ok := contextData["workspaceStrategy"].(string); ok && strategyStr == "git_worktree" {
-		strategy = StrategyWorktree
-	}
-
-	cwd, workspaceErr := s.Workspaces.RealizeWorkspace(ctx, run.CompanyID, contextProjectID, repoURL, RealizeOptions{
-		Strategy:   strategy,
-		RunID:      run.ID,
-		BranchName: "",
-	})
-	
-	if workspaceErr != nil {
-		recorder.Finish(ctx, op.ID, 1, workspaceErr)
-		return workspaceErr
-	}
-	recorder.Finish(ctx, op.ID, 0, nil)
-	
 	// --- Fat Context Injection ---
 	if obAdapter, ok := s.Memory.(*OpenBrainAdapter); ok {
 		memXML, xmlErr := obAdapter.CompileContextXML(ctx, run.CompanyID, run.AgentID, run.TaskID)
@@ -344,41 +345,97 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 	}
 	// -----------------------------
 
+	if resolvedWorkspace != nil {
+		contextData["paperclipWorkspace"] = map[string]interface{}{
+			"cwd":         resolvedWorkspace.CWD,
+			"source":      resolvedWorkspace.Source,
+			"projectId":   resolvedWorkspace.ProjectID,
+			"workspaceId": resolvedWorkspace.WorkspaceID,
+			"repoUrl":     resolvedWorkspace.RepoURL,
+			"repoRef":     resolvedWorkspace.RepoRef,
+		}
+		if len(resolvedWorkspace.Warnings) > 0 {
+			contextData["paperclipWorkspaceWarnings"] = resolvedWorkspace.Warnings
+		}
+	}
+	if sessionIDBefore != "" {
+		run.SessionIDBefore = &sessionIDBefore
+	} else {
+		run.SessionIDBefore = nil
+	}
+	updatedContextJSON, _ := json.Marshal(contextData)
+	run.ContextSnapshot = datatypes.JSON(updatedContextJSON)
+
 	// 2. Execute via runner
 	run.Status = "running"
+	if run.WakeupRequestID != nil {
+		_ = s.updateWakeupRequestStatus(ctx, *run.WakeupRequestID, "running", "", time.Now(), &run.ID)
+	}
 	s.DB.WithContext(ctx).Save(&run)
-	
-	env["PAPERCLIP_CWD"] = cwd
-	
-	return s.executeAndTrack(ctx, &run, env)
+
+	if resolvedWorkspace != nil {
+		env["PAPERCLIP_CWD"] = resolvedWorkspace.CWD
+	}
+
+	return s.executeAndTrack(ctx, &run, env, taskKey, resetTaskSession)
 }
 
-func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.HeartbeatRun, env map[string]string) error {
-	err := s.Runner.Execute(ctx, run, env)
-	
+func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.HeartbeatRun, env map[string]string, taskKey string, resetTaskSession bool) error {
+	result, err := s.Runner.Execute(ctx, run, env)
+
 	s.runningProcessesMu.Lock()
 	delete(s.runningProcesses, run.ID)
 	s.runningProcessesMu.Unlock()
 
 	finishedAt := time.Now()
 	run.FinishedAt = &finishedAt
+	usageJSON, usageTotals := normalizeUsageJSON(result)
+	if result != nil {
+		exitCode := result.ExitCode
+		run.ExitCode = &exitCode
+		if len(result.ResultJSON) > 0 {
+			run.ResultJSON = datatypes.JSON(result.ResultJSON)
+		}
+		if len(usageJSON) > 0 {
+			run.UsageJSON = usageJSON
+		}
+		if sessionAfter := sessionIDFromRaw(result.SessionParamsJSON); sessionAfter != "" {
+			run.SessionIDAfter = &sessionAfter
+		}
+	}
+	if err == nil && result != nil && result.ExitCode != 0 {
+		err = fmt.Errorf("agent exited with code %d", result.ExitCode)
+	}
 	if err != nil {
 		run.Status = "failed"
 		msg := err.Error()
 		run.Error = &msg
 	} else {
 		run.Status = "completed"
-		// Record cost event
-		_, _ = s.Costs.CreateEvent(ctx, run.CompanyID, &models.CostEvent{
-			AgentID:        run.AgentID,
-			HeartbeatRunID: &run.ID,
-			Provider:       run.Agent.AdapterType,
-			Model:          "default",
-			CostCents:      0, // Placeholder
-			OccurredAt:     finishedAt,
-		})
+		_, _ = s.Costs.CreateEvent(ctx, run.CompanyID, buildCostEvent(run, result, usageTotals, finishedAt))
 	}
 	s.DB.WithContext(ctx).Save(run)
+	if taskKey != "" {
+		if err == nil && result != nil && len(result.SessionParamsJSON) > 0 {
+			_ = s.upsertTaskSession(ctx, taskSessionUpsertInput{
+				CompanyID:         run.CompanyID,
+				AgentID:           run.AgentID,
+				AdapterType:       run.Agent.AdapterType,
+				TaskKey:           taskKey,
+				SessionParamsJSON: result.SessionParamsJSON,
+				SessionDisplayID:  sessionIDFromRaw(result.SessionParamsJSON),
+				LastRunID:         &run.ID,
+				LastError:         nil,
+			})
+		} else if resetTaskSession {
+			_, _ = s.clearTaskSessions(ctx, run.CompanyID, run.AgentID, &taskKey, &run.Agent.AdapterType)
+		}
+	}
+	_ = s.upsertRuntimeState(ctx, &run.Agent, run, result, usageTotals, run.Status)
+	if run.WakeupRequestID != nil {
+		_ = s.updateWakeupRequestStatus(ctx, *run.WakeupRequestID, run.Status, derefString(run.Error), finishedAt, &run.ID)
+	}
+	_ = s.finalizeAgentStatus(ctx, run.AgentID, run.Status)
 
 	// Broadcast the run status change to any live-events subscribers.
 	s.publishRunStatus(run)
@@ -461,62 +518,86 @@ type LocalRunner struct {
 	Logs *RunLogStore
 }
 
-func (r *LocalRunner) Execute(ctx context.Context, run *models.HeartbeatRun, env map[string]string) error {
+func (r *LocalRunner) Execute(ctx context.Context, run *models.HeartbeatRun, env map[string]string) (*AgentRunResult, error) {
 	cwd := env["PAPERCLIP_CWD"]
 	if cwd == "" {
 		cwd = "."
 	}
-	cmd := exec.CommandContext(ctx, "paperclipai", "run") 
+	args := []string{"heartbeat", "run", "--agent-id", run.AgentID, "--source", run.InvocationSource}
+	if run.TriggerDetail != nil && *run.TriggerDetail != "" {
+		args = append(args, "--trigger", *run.TriggerDetail)
+	}
+	cmd := exec.CommandContext(ctx, "paperclipai", args...)
 	cmd.Dir = cwd
-	
+
 	// Add env vars
+	cmd.Env = append(cmd.Env, os.Environ()...)
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	
+
 	// Set execution fields
 	pid := 0
 	run.ProcessPid = &pid
 	startedAt := time.Now()
 	run.ProcessStartedAt = &startedAt
-	
-	// Capture output through log store if available
-	if run.LogStore != nil && r.Logs != nil {
+
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	result := &AgentRunResult{}
+	var resultMu sync.Mutex
+	appendLog := func(stream, chunk string) {
+		if run.LogStore == nil || run.LogRef == nil || r.Logs == nil {
+			return
+		}
 		handle := &RunLogHandle{Store: *run.LogStore, LogRef: *run.LogRef}
-		
-		stdout, _ := cmd.StdoutPipe()
-		stderr, _ := cmd.StderrPipe()
-		
-		go func() {
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
-				_ = r.Logs.Append(handle, "stdout", scanner.Text())
-			}
-		}()
-		
-		go func() {
-			scanner := bufio.NewScanner(stderr)
-			for scanner.Scan() {
-				_ = r.Logs.Append(handle, "stderr", scanner.Text())
-			}
-		}()
+		_ = r.Logs.Append(handle, stream, chunk)
 	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			appendLog("stdout", line)
+			if parsed, ok := parseAgentRunResultLine(line); ok {
+				resultMu.Lock()
+				mergeAgentRunResult(result, parsed)
+				resultMu.Unlock()
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderr)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			appendLog("stderr", scanner.Text())
+		}
+	}()
 
 	if err := cmd.Start(); err != nil {
-		return err
+		return nil, err
 	}
-	
+
 	pid = cmd.Process.Pid
 	run.ProcessPid = &pid
-	
+
 	// In-process runners in Go don't easily have access to the parent service
 	// so we expect the service to handle the tracking.
 	// However, if we move to a microservice model, this wouldn't matter.
-	
+
 	err := cmd.Wait()
-	
-	exitCode := cmd.ProcessState.ExitCode()
+	wg.Wait()
+
+	exitCode := 0
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
 	run.ExitCode = &exitCode
-	
-	return err
+	result.ExitCode = exitCode
+
+	return result, err
 }
