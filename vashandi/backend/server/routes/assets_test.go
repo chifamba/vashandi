@@ -2,7 +2,9 @@ package routes
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -96,6 +98,30 @@ func assertDispositionFilename(t *testing.T, headerValue, expectedDisposition, e
 	if params["filename"] != expectedFilename {
 		t.Fatalf("expected filename %q, got %q", expectedFilename, params["filename"])
 	}
+}
+
+func newMultipartUploadRequest(t *testing.T, method, target, filename, contentType string, payload []byte) *http.Request {
+	t.Helper()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
+	header.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(payload); err != nil {
+		t.Fatalf("write upload body: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	req := httptest.NewRequest(method, target, body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
 }
 
 // ---------- GetAssetHandler ----------
@@ -394,4 +420,90 @@ func TestGetAttachmentContentHandler_ImageStaysInline(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 	assertDispositionFilename(t, w.Header().Get("Content-Disposition"), "inline", "preview.png")
+}
+
+func TestSanitizeSVGData_RemovesUnsafeContent(t *testing.T) {
+	input := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><g onclick="alert(1)"><image href="https://evil.test/x.png"/><use xlink:href="#icon" xmlns:xlink="http://www.w3.org/1999/xlink"/><foreignObject><div>nope</div></foreignObject><rect width="10" height="10"/></g></svg>`)
+
+	sanitized, err := sanitizeSVGData(input)
+	if err != nil {
+		t.Fatalf("sanitize svg: %v", err)
+	}
+
+	output := string(sanitized)
+	if !strings.HasPrefix(output, `<svg`) {
+		t.Fatalf("expected svg output, got %q", output)
+	}
+	for _, forbidden := range []string{"<script", "onclick=", "https://evil.test", "<foreignObject"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("expected sanitized svg to remove %q, got %q", forbidden, output)
+		}
+	}
+	if !strings.Contains(output, `href="#icon"`) {
+		t.Fatalf("expected local fragment href to remain, got %q", output)
+	}
+	if !strings.Contains(output, `<rect width="10" height="10"></rect>`) {
+		t.Fatalf("expected safe svg content to remain, got %q", output)
+	}
+
+	dataURIInput := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><image href="data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;"/></svg>`)
+	dataURISanitized, err := sanitizeSVGData(dataURIInput)
+	if err != nil {
+		t.Fatalf("sanitize data uri svg: %v", err)
+	}
+	if strings.Contains(string(dataURISanitized), `data:text/html`) {
+		t.Fatalf("expected data URI href to be removed, got %q", string(dataURISanitized))
+	}
+}
+
+func TestUploadAssetHandler_SanitizesSVGUpload(t *testing.T) {
+	db := setupAssetsTestDB(t)
+
+	router := chi.NewRouter()
+	router.Post("/companies/{companyId}/assets", UploadAssetHandler(db))
+
+	input := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect onclick="alert(1)" width="10" height="10"/></svg>`)
+	expectedSanitized, err := sanitizeSVGData(input)
+	if err != nil {
+		t.Fatalf("sanitize expected svg: %v", err)
+	}
+
+	req := newMultipartUploadRequest(t, http.MethodPost, "/companies/comp-a/assets", "unsafe.svg", svgContentType, input)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var asset map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&asset); err != nil {
+		t.Fatalf("decode asset response: %v", err)
+	}
+
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(expectedSanitized))
+	if asset["Sha256"] != expectedHash {
+		t.Fatalf("expected sanitized hash %q, got %#v", expectedHash, asset["Sha256"])
+	}
+	if asset["ByteSize"] != float64(len(expectedSanitized)) {
+		t.Fatalf("expected sanitized byte size %d, got %#v", len(expectedSanitized), asset["ByteSize"])
+	}
+}
+
+func TestUploadImageAssetHandler_RejectsInvalidSVGUpload(t *testing.T) {
+	db := setupAssetsTestDB(t)
+
+	router := chi.NewRouter()
+	router.Post("/companies/{companyId}/assets/images", UploadImageAssetHandler(db))
+
+	req := newMultipartUploadRequest(t, http.MethodPost, "/companies/comp-a/assets/images", "broken.svg", svgContentType, []byte(`<svg><g></svg>`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "SVG could not be sanitized") {
+		t.Fatalf("expected sanitization error, got %q", w.Body.String())
+	}
 }
