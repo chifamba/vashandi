@@ -3,7 +3,9 @@ package routes
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"gorm.io/gorm"
 )
 
@@ -14,12 +16,30 @@ type HealthResponse struct {
 	DeploymentExposure string                 `json:"deploymentExposure,omitempty"`
 	AuthReady          bool                   `json:"authReady,omitempty"`
 	BootstrapStatus    string                 `json:"bootstrapStatus,omitempty"`
+	BootstrapInvite    bool                   `json:"bootstrapInviteActive"`
 	Features           map[string]interface{} `json:"features,omitempty"`
 	Error              string                 `json:"error,omitempty"`
 }
 
+type HealthHandlerOptions struct {
+	DeploymentMode         string
+	DeploymentExposure     string
+	AuthReady              bool
+	CompanyDeletionEnabled bool
+}
+
 // HealthHandler returns an http.HandlerFunc that performs health checks
-func HealthHandler(db *gorm.DB) http.HandlerFunc {
+func HealthHandler(db *gorm.DB, options ...HealthHandlerOptions) http.HandlerFunc {
+	opts := HealthHandlerOptions{
+		DeploymentMode:         "local_trusted",
+		DeploymentExposure:     "private",
+		AuthReady:              true,
+		CompanyDeletionEnabled: true,
+	}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -43,16 +63,53 @@ func HealthHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		// Assuming default authenticated mode for response structure based on TS default args equivalent check
+		bootstrapStatus := "ready"
+		bootstrapInviteActive := false
+		if opts.DeploymentMode == "authenticated" {
+			var adminCount int64
+			if err := db.Model(&models.InstanceUserRole{}).
+				Where("role = ?", "instance_admin").
+				Count(&adminCount).Error; err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				json.NewEncoder(w).Encode(HealthResponse{
+					Status:  "unhealthy",
+					Version: "0.0.0-dev",
+					Error:   "database_query_failed",
+				})
+				return
+			}
+			if adminCount == 0 {
+				bootstrapStatus = "bootstrap_pending"
+				var inviteCount int64
+				now := time.Now()
+				if err := db.Model(&models.Invite{}).
+					Where("invite_type = ?", "bootstrap_ceo").
+					Where("revoked_at IS NULL").
+					Where("accepted_at IS NULL").
+					Where("expires_at > ?", now).
+					Count(&inviteCount).Error; err != nil {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					json.NewEncoder(w).Encode(HealthResponse{
+						Status:  "unhealthy",
+						Version: "0.0.0-dev",
+						Error:   "database_query_failed",
+					})
+					return
+				}
+				bootstrapInviteActive = inviteCount > 0
+			}
+		}
+
 		json.NewEncoder(w).Encode(HealthResponse{
 			Status:             "ok",
 			Version:            "0.0.0-dev",
-			DeploymentMode:     "local_trusted",
-			DeploymentExposure: "private",
-			AuthReady:          true,
-			BootstrapStatus:    "ready", // Stubbing bootstrap logic for now as instance roles are needed
+			DeploymentMode:     opts.DeploymentMode,
+			DeploymentExposure: opts.DeploymentExposure,
+			AuthReady:          opts.AuthReady,
+			BootstrapStatus:    bootstrapStatus,
+			BootstrapInvite:    bootstrapInviteActive,
 			Features: map[string]interface{}{
-				"companyDeletionEnabled": true,
+				"companyDeletionEnabled": opts.CompanyDeletionEnabled,
 			},
 		})
 	}
