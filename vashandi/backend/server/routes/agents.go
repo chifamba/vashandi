@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1150,12 +1152,68 @@ func GetWorkspaceOperationLogHandler(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
+
+		// If no log store is set, just return metadata
+		if op.LogStore == nil || op.LogRef == nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"operationId": op.ID,
+				"logStore":    op.LogStore,
+				"logRef":      op.LogRef,
+				"logBytes":    op.LogBytes,
+				"error":       "Workspace operation log not found",
+			})
+			return
+		}
+
+		// Parse query parameters
+		offset := int64(0)
+		limitBytes := int64(256000)
+		if o := r.URL.Query().Get("offset"); o != "" {
+			if parsed, err := strconv.ParseInt(o, 10, 64); err == nil && parsed >= 0 {
+				offset = parsed
+			}
+		}
+		if l := r.URL.Query().Get("limitBytes"); l != "" {
+			if parsed, err := strconv.ParseInt(l, 10, 64); err == nil && parsed > 0 {
+				limitBytes = parsed
+			}
+		}
+
+		// Read from log store
+		logStore := services.GetWorkspaceOperationLogStore()
+		handle := &services.WorkspaceOperationLogHandle{
+			Store:  services.WorkspaceOperationLogStoreType(*op.LogStore),
+			LogRef: *op.LogRef,
+		}
+
+		result, err := logStore.Read(handle, &services.WorkspaceOperationLogReadOptions{
+			Offset:     offset,
+			LimitBytes: limitBytes,
+		})
+
+		if err != nil {
+			if errors.Is(err, services.ErrLogNotFound) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"operationId": op.ID,
+					"logStore":    op.LogStore,
+					"logRef":      op.LogRef,
+					"error":       "Workspace operation log not found",
+				})
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"operationId": op.ID,
-			"logStore":    op.LogStore,
+			"store":       op.LogStore,
 			"logRef":      op.LogRef,
-			"logBytes":    op.LogBytes,
+			"content":     result.Content,
+			"nextOffset":  result.NextOffset,
 		})
 	}
 }
