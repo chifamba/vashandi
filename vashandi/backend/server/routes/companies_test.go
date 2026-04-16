@@ -763,3 +763,147 @@ func TestPortabilityImport_NewCompany(t *testing.T) {
 		}
 	}
 }
+
+func TestGlobalImportPreviewHandler(t *testing.T) {
+	db := setupPortabilityTestDB(t)
+
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(WithActor(r.Context(), ActorInfo{UserID: "board-user", ActorType: "user"}))
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.Post("/companies/import/preview", GlobalImportPreviewHandler(db))
+
+	body := `{
+		"source": {
+			"type": "inline",
+			"files": {
+				"COMPANY.md": "---\nname: Preview Co\n---\n",
+				"agents/test-agent/AGENTS.md": "---\nname: Test Agent\n---\nYou are helpful.\n"
+			}
+		},
+		"include": {"company": true, "agents": true},
+		"target": {"mode": "new_company", "newCompanyName": "Preview Co"},
+		"collisionStrategy": "skip"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/companies/import/preview", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&result)
+	plan, ok := result["plan"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected plan in result, got %v", result)
+	}
+	if plan["companyAction"] != "create" {
+		t.Errorf("expected plan.companyAction = 'create', got %v", plan["companyAction"])
+	}
+}
+
+func TestGlobalImportPreviewHandler_AgentForbidden(t *testing.T) {
+	db := setupPortabilityTestDB(t)
+
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(WithActor(r.Context(), ActorInfo{
+				AgentID:   "some-agent",
+				IsAgent:   true,
+				ActorType: "agent",
+			}))
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.Post("/companies/import/preview", GlobalImportPreviewHandler(db))
+
+	body := `{
+		"source": {"type": "inline", "files": {}},
+		"include": {"company": true},
+		"target": {"mode": "new_company"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/companies/import/preview", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for agent, got %d", w.Code)
+	}
+}
+
+func TestGlobalImportHandler(t *testing.T) {
+	db := setupPortabilityTestDB(t)
+
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(WithActor(r.Context(), ActorInfo{UserID: "board-user", ActorType: "user"}))
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.Post("/companies/import", GlobalImportHandler(db))
+
+	body := `{
+		"source": {
+			"type": "inline",
+			"files": {
+				"COMPANY.md": "---\nname: Global Import Co\n---\n",
+				"agents/global-agent/AGENTS.md": "---\nname: Global Agent\n---\nYou are helpful.\n"
+			}
+		},
+		"include": {"company": true, "agents": true},
+		"target": {"mode": "new_company", "newCompanyName": "Global Import Co"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/companies/import", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&result)
+	company, ok := result["company"].(map[string]interface{})
+	if !ok || company["action"] != "created" {
+		t.Errorf("expected company.action = 'created', got %v", result["company"])
+	}
+}
+
+func TestGlobalImportHandler_AgentForbidden(t *testing.T) {
+	db := setupPortabilityTestDB(t)
+
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(WithActor(r.Context(), ActorInfo{
+				AgentID:   "some-agent",
+				IsAgent:   true,
+				ActorType: "agent",
+			}))
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.Post("/companies/import", GlobalImportHandler(db))
+
+	body := `{
+		"source": {"type": "inline", "files": {}},
+		"include": {"company": true},
+		"target": {"mode": "new_company"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/companies/import", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for agent, got %d", w.Code)
+	}
+}

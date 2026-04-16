@@ -573,8 +573,12 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		// Company Export/Import
 		api.Post("/companies/{companyId}/exports/preview", routes.PreviewExportCompanyHandler(db))
 		api.Post("/companies/{companyId}/exports", routes.ExportCompanyHandler(db))
+		api.Post("/companies/{companyId}/export", routes.ExportCompanyHandler(db)) // UI compatibility alias
 		api.Post("/companies/{companyId}/imports/preview", routes.PreviewImportCompanyHandler(db))
 		api.Post("/companies/{companyId}/imports/apply", routes.ImportCompanyHandler(db))
+		// Global import routes (no companyId in path - board only)
+		api.Post("/companies/import/preview", routes.GlobalImportPreviewHandler(db))
+		api.Post("/companies/import", routes.GlobalImportHandler(db))
 
 		// Heartbeat Run Events (REST endpoint — returns stored events from DB)
 		api.Get("/heartbeat-runs/{runId}/events", routes.ListHeartbeatRunEventsHandler(db))

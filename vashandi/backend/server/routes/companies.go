@@ -357,6 +357,58 @@ func ImportCompanyHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// GlobalImportPreviewHandler — POST /companies/import/preview
+// This is the global import preview route (no companyId in path).
+// Only board users can use this route; it accepts any target company.
+func GlobalImportPreviewHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewPortabilityService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := AssertBoard(r); err != nil {
+			http.Error(w, "Only board users can preview global imports", http.StatusForbidden)
+			return
+		}
+		var req services.ImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		result, err := svc.PreviewImport(r.Context(), req, services.ImportModeBoardFull)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	}
+}
+
+// GlobalImportHandler — POST /companies/import
+// This is the global import route (no companyId in path).
+// Only board users can use this route; it accepts any target company.
+func GlobalImportHandler(db *gorm.DB) http.HandlerFunc {
+	svc := services.NewPortabilityService(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := AssertBoard(r); err != nil {
+			http.Error(w, "Only board users can execute global imports", http.StatusForbidden)
+			return
+		}
+		var req services.ImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		actor := GetActorInfo(r)
+		actorUserID := actor.UserID
+		result, err := svc.ImportBundle(r.Context(), req, actorUserID, services.ImportModeBoardFull)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	}
+}
+
 // ListCompanyFeedbackTracesHandler returns feedback traces for a company (board only).
 func ListCompanyFeedbackTracesHandler(svc *services.FeedbackService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
