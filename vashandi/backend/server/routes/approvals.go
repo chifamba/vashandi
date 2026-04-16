@@ -177,3 +177,73 @@ func GetApprovalCommentsHandler(db *gorm.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(comments)
 	}
 }
+
+// requestRevisionBody represents the optional request body for the request-revision endpoint.
+type requestRevisionBody struct {
+	DecidedByUserID string `json:"decidedByUserId,omitempty"`
+	DecisionNote    string `json:"decisionNote,omitempty"`
+}
+
+func RequestRevisionHandler(db *gorm.DB, activitySvc *services.ActivityService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if !requireBoard(w, r) {
+			return
+		}
+		var approval models.Approval
+		if err := db.WithContext(r.Context()).First(&approval, "id = ?", id).Error; err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		if !requireCompanyAccess(w, r, approval.CompanyID) {
+			return
+		}
+
+		// Parse optional body - allow empty body but reject malformed JSON
+		var body requestRevisionBody
+		if r.ContentLength > 0 {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+
+		actor := GetActorInfo(r)
+		actorID := actor.UserID
+		if actorID == "" {
+			actorID = "board"
+		}
+
+		now := time.Now()
+		approval.Status = "revision_requested"
+		approval.DecidedAt = &now
+		if body.DecidedByUserID != "" {
+			approval.DecidedByUserID = &body.DecidedByUserID
+		} else {
+			approval.DecidedByUserID = nil
+		}
+		if body.DecisionNote != "" {
+			approval.DecisionNote = &body.DecisionNote
+		}
+		if err := db.WithContext(r.Context()).Save(&approval).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Log activity
+		if activitySvc != nil {
+			_, _ = activitySvc.Log(r.Context(), services.LogEntry{
+				CompanyID:  approval.CompanyID,
+				ActorType:  "user",
+				ActorID:    actorID,
+				Action:     "approval.revision_requested",
+				EntityType: "approval",
+				EntityID:   approval.ID,
+				Details:    map[string]interface{}{"type": approval.Type},
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(approval)
+	}
+}

@@ -477,3 +477,85 @@ func TestGetApprovalIssuesHandler(t *testing.T) {
 		t.Errorf("expected 2 issue-approval links, got %d", len(issueApprovals))
 	}
 }
+
+func TestRequestRevisionHandler_SetsRevisionRequestedStatus(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+	db.Exec("INSERT INTO approvals (id, company_id, type, status, payload) VALUES ('appr-rev-1', 'comp-1', 'run', 'pending', '{}')")
+
+	router := chi.NewRouter()
+	router.Post("/approvals/{id}/request-revision", RequestRevisionHandler(db, nil))
+
+	body, _ := json.Marshal(map[string]string{"decisionNote": "Please fix X"})
+	req := httptest.NewRequest(http.MethodPost, "/approvals/appr-rev-1/request-revision", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var approval models.Approval
+	json.NewDecoder(w.Body).Decode(&approval)
+	if approval.Status != "revision_requested" {
+		t.Errorf("expected status 'revision_requested', got %q", approval.Status)
+	}
+	if approval.DecidedAt == nil {
+		t.Error("expected DecidedAt to be set")
+	}
+	if approval.DecisionNote == nil || *approval.DecisionNote != "Please fix X" {
+		t.Errorf("expected DecisionNote 'Please fix X', got %v", approval.DecisionNote)
+	}
+}
+
+func TestRequestRevisionHandler_NotFound(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+
+	router := chi.NewRouter()
+	router.Post("/approvals/{id}/request-revision", RequestRevisionHandler(db, nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/approvals/missing/request-revision", nil)
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestRequestRevisionHandler_RejectsAgentActor(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+	db.Exec("INSERT INTO approvals (id, company_id, type, status, payload) VALUES ('appr-rev-agent', 'comp-1', 'run', 'pending', '{}')")
+
+	router := chi.NewRouter()
+	router.Post("/approvals/{id}/request-revision", RequestRevisionHandler(db, nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/approvals/appr-rev-agent/request-revision", nil)
+	req = withAgentActorRequest(req, "agent-1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRequestRevisionHandler_BadJSON(t *testing.T) {
+	db := setupApprovalsTestDB(t)
+	db.Exec("INSERT INTO approvals (id, company_id, type, status, payload) VALUES ('appr-rev-bad', 'comp-1', 'run', 'pending', '{}')")
+
+	router := chi.NewRouter()
+	router.Post("/approvals/{id}/request-revision", RequestRevisionHandler(db, nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/approvals/appr-rev-bad/request-revision", bytes.NewBufferString("not-valid-json"))
+	req.Header.Set("Content-Type", "application/json")
+	req = withBoardActorRequest(req)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
