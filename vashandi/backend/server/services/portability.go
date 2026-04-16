@@ -470,10 +470,6 @@ func uniqueName(base string, usedSlugs map[string]bool) string {
 	}
 }
 
-func uniqueIssueTitle(base string, usedSlugs map[string]bool) string {
-	return uniqueName(base, usedSlugs)
-}
-
 // deriveProjectSlug computes the slug for a project name (same logic as deriveProjectUrlKey).
 func deriveProjectSlug(name string) string {
 	s := normalizeSlug(name)
@@ -1225,7 +1221,12 @@ func generateExportReadme(manifest PortabilityManifest) string {
 	return sb.String()
 }
 
-const orgChartLabelMaxLength = 20
+const (
+	// Keeps labels within the fixed SVG node width without overflowing the card.
+	orgChartLabelMaxLength = 20
+	orgChartInitialWidth   = 420
+	orgChartInitialHeight  = 220
+)
 
 func escapeHTMLForSVG(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
@@ -1296,7 +1297,7 @@ func generateOrgChartSVG(agents []PortabilityAgentManifestEntry) string {
 		}
 	}
 
-	maxX, maxY := 420, 220
+	maxX, maxY := orgChartInitialWidth, orgChartInitialHeight
 	for _, pos := range positions {
 		if pos.x+nodeW+10 > maxX {
 			maxX = pos.x + nodeW + 10
@@ -3503,7 +3504,7 @@ func (s *PortabilityService) buildPreview(ctx context.Context, req ImportRequest
 					action = "skip"
 					reasonText = "Existing task matched; skip strategy."
 				default:
-					plannedTitle = uniqueIssueTitle(manifestIssue.Title, usedIssueSlugsForRename)
+					plannedTitle = uniqueName(manifestIssue.Title, usedIssueSlugsForRename)
 					reasonText = "Existing task matched; rename strategy."
 					if collisionStrategy == "replace" {
 						warnings = append(warnings, fmt.Sprintf("Task %q matched an existing issue and will be renamed because replace is not supported for tasks.", manifestIssue.Slug))
