@@ -153,20 +153,20 @@ func printHeartbeatEvent(event client.HeartbeatRunEvent, adapterType string, jso
 	case "adapter.invoke":
 		printAdapterInvoke(adapterType, event.Payload)
 	case "heartbeat.run.status":
-		if status := stringValue(event.Payload["status"]); status != "" {
+		if status := stringOrEmpty(event.Payload["status"]); status != "" {
 			fmt.Printf("[status] %s\n", status)
 		} else if event.Message != nil && *event.Message != "" {
 			fmt.Printf("[status] %s\n", *event.Message)
 		}
 	case "heartbeat.run.log":
-		stream := stringValue(event.Payload["stream"])
+		stream := stringOrEmpty(event.Payload["stream"])
 		if stream == "" && event.Stream != nil {
 			stream = *event.Stream
 		}
 		if stream == "" {
 			stream = "system"
 		}
-		chunk := stringValue(event.Payload["chunk"])
+		chunk := stringOrEmpty(event.Payload["chunk"])
 		if chunk == "" && event.Message != nil {
 			chunk = *event.Message
 		}
@@ -179,15 +179,15 @@ func printHeartbeatEvent(event client.HeartbeatRunEvent, adapterType string, jso
 }
 
 func printAdapterInvoke(adapterType string, payload map[string]interface{}) {
-	selectedAdapter := stringValue(payload["adapterType"])
+	selectedAdapter := stringOrEmpty(payload["adapterType"])
 	if selectedAdapter == "" {
 		selectedAdapter = selectAdapter(adapterType)
 	}
 	fmt.Printf("Adapter: %s\n", selectedAdapter)
-	if cwd := stringValue(payload["cwd"]); cwd != "" {
+	if cwd := stringOrEmpty(payload["cwd"]); cwd != "" {
 		fmt.Printf("Working dir: %s\n", cwd)
 	}
-	if command := stringValue(payload["command"]); command != "" {
+	if command := stringOrEmpty(payload["command"]); command != "" {
 		commandArgs := stringSlice(payload["commandArgs"])
 		if len(commandArgs) > 0 {
 			fmt.Printf("Command: %s %s\n", command, strings.Join(commandArgs, " "))
@@ -195,7 +195,7 @@ func printAdapterInvoke(adapterType string, payload map[string]interface{}) {
 			fmt.Printf("Command: %s\n", command)
 		}
 	}
-	if prompt := stringValue(payload["prompt"]); prompt != "" {
+	if prompt := stringOrEmpty(payload["prompt"]); prompt != "" {
 		fmt.Printf("Prompt:\n%s\n", prompt)
 	}
 }
@@ -274,7 +274,7 @@ func selectAdapter(adapterType string) string {
 	}
 }
 
-func stringValue(value interface{}) string {
+func stringOrEmpty(value interface{}) string {
 	if str, ok := value.(string); ok {
 		return str
 	}

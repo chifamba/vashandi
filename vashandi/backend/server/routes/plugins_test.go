@@ -13,12 +13,12 @@ import (
 	"gorm.io/gorm"
 )
 
-type fakePluginToolExecutor struct {
+type mockPluginToolExecutor struct {
 	result interface{}
 	err    error
 }
 
-func (f fakePluginToolExecutor) ExecuteTool(_ context.Context, _ string, _ interface{}, _ interface{}) (interface{}, error) {
+func (f mockPluginToolExecutor) ExecuteTool(_ context.Context, _ string, _ interface{}, _ interface{}) (interface{}, error) {
 	return f.result, f.err
 }
 
@@ -253,7 +253,7 @@ func TestExecutePluginToolHandler_LogsMCPInvocation(t *testing.T) {
 	req = withBoardActorRequest(req)
 	w := httptest.NewRecorder()
 
-	ExecutePluginToolHandler(fakePluginToolExecutor{result: map[string]string{"status": "ok"}}, activity)(w, req)
+	ExecutePluginToolHandler(mockPluginToolExecutor{result: map[string]string{"status": "ok"}}, activity)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())

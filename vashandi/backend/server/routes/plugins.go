@@ -308,13 +308,9 @@ func ExecutePluginToolHandler(dispatcher pluginToolExecutor, activity *services.
 			return
 		}
 
-		runContext := map[string]interface{}{}
-		for key, value := range body.RunContext {
-			runContext[key] = value
-		}
-		companyID, _ := runContext["companyId"].(string)
-		agentID, _ := runContext["agentId"].(string)
-		runID, _ := runContext["runId"].(string)
+		companyID, _ := body.RunContext["companyId"].(string)
+		agentID, _ := body.RunContext["agentId"].(string)
+		runID, _ := body.RunContext["runId"].(string)
 
 		res, err := dispatcher.ExecuteTool(r.Context(), body.Tool, body.Parameters, body.RunContext)
 		if err != nil {

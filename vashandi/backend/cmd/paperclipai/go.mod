@@ -3,7 +3,6 @@ module github.com/chifamba/vashandi/vashandi/backend/cmd/paperclipai
 go 1.25.0
 
 require (
-	github.com/chifamba/vashandi/vashandi/backend/adapters v0.0.0-00010101000000-000000000000
 	github.com/chifamba/vashandi/vashandi/backend/client v0.0.0-00010101000000-000000000000
 	github.com/chifamba/vashandi/vashandi/backend/db v0.0.0-20260414042850-ccad1bd164ff
 	github.com/chifamba/vashandi/vashandi/backend/server v0.0.0-00010101000000-000000000000
