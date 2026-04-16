@@ -136,7 +136,7 @@ func TestCreateAgentHandlerWebhook(t *testing.T) {
 	defer mockServer.Close()
 
 	router := chi.NewRouter()
-	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, &mockMemoryAdapter{baseURL: mockServer.URL}))
+	router.Post("/companies/{companyId}/agents", CreateAgentHandler(db, &mockMemoryAdapter{baseURL: mockServer.URL}, nil))
 
 	agentData := map[string]string{
 		"id":   "agent-123",

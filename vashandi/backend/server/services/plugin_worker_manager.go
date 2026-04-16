@@ -540,6 +540,12 @@ func (h *WorkerHandle) start(ctx context.Context, entrypoint string) error {
 		return fmt.Errorf("failed to start plugin worker %q: %w", h.pluginID, err)
 	}
 
+	// Apply memory limit via prlimit(2) now that the child PID is known.
+	// On Linux this uses Prlimit; on other platforms it is a no-op.
+	if sandbox != nil {
+		applyPrlimitAfterStart(cmd, sandbox.MemoryLimitMb)
+	}
+
 	h.mu.Lock()
 	h.cmd = cmd
 	h.stdinPipe = stdinPipe

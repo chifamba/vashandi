@@ -12,3 +12,6 @@ func applySandboxConstraints(cmd *exec.Cmd, cfg *PluginSandboxConfig) {
 	// without external packages. Minimal sandboxing is enforced via environment
 	// sanitization in the platform-independent worker manager.
 }
+
+// applyPrlimitAfterStart is a no-op on Windows.
+func applyPrlimitAfterStart(_ *exec.Cmd, _ int) {}

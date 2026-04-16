@@ -37,7 +37,7 @@ func setupPluginLifecycleTestDB(t *testing.T) *gorm.DB {
 
 func TestPluginLifecycleService_LoadDisable(t *testing.T) {
 	db := setupPluginLifecycleTestDB(t)
-	svc := NewPluginLifecycleService(db)
+	svc := NewPluginLifecycleService(db, nil, nil, nil)
 	ctx := context.Background()
 
 	now := time.Now()
@@ -64,7 +64,7 @@ func TestPluginLifecycleService_LoadDisable(t *testing.T) {
 
 func TestPluginLifecycleService_ErrorsAndUpgrades(t *testing.T) {
 	db := setupPluginLifecycleTestDB(t)
-	svc := NewPluginLifecycleService(db)
+	svc := NewPluginLifecycleService(db, nil, nil, nil)
 	ctx := context.Background()
 
 	now := time.Now()
@@ -96,7 +96,7 @@ func TestPluginLifecycleService_ErrorsAndUpgrades(t *testing.T) {
 
 func TestPluginLifecycleService_Unload(t *testing.T) {
 	db := setupPluginLifecycleTestDB(t)
-	svc := NewPluginLifecycleService(db)
+	svc := NewPluginLifecycleService(db, nil, nil, nil)
 	ctx := context.Background()
 
 	now := time.Now()
@@ -138,7 +138,7 @@ func TestPluginLifecycleService_Unload(t *testing.T) {
 
 func TestPluginLifecycleService_Events(t *testing.T) {
 	db := setupPluginLifecycleTestDB(t)
-	svc := NewPluginLifecycleService(db)
+	svc := NewPluginLifecycleService(db, nil, nil, nil)
 	ctx := context.Background()
 
 	now := time.Now()

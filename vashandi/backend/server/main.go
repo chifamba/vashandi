@@ -44,6 +44,11 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	instanceSettingsSvc := services.NewInstanceSettingsService(db)
 	routerOpts.InstanceSettings = instanceSettingsSvc
 
+	// Create the adapter plugin store so user-installed external adapters are
+	// discovered at startup via ~/.paperclip/adapter-plugins.json.
+	adapterPluginStore := services.NewAdapterPluginStore()
+	routerOpts.AdapterPluginStore = adapterPluginStore
+
 	eventBus := services.NewPluginEventBus()
 	capabilityValidator := services.NewPluginCapabilityValidator()
 	pluginSecretsHandler := services.NewPluginSecretsHandler(db, secretsSvc, registrySvc, capabilityValidator)

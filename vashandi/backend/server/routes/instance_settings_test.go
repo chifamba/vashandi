@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -33,6 +34,11 @@ func setupInstanceSettingsTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func setupInstanceSettingsSvc(t *testing.T) *services.InstanceSettingsService {
+	t.Helper()
+	return services.NewInstanceSettingsService(setupInstanceSettingsTestDB(t))
+}
+
 func withActor(req *http.Request, actor ActorInfo) *http.Request {
 	return req.WithContext(WithActor(req.Context(), actor))
 }
@@ -47,13 +53,13 @@ func decodeJSONBody(t *testing.T, body *bytes.Buffer) map[string]any {
 }
 
 func TestGetExperimentalSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/instance/settings/experimental", nil)
 	req = withActor(req, ActorInfo{UserID: "local-board", ActorType: "board", IsInstanceAdmin: true})
 	w := httptest.NewRecorder()
 
-	GetExperimentalSettingsHandler(db)(w, req)
+	GetExperimentalSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -64,7 +70,7 @@ func TestGetExperimentalSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
 }
 
 func TestUpdateExperimentalSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	body, _ := json.Marshal(map[string]any{"enableIsolatedWorkspaces": true})
 	req := httptest.NewRequest(http.MethodPatch, "/instance/settings/experimental", bytes.NewBuffer(body))
@@ -72,7 +78,7 @@ func TestUpdateExperimentalSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
 	req = withActor(req, ActorInfo{UserID: "local-board", ActorType: "board", IsInstanceAdmin: true})
 	w := httptest.NewRecorder()
 
-	UpdateExperimentalSettingsHandler(db)(w, req)
+	UpdateExperimentalSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
@@ -83,7 +89,7 @@ func TestUpdateExperimentalSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
 }
 
 func TestUpdateExperimentalSettingsHandler_AllowsGuardedAutoRestartSetting(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	body, _ := json.Marshal(map[string]any{"autoRestartDevServerWhenIdle": true})
 	req := httptest.NewRequest(http.MethodPatch, "/instance/settings/experimental", bytes.NewBuffer(body))
@@ -91,7 +97,7 @@ func TestUpdateExperimentalSettingsHandler_AllowsGuardedAutoRestartSetting(t *te
 	req = withActor(req, ActorInfo{UserID: "local-board", ActorType: "board", IsInstanceAdmin: true})
 	w := httptest.NewRecorder()
 
-	UpdateExperimentalSettingsHandler(db)(w, req)
+	UpdateExperimentalSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
@@ -102,13 +108,13 @@ func TestUpdateExperimentalSettingsHandler_AllowsGuardedAutoRestartSetting(t *te
 }
 
 func TestGetGeneralSettingsHandler_AllowsBoardUsers(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/instance/settings/general", nil)
 	req = withActor(req, ActorInfo{UserID: "user-1", ActorType: "board"})
 	w := httptest.NewRecorder()
 
-	GetGeneralSettingsHandler(db)(w, req)
+	GetGeneralSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -120,7 +126,7 @@ func TestGetGeneralSettingsHandler_AllowsBoardUsers(t *testing.T) {
 }
 
 func TestUpdateGeneralSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	body, _ := json.Marshal(map[string]any{
 		"censorUsernameInLogs":          true,
@@ -132,7 +138,7 @@ func TestUpdateGeneralSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
 	req = withActor(req, ActorInfo{UserID: "local-board", ActorType: "board", IsInstanceAdmin: true})
 	w := httptest.NewRecorder()
 
-	UpdateGeneralSettingsHandler(db)(w, req)
+	UpdateGeneralSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
@@ -144,7 +150,7 @@ func TestUpdateGeneralSettingsHandler_AllowsLocalBoardUsers(t *testing.T) {
 }
 
 func TestUpdateGeneralSettingsHandler_PersistsS3StorageConfigForUi(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	storagePatch := map[string]any{
 		"storage": map[string]any{
@@ -167,7 +173,7 @@ func TestUpdateGeneralSettingsHandler_PersistsS3StorageConfigForUi(t *testing.T)
 	req = withActor(req, ActorInfo{UserID: "local-board", ActorType: "board", IsInstanceAdmin: true})
 	w := httptest.NewRecorder()
 
-	UpdateGeneralSettingsHandler(db)(w, req)
+	UpdateGeneralSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
@@ -206,7 +212,7 @@ func TestUpdateGeneralSettingsHandler_PersistsS3StorageConfigForUi(t *testing.T)
 	getReq = withActor(getReq, ActorInfo{UserID: "user-1", ActorType: "board"})
 	getW := httptest.NewRecorder()
 
-	GetGeneralSettingsHandler(db)(getW, getReq)
+	GetGeneralSettingsHandler(svc)(getW, getReq)
 
 	if getW.Code != http.StatusOK {
 		t.Fatalf("expected 200 from readback, got %d; body=%s", getW.Code, getW.Body.String())
@@ -219,7 +225,7 @@ func TestUpdateGeneralSettingsHandler_PersistsS3StorageConfigForUi(t *testing.T)
 }
 
 func TestUpdateGeneralSettingsHandler_RejectsNonAdminBoardUsers(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	body, _ := json.Marshal(map[string]any{"censorUsernameInLogs": true})
 	req := httptest.NewRequest(http.MethodPatch, "/instance/settings/general", bytes.NewBuffer(body))
@@ -227,7 +233,7 @@ func TestUpdateGeneralSettingsHandler_RejectsNonAdminBoardUsers(t *testing.T) {
 	req = withActor(req, ActorInfo{UserID: "user-1", ActorType: "board"})
 	w := httptest.NewRecorder()
 
-	UpdateGeneralSettingsHandler(db)(w, req)
+	UpdateGeneralSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)
@@ -235,7 +241,7 @@ func TestUpdateGeneralSettingsHandler_RejectsNonAdminBoardUsers(t *testing.T) {
 }
 
 func TestUpdateGeneralSettingsHandler_RejectsAgentCallers(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 
 	body, _ := json.Marshal(map[string]any{"feedbackDataSharingPreference": "not_allowed"})
 	req := httptest.NewRequest(http.MethodPatch, "/instance/settings/general", bytes.NewBuffer(body))
@@ -243,7 +249,7 @@ func TestUpdateGeneralSettingsHandler_RejectsAgentCallers(t *testing.T) {
 	req = withActor(req, ActorInfo{AgentID: "agent-1", IsAgent: true, ActorType: "agent"})
 	w := httptest.NewRecorder()
 
-	UpdateGeneralSettingsHandler(db)(w, req)
+	UpdateGeneralSettingsHandler(svc)(w, req)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)
@@ -251,9 +257,9 @@ func TestUpdateGeneralSettingsHandler_RejectsAgentCallers(t *testing.T) {
 }
 
 func TestInstanceSettingsRoutes_ExposeUiPaths(t *testing.T) {
-	db := setupInstanceSettingsTestDB(t)
+	svc := setupInstanceSettingsSvc(t)
 	router := chi.NewRouter()
-	router.Get("/api/instance/settings/general", GetGeneralSettingsHandler(db))
+	router.Get("/api/instance/settings/general", GetGeneralSettingsHandler(svc))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/instance/settings/general", nil)
 	req = req.WithContext(WithActor(context.Background(), ActorInfo{UserID: "user-1", ActorType: "board"}))

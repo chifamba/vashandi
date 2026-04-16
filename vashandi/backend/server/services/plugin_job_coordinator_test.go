@@ -31,28 +31,6 @@ func (s *MockScheduler) UnregisterPlugin(ctx context.Context, pluginID string) e
 	return nil
 }
 
-type MockJobStore struct {
-	SyncedChan  chan string
-	DeletedChan chan string
-}
-
-func NewMockJobStore() *MockJobStore {
-	return &MockJobStore{
-		SyncedChan:  make(chan string, 10),
-		DeletedChan: make(chan string, 10),
-	}
-}
-
-func (m *MockJobStore) SyncJobDeclarations(ctx context.Context, pluginID string, jobs []map[string]interface{}) error {
-	m.SyncedChan <- pluginID
-	return nil
-}
-
-func (m *MockJobStore) DeleteAllJobs(ctx context.Context, pluginID string) error {
-	m.DeletedChan <- pluginID
-	return nil
-}
-
 func setupJobCoordinatorTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&svc_pjc=1"), &gorm.Config{})
@@ -65,6 +43,11 @@ func setupJobCoordinatorTestDB(t *testing.T) *gorm.DB {
 	db.Exec(`CREATE TABLE plugins (
 		id text PRIMARY KEY,
 		plugin_key text NOT NULL UNIQUE,
+		package_name text NOT NULL DEFAULT '',
+		version text NOT NULL DEFAULT '0.0.0',
+		api_version integer NOT NULL DEFAULT 1,
+		categories text NOT NULL DEFAULT '[]',
+		manifest_json text NOT NULL DEFAULT '{}',
 		status text NOT NULL,
 		last_error text,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
@@ -73,21 +56,29 @@ func setupJobCoordinatorTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestPluginJobCoordinator_Loaded(t *testing.T) {
-	db := setupJobCoordinatorTestDB(t)
-	lc := NewPluginLifecycleService(db)
-	scheduler := NewMockScheduler()
-	store := NewMockJobStore()
-	coordinator := NewPluginJobCoordinator(db, lc, scheduler, store)
+// setupCoordinator creates a PluginJobCoordinator with real services wired to the
+// provided DB and a mock scheduler for assertion.
+func setupCoordinator(db *gorm.DB, scheduler PluginJobSchedulerIface) *PluginJobCoordinator {
+	lc := NewPluginLifecycleService(db, nil, nil, nil)
+	registry := NewPluginRegistryService(db)
+	store := NewPluginJobStore(db)
+	return NewPluginJobCoordinator(store, scheduler, registry, lc)
+}
 
-	db.Exec("INSERT INTO plugins (id, plugin_key, status) VALUES ('plugin-1', 'com.test.1', 'ready')")
+func TestPluginJobCoordinator_Ready(t *testing.T) {
+	db := setupJobCoordinatorTestDB(t)
+	scheduler := NewMockScheduler()
+	coordinator := setupCoordinator(db, scheduler)
+
+	db.Exec("INSERT INTO plugins (id, plugin_key, package_name, version, manifest_json, status) VALUES ('plugin-1', 'com.test.1', 'test', '1.0.0', '{}', 'ready')")
 
 	coordinator.Start()
 
-	// Simulate the lifecycle emitting an event manually
-	lc.emit("plugin.loaded", map[string]interface{}{
+	// Emit plugin.status_changed with newStatus = PluginStatusReady.
+	coordinator.Lifecycle.emit("plugin.status_changed", map[string]interface{}{
 		"pluginId":  "plugin-1",
 		"pluginKey": "com.test.1",
+		"newStatus": PluginStatusReady,
 	})
 
 	select {
@@ -102,16 +93,15 @@ func TestPluginJobCoordinator_Loaded(t *testing.T) {
 
 func TestPluginJobCoordinator_Disabled(t *testing.T) {
 	db := setupJobCoordinatorTestDB(t)
-	lc := NewPluginLifecycleService(db)
 	scheduler := NewMockScheduler()
-	store := NewMockJobStore()
-	coordinator := NewPluginJobCoordinator(db, lc, scheduler, store)
+	coordinator := setupCoordinator(db, scheduler)
 
 	coordinator.Start()
 
-	lc.emit("plugin.disabled", map[string]interface{}{
+	coordinator.Lifecycle.emit("plugin.status_changed", map[string]interface{}{
 		"pluginId":  "plugin-2",
 		"pluginKey": "com.test.2",
+		"newStatus": PluginStatusDisabled,
 	})
 
 	select {
@@ -124,20 +114,17 @@ func TestPluginJobCoordinator_Disabled(t *testing.T) {
 	}
 }
 
-func TestPluginJobCoordinator_Unloaded(t *testing.T) {
+func TestPluginJobCoordinator_Uninstalled(t *testing.T) {
 	db := setupJobCoordinatorTestDB(t)
-	lc := NewPluginLifecycleService(db)
 	scheduler := NewMockScheduler()
-	store := NewMockJobStore()
-	coordinator := NewPluginJobCoordinator(db, lc, scheduler, store)
+	coordinator := setupCoordinator(db, scheduler)
 
 	coordinator.Start()
 
-	// 1. Without removeData
-	lc.emit("plugin.unloaded", map[string]interface{}{
-		"pluginId":   "plugin-3",
-		"pluginKey":  "com.test.3",
-		"removeData": false,
+	coordinator.Lifecycle.emit("plugin.status_changed", map[string]interface{}{
+		"pluginId":  "plugin-3",
+		"pluginKey": "com.test.3",
+		"newStatus": PluginStatusUninstalled,
 	})
 
 	select {
@@ -147,38 +134,5 @@ func TestPluginJobCoordinator_Unloaded(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Errorf("timeout waiting for plugin-3 unregistration")
-	}
-
-	// Make sure DeleteAllJobs isn't called
-	select {
-	case deleted := <-store.DeletedChan:
-		t.Errorf("expected jobs not to be deleted without removeData, but got call for %s", deleted)
-	default:
-		// success
-	}
-
-	// 2. With removeData
-	lc.emit("plugin.unloaded", map[string]interface{}{
-		"pluginId":   "plugin-4",
-		"pluginKey":  "com.test.4",
-		"removeData": true,
-	})
-
-	select {
-	case unregistered := <-scheduler.UnregisteredChan:
-		if unregistered != "plugin-4" {
-			t.Errorf("expected plugin-4 to be unregistered, got %s", unregistered)
-		}
-	case <-time.After(1 * time.Second):
-		t.Errorf("timeout waiting for plugin-4 unregistration")
-	}
-
-	select {
-	case deleted := <-store.DeletedChan:
-		if deleted != "plugin-4" {
-			t.Errorf("expected plugin-4 to be deleted, got %s", deleted)
-		}
-	case <-time.After(1 * time.Second):
-		t.Errorf("timeout waiting for plugin-4 deletion")
 	}
 }
