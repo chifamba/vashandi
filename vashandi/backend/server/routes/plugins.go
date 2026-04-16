@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -332,7 +333,7 @@ func ExecutePluginToolHandler(dispatcher pluginToolExecutor, activity *services.
 			if strings.TrimSpace(runID) != "" {
 				runIDPtr = &runID
 			}
-			_, _ = activity.Log(r.Context(), services.LogEntry{
+			if _, err := activity.Log(r.Context(), services.LogEntry{
 				CompanyID:  companyID,
 				ActorType:  actor.ActorType,
 				ActorID:    actor.UserID,
@@ -346,7 +347,9 @@ func ExecutePluginToolHandler(dispatcher pluginToolExecutor, activity *services.
 					"parameters": body.Parameters,
 					"runContext": body.RunContext,
 				},
-			})
+			}); err != nil {
+				slog.Warn("failed to log mcp tool invocation", "tool", body.Tool, "companyId", companyID, "error", err)
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
