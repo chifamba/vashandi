@@ -35,16 +35,17 @@ type AgentRunner interface {
 }
 
 type HeartbeatService struct {
-	DB         *gorm.DB
-	Secrets    *SecretService
-	Runner     AgentRunner
-	Logs       *RunLogStore
-	Costs      *CostService
-	Workspaces *WorkspaceService
-	Activity   *ActivityService
-	Ops        *WorkspaceOperationService
-	Memory     MemoryAdapter
-	EventBus   *PluginEventBus
+	DB                    *gorm.DB
+	Secrets               *SecretService
+	Runner                AgentRunner
+	Logs                  *RunLogStore
+	Costs                 *CostService
+	Workspaces            *WorkspaceService
+	Activity              *ActivityService
+	Ops                   *WorkspaceOperationService
+	Memory                MemoryAdapter
+	EventBus              *PluginEventBus
+	BudgetEnforcementHook func(context.Context, BudgetScope) error
 
 	// Notify, when non-nil, is called after a run's status changes so that
 	// the live-events hub can broadcast the update to connected clients.
@@ -54,6 +55,8 @@ type HeartbeatService struct {
 	// In-memory process tracking
 	runningProcesses   map[string]*ProcessHandle
 	runningProcessesMu sync.RWMutex
+	budgetRunCancels   map[string]context.CancelFunc
+	budgetRunCancelsMu sync.RWMutex
 }
 
 func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *ActivityService, ops *WorkspaceOperationService, memory MemoryAdapter, runner AgentRunner) *HeartbeatService {
@@ -66,7 +69,7 @@ func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *Activity
 	if memory == nil {
 		memory = NewOpenBrainAdapter()
 	}
-	return &HeartbeatService{
+	svc := &HeartbeatService{
 		DB:               db,
 		Secrets:          secrets,
 		Runner:           runner,
@@ -77,7 +80,11 @@ func NewHeartbeatService(db *gorm.DB, secrets *SecretService, activity *Activity
 		Ops:              ops,
 		Memory:           memory,
 		runningProcesses: make(map[string]*ProcessHandle),
+		budgetRunCancels: make(map[string]context.CancelFunc),
 	}
+	svc.BudgetEnforcementHook = svc.CancelBudgetScopeWork
+	svc.SyncBudgetEnforcementHook()
+	return svc
 }
 
 // WakeupOptions configures an agent wakeup invocation.
@@ -308,19 +315,23 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 	if resolvedProjectID == "" {
 		resolvedProjectID = readNonEmptyString(contextData["projectId"])
 	}
+	if resolvedProjectID != "" && readNonEmptyString(contextData["projectId"]) == "" {
+		contextData["projectId"] = resolvedProjectID
+	}
 
-	if resolvedProjectID != "" {
-		blocked, err := CheckProjectBudget(s.DB, resolvedProjectID)
-		if err != nil {
-			return err
+	if budgetScopes, err := s.buildInvocationBudgetScopes(ctx, run.CompanyID, run.AgentID, contextData); err != nil {
+		return err
+	} else if budgetBlock, err := s.GetInvocationBlock(ctx, run.CompanyID, run.AgentID, budgetScopes); err != nil {
+		return err
+	} else if budgetBlock != nil {
+		run.Status = "failed"
+		errMsg := budgetBlock.Reason
+		run.Error = &errMsg
+		s.DB.WithContext(ctx).Save(&run)
+		if run.WakeupRequestID != nil {
+			_ = s.updateWakeupRequestStatus(ctx, *run.WakeupRequestID, "failed", errMsg, time.Now(), &run.ID)
 		}
-		if blocked {
-			run.Status = "failed"
-			errMsg := "Budget exceeded for project"
-			run.Error = &errMsg
-			s.DB.WithContext(ctx).Save(&run)
-			return fmt.Errorf("budget exceeded")
-		}
+		return fmt.Errorf("budget blocked: %s", budgetBlock.Reason)
 	}
 
 	// --- Fat Context Injection ---
@@ -382,7 +393,14 @@ func (s *HeartbeatService) StartRun(ctx context.Context, runID string) error {
 }
 
 func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.HeartbeatRun, env map[string]string, taskKey string, resetTaskSession bool) error {
-	result, err := s.Runner.Execute(ctx, run, env)
+	runCtx, cancel := context.WithCancel(ctx)
+	s.registerBudgetRunCancel(run.ID, cancel)
+	defer func() {
+		s.releaseBudgetRunCancel(run.ID)
+		cancel()
+	}()
+
+	result, err := s.Runner.Execute(runCtx, run, env)
 
 	s.runningProcessesMu.Lock()
 	delete(s.runningProcesses, run.ID)
@@ -407,7 +425,20 @@ func (s *HeartbeatService) executeAndTrack(ctx context.Context, run *models.Hear
 	if err == nil && result != nil && result.ExitCode != 0 {
 		err = fmt.Errorf("agent exited with code %d", result.ExitCode)
 	}
-	if err != nil {
+	currentStatus, statusErr := s.loadRunStatus(ctx, run.ID)
+	if statusErr != nil {
+		return statusErr
+	}
+	if currentStatus == "cancelled" {
+		run.Status = "cancelled"
+		code := "cancelled"
+		run.ErrorCode = &code
+		if run.Error == nil {
+			msg := "Cancelled due to budget pause"
+			run.Error = &msg
+		}
+		err = nil
+	} else if err != nil {
 		run.Status = "failed"
 		msg := err.Error()
 		run.Error = &msg
@@ -496,6 +527,13 @@ func (s *HeartbeatService) publishRunStatus(run *models.HeartbeatRun) {
 		return
 	}
 	s.Notify(run.CompanyID, payload)
+}
+
+func (s *HeartbeatService) SyncBudgetEnforcementHook() {
+	if s == nil || s.Costs == nil {
+		return
+	}
+	s.Costs.BudgetEnforcementHook = s.BudgetEnforcementHook
 }
 
 // resumeNextRun picks up the next queued run for the agent and starts it.

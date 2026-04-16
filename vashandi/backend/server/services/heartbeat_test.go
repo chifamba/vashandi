@@ -32,6 +32,22 @@ func (r *heartbeatTestRunner) Execute(_ context.Context, _ *models.HeartbeatRun,
 	return &AgentRunResult{}, nil
 }
 
+type blockingHeartbeatRunner struct {
+	started chan struct{}
+	done    chan struct{}
+}
+
+func (r *blockingHeartbeatRunner) Execute(ctx context.Context, _ *models.HeartbeatRun, _ map[string]string) (*AgentRunResult, error) {
+	if r.started != nil {
+		close(r.started)
+	}
+	<-ctx.Done()
+	if r.done != nil {
+		close(r.done)
+	}
+	return nil, ctx.Err()
+}
+
 type heartbeatTestMemory struct {
 	createCalls []MemoryPayload
 	createdCh   chan struct{}
@@ -95,6 +111,9 @@ func setupHeartbeatServiceTestDB(t *testing.T) *gorm.DB {
 	db.Exec(`CREATE TABLE companies (
 		id text PRIMARY KEY,
 		name text NOT NULL,
+		status text NOT NULL DEFAULT 'active',
+		pause_reason text,
+		paused_at datetime,
 		spent_monthly_cents integer NOT NULL DEFAULT 0,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
@@ -213,6 +232,8 @@ func setupHeartbeatServiceTestDB(t *testing.T) *gorm.DB {
 		id text PRIMARY KEY,
 		company_id text NOT NULL,
 		name text NOT NULL,
+		pause_reason text,
+		paused_at datetime,
 		execution_workspace_policy text DEFAULT '{}',
 		created_at datetime DEFAULT CURRENT_TIMESTAMP,
 		updated_at datetime DEFAULT CURRENT_TIMESTAMP
@@ -295,6 +316,40 @@ func setupHeartbeatServiceTestDB(t *testing.T) *gorm.DB {
 		occurred_at datetime NOT NULL,
 		created_at datetime DEFAULT CURRENT_TIMESTAMP
 	)`)
+	db.Exec(`CREATE TABLE budget_policies (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		scope_type text NOT NULL,
+		scope_id text NOT NULL,
+		metric text NOT NULL DEFAULT 'billed_cents',
+		window_kind text NOT NULL DEFAULT 'calendar_month_utc',
+		amount integer NOT NULL DEFAULT 0,
+		warn_percent integer NOT NULL DEFAULT 80,
+		hard_stop_enabled boolean NOT NULL DEFAULT 1,
+		notify_enabled boolean NOT NULL DEFAULT 1,
+		is_active boolean NOT NULL DEFAULT 1,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE budget_incidents (
+		id text PRIMARY KEY,
+		company_id text NOT NULL,
+		policy_id text NOT NULL,
+		scope_type text NOT NULL,
+		scope_id text NOT NULL,
+		metric text NOT NULL DEFAULT 'billed_cents',
+		window_kind text NOT NULL DEFAULT 'calendar_month_utc',
+		window_start datetime NOT NULL,
+		window_end datetime NOT NULL,
+		threshold_type text NOT NULL,
+		amount_limit integer NOT NULL DEFAULT 0,
+		amount_observed integer NOT NULL DEFAULT 0,
+		status text NOT NULL DEFAULT 'open',
+		approval_id text,
+		resolved_at datetime,
+		created_at datetime DEFAULT CURRENT_TIMESTAMP,
+		updated_at datetime DEFAULT CURRENT_TIMESTAMP
+	)`)
 
 	return db
 }
@@ -337,6 +392,7 @@ func TestHeartbeatService_StartRun_CompletesRunAndRecordsWorkspaceOperation(t *t
 		Ops:              NewWorkspaceOperationService(db),
 		Memory:           memory,
 		runningProcesses: map[string]*ProcessHandle{},
+		budgetRunCancels: map[string]context.CancelFunc{},
 	}
 
 	if err := svc.StartRun(context.Background(), "run-1"); err != nil {
@@ -434,6 +490,7 @@ func TestHeartbeatService_Wakeup_CoalescesSameTaskKey(t *testing.T) {
 		Ops:              NewWorkspaceOperationService(db),
 		Memory:           &heartbeatTestMemory{},
 		runningProcesses: map[string]*ProcessHandle{},
+		budgetRunCancels: map[string]context.CancelFunc{},
 	}
 
 	db.Exec(`INSERT INTO heartbeat_runs (id, company_id, agent_id, invocation_source, status, context_snapshot, task_id)
@@ -488,6 +545,7 @@ func TestHeartbeatService_TickTimers_EnqueuesDueAgents(t *testing.T) {
 		Ops:              NewWorkspaceOperationService(db),
 		Memory:           &heartbeatTestMemory{},
 		runningProcesses: map[string]*ProcessHandle{},
+		budgetRunCancels: map[string]context.CancelFunc{},
 	}
 
 	result, err := svc.TickTimers(context.Background(), time.Now())
@@ -529,5 +587,138 @@ func TestHeartbeatService_EvaluateSessionCompaction_RotatesAfterThreshold(t *tes
 	}
 	if decision.Reason == "" || decision.HandoffMarkdown == "" {
 		t.Fatalf("expected compaction reason and handoff markdown, got %#v", decision)
+	}
+}
+
+func TestHeartbeatService_Wakeup_BlocksProjectBudgetScope(t *testing.T) {
+	db := setupHeartbeatServiceTestDB(t)
+	now := time.Now().UTC()
+	db.Exec("INSERT INTO companies (id, name) VALUES ('comp-1', 'Acme')")
+	db.Exec(`INSERT INTO agents (id, company_id, name, adapter_type, runtime_config, permissions)
+		VALUES ('agent-1', 'comp-1', 'Runner', 'cursor', '{}', '{}')`)
+	db.Exec("INSERT INTO projects (id, company_id, name, pause_reason, paused_at) VALUES ('proj-1', 'comp-1', 'Project One', 'budget', ?)", now)
+	db.Exec(`INSERT INTO budget_policies (id, company_id, scope_type, scope_id, amount, hard_stop_enabled, is_active)
+		VALUES ('bp-1', 'comp-1', 'project', 'proj-1', 100, 1, 1)`)
+	db.Exec(`INSERT INTO budget_incidents (id, company_id, policy_id, scope_type, scope_id, window_start, window_end, threshold_type, amount_limit, amount_observed, status)
+		VALUES ('bi-1', 'comp-1', 'bp-1', 'project', 'proj-1', ?, ?, 'hard', 100, 125, 'open')`, now.Add(-time.Hour), now.Add(time.Hour))
+
+	svc := NewHeartbeatService(db, NewSecretService(db, nil), nil, NewWorkspaceOperationService(db), &heartbeatTestMemory{}, &heartbeatTestRunner{})
+
+	run, err := svc.Wakeup(context.Background(), "comp-1", "agent-1", WakeupOptions{
+		Source:  "automation",
+		Context: map[string]interface{}{"projectId": "proj-1"},
+	})
+	if err == nil {
+		t.Fatal("expected wakeup to be blocked by project budget")
+	}
+	if run != nil {
+		t.Fatalf("expected no run to be returned, got %#v", run)
+	}
+	var runCount int64
+	if err := db.Model(&models.HeartbeatRun{}).Count(&runCount).Error; err != nil {
+		t.Fatalf("count runs: %v", err)
+	}
+	if runCount != 0 {
+		t.Fatalf("expected no heartbeat runs to be queued, got %d", runCount)
+	}
+}
+
+func TestHeartbeatService_StartRun_BlocksCompanyBudgetScope(t *testing.T) {
+	db := setupHeartbeatServiceTestDB(t)
+	now := time.Now().UTC()
+	db.Exec("INSERT INTO companies (id, name, status, pause_reason, paused_at) VALUES ('comp-1', 'Acme', 'paused', 'budget', ?)", now)
+	db.Exec(`INSERT INTO agents (id, company_id, name, adapter_type, runtime_config, permissions)
+		VALUES ('agent-1', 'comp-1', 'Runner', 'openai', '{}', '{}')`)
+	db.Exec(`INSERT INTO budget_policies (id, company_id, scope_type, scope_id, amount, hard_stop_enabled, is_active)
+		VALUES ('bp-1', 'comp-1', 'company', 'comp-1', 100, 1, 1)`)
+	db.Exec(`INSERT INTO budget_incidents (id, company_id, policy_id, scope_type, scope_id, window_start, window_end, threshold_type, amount_limit, amount_observed, status)
+		VALUES ('bi-1', 'comp-1', 'bp-1', 'company', 'comp-1', ?, ?, 'hard', 100, 125, 'open')`, now.Add(-time.Hour), now.Add(time.Hour))
+	db.Exec(`INSERT INTO agent_wakeup_requests (id, company_id, agent_id, source, status)
+		VALUES ('wake-1', 'comp-1', 'agent-1', 'api', 'queued')`)
+	db.Exec(`INSERT INTO heartbeat_runs (id, company_id, agent_id, invocation_source, status, wakeup_request_id, context_snapshot, task_id)
+		VALUES ('run-1', 'comp-1', 'agent-1', 'api', 'starting', 'wake-1', '{}', 'task-1')`)
+
+	runner := &heartbeatTestRunner{}
+	svc := NewHeartbeatService(db, NewSecretService(db, nil), nil, NewWorkspaceOperationService(db), &heartbeatTestMemory{}, runner)
+
+	if err := svc.StartRun(context.Background(), "run-1"); err == nil {
+		t.Fatal("expected StartRun to fail when company budget is blocked")
+	}
+	if runner.called {
+		t.Fatal("expected runner not to be invoked when budget block is present")
+	}
+
+	var run models.HeartbeatRun
+	if err := db.First(&run, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.Status != "failed" {
+		t.Fatalf("expected failed run status, got %q", run.Status)
+	}
+}
+
+func TestHeartbeatService_CancelBudgetScopeWork_CancelsRunningRun(t *testing.T) {
+	db := setupHeartbeatServiceTestDB(t)
+	db.Exec("INSERT INTO companies (id, name) VALUES ('comp-1', 'Acme')")
+	db.Exec(`INSERT INTO agents (id, company_id, name, adapter_type, runtime_config, permissions)
+		VALUES ('agent-1', 'comp-1', 'Runner', 'openai', '{}', '{}')`)
+	db.Exec(`INSERT INTO agent_wakeup_requests (id, company_id, agent_id, source, status)
+		VALUES ('wake-1', 'comp-1', 'agent-1', 'api', 'queued')`)
+	db.Exec(`INSERT INTO heartbeat_runs (id, company_id, agent_id, invocation_source, status, wakeup_request_id, context_snapshot, task_id)
+		VALUES ('run-1', 'comp-1', 'agent-1', 'api', 'starting', 'wake-1', '{}', 'task-1')`)
+
+	runner := &blockingHeartbeatRunner{
+		started: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+	svc := NewHeartbeatService(db, NewSecretService(db, nil), nil, NewWorkspaceOperationService(db), &heartbeatTestMemory{}, runner)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.StartRun(context.Background(), "run-1")
+	}()
+
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner to start")
+	}
+
+	if err := svc.CancelBudgetScopeWork(context.Background(), BudgetScope{
+		CompanyID: "comp-1",
+		ScopeType: "agent",
+		ScopeID:   "agent-1",
+	}); err != nil {
+		t.Fatalf("cancel budget scope work: %v", err)
+	}
+
+	select {
+	case <-runner.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner to be cancelled")
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("expected StartRun to finish cleanly after cancellation, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for StartRun to return")
+	}
+
+	var run models.HeartbeatRun
+	if err := db.First(&run, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.Status != "cancelled" {
+		t.Fatalf("expected cancelled run status, got %q", run.Status)
+	}
+	var wakeup models.AgentWakeupRequest
+	if err := db.First(&wakeup, "id = ?", "wake-1").Error; err != nil {
+		t.Fatalf("load wakeup request: %v", err)
+	}
+	if wakeup.Status != "cancelled" {
+		t.Fatalf("expected cancelled wakeup status, got %q", wakeup.Status)
 	}
 }

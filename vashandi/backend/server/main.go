@@ -60,6 +60,7 @@ func NewApp(db *gorm.DB, routerOpts RouterOptions) *App {
 	heartbeatSvc := services.NewHeartbeatService(db, secretsSvc, activitySvc, opsSvc, nil, nil)
 	heartbeatSvc.Workspaces = workspaceSvc
 	heartbeatSvc.Costs = costSvc
+	heartbeatSvc.SyncBudgetEnforcementHook()
 	heartbeatSvc.EventBus = eventBus
 
 	// Create the shared event hub and inject it into the router options and
