@@ -199,15 +199,16 @@ func RequestRevisionHandler(db *gorm.DB, activitySvc *services.ActivityService) 
 			return
 		}
 
-		// Parse optional body
+		// Parse optional body - allow empty body but reject malformed JSON
 		var body requestRevisionBody
-		_ = json.NewDecoder(r.Body).Decode(&body) // ignore error for empty body
+		if r.ContentLength > 0 {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 
 		actor := GetActorInfo(r)
-		decidedBy := body.DecidedByUserID
-		if decidedBy == "" {
-			decidedBy = "board"
-		}
 		actorID := actor.UserID
 		if actorID == "" {
 			actorID = "board"
@@ -224,7 +225,10 @@ func RequestRevisionHandler(db *gorm.DB, activitySvc *services.ActivityService) 
 		if body.DecisionNote != "" {
 			approval.DecisionNote = &body.DecisionNote
 		}
-		db.WithContext(r.Context()).Save(&approval)
+		if err := db.WithContext(r.Context()).Save(&approval).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		// Log activity
 		if activitySvc != nil {
