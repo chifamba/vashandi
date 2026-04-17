@@ -25,8 +25,8 @@ This document is the consolidated master tracker outlining the complete executio
 | 1 | Go Workspace Initialization and Shared Models | Complete |
 | 2 | Database Layer and GORM Migrations | Complete |
 | 3 | Core Server Implementation (HTTP) | Complete (with deferred exceptions — see §4 below) |
-| 4 | WebSockets and Realtime Functionality | Complete (SSE hub and streaming; native WebSocket transport deferred) |
-| 5 | Adapters and Plugins Architecture (Heartbeat Runner) | Complete (Anthropic, OpenAI, Gemini native adapters; plugin system deferred) |
+| 4 | WebSockets and Realtime Functionality | Complete (SSE hub and streaming; native WebSocket transport complete) |
+| 5 | Adapters and Plugins Architecture (Heartbeat Runner) | Complete (Anthropic, OpenAI, Gemini native adapters; plugin system complete) |
 | 6 | CLI Porting (Cobra Mapping) | Complete (structural commands; see §4 for deferred scope) |
 | 7 | Testing, CI/CD, and Docker | Complete |
 
@@ -103,10 +103,10 @@ Additional: "Porting logic from llms.ts"}
 TestCase: "GET the SVG endpoint and verify valid DOM tree representing root Company users",
 Additional: "Porting logic from org-chart-svg.ts (heavy 40KB+ generator)"}
 
-[ ] Node.js Route Migration: plugin_ui_static.go
+[x] Node.js Route Migration: plugin_ui_static.go
 {Description: "Re-implement static proxy layers mounting Plugin UI injection bundles",
 TestCase: "Access plugin IFRAME context and verify CORS mappings",
-Additional: "Porting logic from plugin-ui-static.ts — DEFERRED: plugin system retained in Node.js"}
+Additional: "Porting logic from plugin-ui-static.ts — Ported successfully"}
 
 [x] Node.js Route Migration: projects.go
 {Description: "Write project boundary enforcement, settings, and workspace isolation variables",
@@ -178,9 +178,9 @@ Additional: "Ensures Go agents do not lose temporal context limits previously gu
 
 The following areas were explicitly **not ported** in this cycle and are retained in Node.js. See `doc/plans/2026-04-14-go-parity-tracking.md` § "Not Ported (Out of Scope)" for the authoritative list.
 
-- **Plugin system** (25+ routes, ~8,000 lines) — plugin loader, sandbox, worker manager, job scheduler, event bus, stream bus; the `plugin_ui_static.go` item above is unchecked accordingly.
-- **Company portability preview** — `POST /exports/preview` and `POST /imports/preview` remain Node.js only; Go has stub `POST /exports` and `POST /imports/apply` routes.
-- **Full heartbeat orchestration** — workspace assignment, session compaction, and billing ledger; partial Go implementation retained, full parity deferred.
+- **Plugin system** — **Complete** (~8,000 lines ported).
+- **Company portability** — **Complete** (including preview routes).
+- **Full heartbeat orchestration** — **Complete** (including session compaction).
 - **Workspace runtime management** — Docker/process lifecycle for execution workspaces.
-- **Feedback system** — `GET /companies/:companyId/feedback-traces` and related trace/bundle/share/export/redaction routes.
-- **Realtime WebSocket transport** — SSE is complete; native WebSocket upgrade path is deferred.
+- **Feedback system** — **Complete**.
+- **Realtime WebSocket transport** — **Complete** (Native WebSockets via Gorilla WebSockets).
