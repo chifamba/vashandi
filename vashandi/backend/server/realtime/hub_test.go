@@ -52,6 +52,33 @@ func newTestRouter(db *gorm.DB, deploymentMode string) (*Hub, *chi.Mux) {
 
 // readWithTimeout reads a single WebSocket message, retrying until the deadline.
 // This avoids relying on an arbitrary sleep to wait for the writePump goroutine.
+
+// waitForClient polls until the hub has at least one client registered for the company.
+func waitForClient(hub *Hub, companyID string) {
+	for i := 0; i < 50; i++ {
+		hub.mu.RLock()
+		if len(hub.clients[companyID]) > 0 {
+			hub.mu.RUnlock()
+			return
+		}
+		hub.mu.RUnlock()
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitForGlobalClient polls until the hub has at least one global client registered.
+func waitForGlobalClient(hub *Hub) {
+	for i := 0; i < 50; i++ {
+		hub.mu.RLock()
+		if len(hub.globalClients) > 0 {
+			hub.mu.RUnlock()
+			return
+		}
+		hub.mu.RUnlock()
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func readWithTimeout(t *testing.T, conn *websocket.Conn, timeout time.Duration) ([]byte, error) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -78,9 +105,10 @@ func TestLiveEventsHandler_LocalTrusted(t *testing.T) {
 	// Publish an event.
 	event := map[string]any{"type": "agent.status", "companyId": "company-1"}
 	data, _ := json.Marshal(event)
+	waitForClient(hub, "company-1")
 	hub.Publish("company-1", data)
 
-	msg, err := readWithTimeout(t, conn, 5*time.Second)
+	msg, err := readWithTimeout(t, conn, 15*time.Second)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -139,10 +167,11 @@ func TestLiveEventsHandler_EventsNotLeakedAcrossCompanies(t *testing.T) {
 
 	// Publish only to company-A.
 	data, _ := json.Marshal(map[string]any{"type": "heartbeat.run.status"})
+	waitForClient(hub, "company-A")
 	hub.Publish("company-A", data)
 
 	// company-A client should receive the event.
-	msg, err := readWithTimeout(t, connA, 5*time.Second)
+	msg, err := readWithTimeout(t, connA, 15*time.Second)
 	if err != nil {
 		t.Fatalf("company-A read: %v", err)
 	}
@@ -186,10 +215,11 @@ func TestLiveEventsHandler_GlobalChannel(t *testing.T) {
 	// Publish a global event
 	globalEvent := map[string]any{"type": "plugin.ui.updated", "global": true}
 	data, _ := json.Marshal(globalEvent)
+	waitForGlobalClient(hub)
 	hub.PublishGlobal(data)
 
 	// Global subscriber should receive the event.
-	msg, err := readWithTimeout(t, conn, 5*time.Second)
+	msg, err := readWithTimeout(t, conn, 15*time.Second)
 	if err != nil {
 		t.Fatalf("global read: %v", err)
 	}
@@ -234,10 +264,11 @@ func TestLiveEventsHandler_GlobalChannelIsolatedFromCompany(t *testing.T) {
 
 	// Publish a company-scoped event
 	data, _ := json.Marshal(map[string]any{"type": "agent.status"})
+	waitForClient(hub, "company-1")
 	hub.Publish("company-1", data)
 
 	// Company subscriber should receive it
-	msg, err := readWithTimeout(t, connCompany, 5*time.Second)
+	msg, err := readWithTimeout(t, connCompany, 15*time.Second)
 	if err != nil {
 		t.Fatalf("company read: %v", err)
 	}
