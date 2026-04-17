@@ -79,7 +79,7 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 			if !strings.HasPrefix(authHeader, "Bearer ") {
 				// No bearer token — try a BetterAuth session cookie.
 				if db != nil {
-					if sessionActor, ok := resolveSessionCookieActor(r, db, opts.BetterAuthSecret); ok {
+					if sessionActor, ok := ResolveSessionCookieActor(r, db, opts.BetterAuthSecret); ok {
 						actor = sessionActor
 						actor.RunID = runID
 					}
@@ -199,10 +199,10 @@ func tryJwtAgentAuth(ctx context.Context, db *gorm.DB, token, headerRunID string
 	}, true
 }
 
-// resolveSessionCookieActor reads the BetterAuth session cookie from the
+// ResolveSessionCookieActor reads the BetterAuth session cookie from the
 // request, looks up the session in the database, and returns a board ActorInfo
 // if the session is valid and not expired.
-func resolveSessionCookieActor(r *http.Request, db *gorm.DB, secret string) (routes.ActorInfo, bool) {
+func ResolveSessionCookieActor(r *http.Request, db *gorm.DB, secret string) (routes.ActorInfo, bool) {
 	token, ok := resolveBetterAuthSessionToken(r, secret)
 	if !ok {
 		return routes.ActorInfo{}, false

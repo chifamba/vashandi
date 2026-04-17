@@ -28,7 +28,7 @@ import (
 //  3. local_trusted deployment mode — anonymous caller is granted board access.
 //
 // Agents may only subscribe to events for their own company (not global).
-func (h *Hub) LiveEventsHandler(db *gorm.DB, deploymentMode string) http.HandlerFunc {
+func (h *Hub) LiveEventsHandler(db *gorm.DB, deploymentMode string, resolveSessionCookieActor func(r *http.Request, db *gorm.DB) (routes.ActorInfo, bool)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		companyID := chi.URLParam(r, "companyId")
 		if companyID == "" {
@@ -43,6 +43,13 @@ func (h *Hub) LiveEventsHandler(db *gorm.DB, deploymentMode string) http.Handler
 		if actor.ActorType == "anonymous" {
 			if queryToken := strings.TrimSpace(r.URL.Query().Get("token")); queryToken != "" {
 				actor = resolveTokenActor(db, queryToken)
+			}
+		}
+
+		// Fallback: try BetterAuth session cookie for authenticated deployments
+		if actor.ActorType == "anonymous" && deploymentMode == "authenticated" && resolveSessionCookieActor != nil {
+			if sessionActor, ok := resolveSessionCookieActor(r, db); ok {
+				actor = sessionActor
 			}
 		}
 
