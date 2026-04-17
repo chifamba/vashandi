@@ -215,7 +215,10 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		// Live-events WebSocket — GET /api/companies/{companyId}/events/ws
 		// Path matches the Node.js server and the UI client expectations.
 		// Auth is handled inside the handler (bearer token, ?token= query param, or local_trusted mode).
-		api.Get("/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode))
+		resolveCookie := func(r *http.Request, db *gorm.DB) (routes.ActorInfo, bool) {
+			return ResolveSessionCookieActor(r, db, opts.BetterAuthSecret)
+		}
+		api.Get("/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode, resolveCookie))
 
 		// Heartbeat Routes
 		api.Route("/heartbeat", func(h chi.Router) {

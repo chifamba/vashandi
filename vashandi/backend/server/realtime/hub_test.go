@@ -46,7 +46,7 @@ func wsConnect(t *testing.T, server *httptest.Server, path string, headers http.
 func newTestRouter(db *gorm.DB, deploymentMode string) (*Hub, *chi.Mux) {
 	hub := NewHub()
 	r := chi.NewRouter()
-	r.Get("/api/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode))
+	r.Get("/api/companies/{companyId}/events/ws", hub.LiveEventsHandler(db, deploymentMode, nil))
 	return hub, r
 }
 
