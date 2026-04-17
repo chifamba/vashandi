@@ -30,9 +30,12 @@ type ActorInfo struct {
 	// ActorSource identifies how the actor was authenticated.
 	// Board actors: "local_implicit" (local_trusted mode), "session" (cookie session),
 	// or "board_key" (bearer board API key).
-	// Agent actors: "agent_key" (bearer agent API key).
+	// Agent actors: "agent_key" (bearer agent API key), "agent_jwt" (bearer JWT token).
 	// Anonymous actors: "".
 	ActorSource string
+	// RunID is the request correlation ID extracted from the x-paperclip-run-id header
+	// or from JWT claims.
+	RunID string
 }
 
 // GetActorInfo extracts the ActorInfo stored by the server's ActorMiddleware.

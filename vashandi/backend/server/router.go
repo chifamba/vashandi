@@ -116,8 +116,26 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	// A good base middleware stack
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+
+	// Use advanced structured logging middleware if available, fall back to chi.Logger
+	loggingMw := DefaultLoggingMiddleware()
+	if loggingMw != nil {
+		r.Use(loggingMw.Handler)
+	} else {
+		r.Use(middleware.Logger)
+	}
+
+	// Use recoverer with telemetry integration
+	if tc != nil {
+		r.Use(RecovererWithTelemetry(tc))
+	} else {
+		r.Use(middleware.Recoverer)
+	}
+
+	// Error handler middleware for catching validation errors and panic recovery
+	r.Use(ErrorHandlerMiddleware(ErrorHandlerConfig{
+		Telemetry: tc,
+	}))
 
 	// CORS must be registered before routes so that preflight OPTIONS requests
 	// are handled correctly.  AllowedOrigins uses "*" with credential support
@@ -125,7 +143,7 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Paperclip-Run-Id"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
