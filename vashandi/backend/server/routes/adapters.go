@@ -26,6 +26,7 @@ func ListAdaptersHandler(db *gorm.DB, store *services.AdapterPluginStore) http.H
 			{"type": "codex", "name": "Codex (OpenAI)"},
 			{"type": "codex_local", "name": "Codex (local CLI)"},
 			{"type": "gemini", "name": "Gemini (Google)"},
+			{"type": "gemini_local", "name": "Gemini (local CLI)"},
 			{"type": "cursor", "name": "Cursor"},
 			{"type": "cursor_local", "name": "Cursor (local CLI)"},
 			{"type": "windsurf", "name": "Windsurf"},

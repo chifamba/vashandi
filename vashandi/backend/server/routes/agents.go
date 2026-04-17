@@ -1043,6 +1043,10 @@ func GetAdapterModelsHandler(db *gorm.DB) http.HandlerFunc {
 				{ID: "gemini-2.0-flash", Label: "gemini-2.0-flash"},
 				{ID: "gemini-1.5-pro", Label: "gemini-1.5-pro"},
 			},
+			"gemini_local": {
+				{ID: "gemini-2.0-flash", Label: "gemini-2.0-flash"},
+				{ID: "gemini-1.5-pro", Label: "gemini-1.5-pro"},
+			},
 			"cursor": {
 				{ID: "cursor-default", Label: "cursor-default"},
 			},
