@@ -94,9 +94,6 @@ func TestWorkspaceOperationRecorder_Begin(t *testing.T) {
 		t.Errorf("expected command 'git checkout main', got %v", op.Command)
 	}
 
-	// NOTE: DB count verification skipped — SQLite doesn't support PostgreSQL UUID
-	// defaults (gen_random_uuid), so the auto-generated ID may be empty.
-	// This test will work correctly against PostgreSQL.
 	if op.ID != "" {
 		var count int64
 		db.Model(&models.WorkspaceOperation{}).Where("id = ?", op.ID).Count(&count)
@@ -138,11 +135,6 @@ func TestWorkspaceOperationRecorder_FinishSuccess(t *testing.T) {
 		t.Fatalf("Begin failed: %v", err)
 	}
 
-	// NOTE: SQLite doesn't support PostgreSQL UUID defaults, so op.ID may be empty.
-	// Skip Finish verification when ID is empty — will pass against PostgreSQL.
-	if op.ID == "" {
-		t.Skip("Skipping Finish test: SQLite doesn't generate UUID primary keys")
-	}
 
 	// Finish successfully
 	if err := recorder.Finish(context.Background(), op.ID, 0, nil); err != nil {
@@ -176,10 +168,6 @@ func TestWorkspaceOperationRecorder_FinishWithError(t *testing.T) {
 		t.Fatalf("Begin failed: %v", err)
 	}
 
-	// NOTE: SQLite doesn't support PostgreSQL UUID defaults, so op.ID may be empty.
-	if op.ID == "" {
-		t.Skip("Skipping Finish test: SQLite doesn't generate UUID primary keys")
-	}
 
 	// Finish with error
 	buildErr := errors.New("compilation failed")
