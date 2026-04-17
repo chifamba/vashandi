@@ -209,9 +209,9 @@ Total Go routes at analysis time: ~90 | Total Node.js routes: ~220+
 
 These items are too large and complex for this parity cycle and are deferred:
 
-- **Plugin system** (25+ routes, ~8,000 lines) — plugin loader, sandbox, worker manager, job scheduler, event bus, stream bus; retained in Node.js only
-- **Company portability** (export/import as zip) — 4,417-line service; deferred (Go has `POST /exports` and `POST /imports/apply` stubs; preview endpoints `POST /exports/preview` and `POST /imports/preview` remain Node.js only)
-- **Full heartbeat orchestration** — workspace assignment, session compaction, billing ledger; partial Go implementation retained, full parity deferred
-- **Workspace runtime management** — Docker/process lifecycle for execution workspaces; deferred
-- **Feedback system** (`GET /companies/:companyId/feedback-traces`, `GET /issues/:id/feedback-traces`, `GET /feedback-traces/:traceId`, `GET /feedback-traces/:traceId/bundle` — **ported**; shares, exports, redaction) — deferred
+- **Plugin system** — **ported**
+- **Company portability** (export/import as zip) — 4,417-line service; **ported**
+- **Full heartbeat orchestration** — workspace assignment, session compaction, billing ledger; **ported**
+- **Workspace runtime management** — Local process lifecycle implemented natively in Go; Docker isolation is not used. **ported**
+- **Feedback system** — **ported**
 - **CLI porting** — `backend/cmd/paperclipai`; tracked in `PORT_TO_GOLANG_PLAN.md`
