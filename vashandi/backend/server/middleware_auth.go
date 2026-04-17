@@ -119,7 +119,9 @@ func ActorMiddleware(db *gorm.DB, opts AuthMiddlewareOptions) func(http.Handler)
 				err := db.Where("key_hash = ? AND revoked_at IS NULL", keyHash).First(&key).Error
 				if err == nil {
 					// Validate that the agent exists and is not terminated or pending_approval
-					if agentValid := validateAgentStatus(db, key.AgentID); agentValid {
+					var agent models.Agent
+					agentErr := db.Where("id = ?", key.AgentID).First(&agent).Error
+					if agentErr == nil && agent.Status != "terminated" && agent.Status != "pending_approval" {
 						now := time.Now()
 						if updateErr := db.Model(&key).Update("last_used_at", now).Error; updateErr != nil {
 							log.Printf("auth: agent key touch error: %v", updateErr)
@@ -195,17 +197,6 @@ func tryJwtAgentAuth(ctx context.Context, db *gorm.DB, token, headerRunID string
 		ActorSource: "agent_jwt",
 		RunID:       runID,
 	}, true
-}
-
-// validateAgentStatus checks if an agent exists and is in a valid status.
-func validateAgentStatus(db *gorm.DB, agentID string) bool {
-	var agent models.Agent
-	err := db.Where("id = ?", agentID).First(&agent).Error
-	if err != nil {
-		return false
-	}
-	// Reject terminated or pending_approval agents
-	return agent.Status != "terminated" && agent.Status != "pending_approval"
 }
 
 // resolveSessionCookieActor reads the BetterAuth session cookie from the

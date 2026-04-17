@@ -169,7 +169,7 @@ func (m *LoggingMiddleware) Handler(next http.Handler) http.Handler {
 
 		// Capture request body for potential logging on error
 		var bodyBytes []byte
-		if r.Body != nil && r.ContentLength > 0 && r.ContentLength <= 1024*1024 { // Limit to 1MB
+		if r.Body != nil && r.ContentLength > 0 && r.ContentLength <= MaxBodyCaptureSize {
 			bodyBytes, _ = io.ReadAll(r.Body)
 			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		}
@@ -242,7 +242,7 @@ func (m *LoggingMiddleware) buildLogEntry(r *http.Request, status int, duration 
 	// Include request details on 4xx/5xx responses
 	if status >= 400 {
 		// Include body if present and not too large
-		if len(bodyBytes) > 0 && len(bodyBytes) <= 10000 {
+		if len(bodyBytes) > 0 && len(bodyBytes) <= MaxBodyLogSize {
 			var bodyJSON interface{}
 			if err := json.Unmarshal(bodyBytes, &bodyJSON); err == nil {
 				entry.ReqBody = bodyJSON

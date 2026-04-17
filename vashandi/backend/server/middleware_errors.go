@@ -16,6 +16,20 @@ import (
 	"github.com/chifamba/vashandi/vashandi/backend/shared/telemetry"
 )
 
+// Body capture limits for request logging and error context.
+const (
+	// MaxBodyCaptureSize is the maximum request body size to capture (1MB).
+	MaxBodyCaptureSize = 1024 * 1024
+	// MaxBodyLogSize is the maximum body size to include in log output (10KB).
+	MaxBodyLogSize = 10000
+)
+
+// Telemetry event constants.
+const (
+	TelemetryEventErrorHandlerCrash = "error.handler_crash"
+	TelemetryErrorCodePanic         = "panic"
+)
+
 // APIError is the standard error response format.
 type APIError struct {
 	Error   string      `json:"error"`
@@ -195,7 +209,7 @@ func ErrorHandlerMiddleware(config ErrorHandlerConfig) func(http.Handler) http.H
 
 			// Capture request body for error logging
 			var bodyBytes []byte
-			if r.Body != nil && r.ContentLength > 0 && r.ContentLength <= 1024*1024 {
+			if r.Body != nil && r.ContentLength > 0 && r.ContentLength <= MaxBodyCaptureSize {
 				bodyBytes, _ = io.ReadAll(r.Body)
 				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 			}
@@ -224,8 +238,8 @@ func ErrorHandlerMiddleware(config ErrorHandlerConfig) func(http.Handler) http.H
 
 					// Track in telemetry
 					if config.Telemetry != nil {
-						config.Telemetry.Track("error.handler_crash", map[string]interface{}{
-							"error_code": "panic",
+						config.Telemetry.Track(TelemetryEventErrorHandlerCrash, map[string]interface{}{
+							"error_code": TelemetryErrorCodePanic,
 						})
 					}
 
@@ -268,7 +282,7 @@ func buildErrorContext(r *http.Request, errMsg, stack string, bodyBytes []byte) 
 	}
 
 	// Parse request body
-	if len(bodyBytes) > 0 && len(bodyBytes) <= 10000 {
+	if len(bodyBytes) > 0 && len(bodyBytes) <= MaxBodyLogSize {
 		var bodyJSON interface{}
 		if err := json.Unmarshal(bodyBytes, &bodyJSON); err == nil {
 			ctx.ReqBody = bodyJSON
@@ -339,7 +353,7 @@ func HandleError(w http.ResponseWriter, r *http.Request, err error, tc *telemetr
 
 		// Track in telemetry
 		if tc != nil {
-			tc.Track("error.handler_crash", map[string]interface{}{
+			tc.Track(TelemetryEventErrorHandlerCrash, map[string]interface{}{
 				"error_code": fmt.Sprintf("http_%d", httpErr.Status),
 			})
 		}
@@ -399,8 +413,8 @@ func RecovererWithTelemetry(tc *telemetry.Client) func(http.Handler) http.Handle
 					)
 
 					if tc != nil {
-						tc.Track("error.handler_crash", map[string]interface{}{
-							"error_code": "panic",
+						tc.Track(TelemetryEventErrorHandlerCrash, map[string]interface{}{
+							"error_code": TelemetryErrorCodePanic,
 						})
 					}
 
