@@ -29,7 +29,6 @@ services:
     environment:
       DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
       PORT: "3100"
-      SERVE_UI: "true"
       PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
@@ -49,6 +48,16 @@ services:
         condition: service_healthy
       vashandi-ca-sidecar:
         condition: service_started
+
+
+  vashandi-ui:
+    build:
+      context: ./vashandi
+      dockerfile: ui/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - vashandi
 
   openbrain:
     build:
