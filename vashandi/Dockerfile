@@ -46,14 +46,20 @@ COPY --from=deps /app /app
 COPY . .
 RUN pnpm --filter @paperclipai/ui build
 RUN pnpm --filter @paperclipai/plugin-sdk build
-RUN pnpm --filter @paperclipai/server build
-RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
+
+
+FROM golang:1.25.0 AS go-build
+WORKDIR /app
+COPY go.work go.work.sum ./
+COPY backend/ backend/
+RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/paperclipai ./backend/cmd/paperclipai
 
 FROM base AS production
 ARG USER_UID=1000
 ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
+COPY --from=go-build /go/bin/paperclipai /usr/local/bin/
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
@@ -65,7 +71,6 @@ ENV NODE_ENV=production \
   HOME=/paperclip \
   HOST=0.0.0.0 \
   PORT=3100 \
-  SERVE_UI=true \
   PAPERCLIP_HOME=/paperclip \
   PAPERCLIP_INSTANCE_ID=default \
   USER_UID=${USER_UID} \
@@ -79,4 +84,4 @@ VOLUME ["/paperclip"]
 EXPOSE 3100
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+CMD ["paperclipai", "run"]
