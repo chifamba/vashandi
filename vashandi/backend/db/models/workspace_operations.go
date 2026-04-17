@@ -3,6 +3,8 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/datatypes"
 )
 
@@ -28,4 +30,11 @@ type WorkspaceOperation struct {
 	FinishedAt           *time.Time
 	CreatedAt            time.Time      `gorm:"not null;default:now()"`
 	UpdatedAt            time.Time      `gorm:"not null;default:now()"`
+}
+
+func (w *WorkspaceOperation) BeforeCreate(tx *gorm.DB) (err error) {
+	if w.ID == "" {
+		w.ID = uuid.NewString()
+	}
+	return
 }
