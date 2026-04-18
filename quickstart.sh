@@ -9,16 +9,11 @@ if [ ! -f .env ]; then
     cp .env.example .env
 fi
 
-# 2. Build Go Backends (for Linux/ARM64 as used in Docker)
-echo "🔨 Building Go backend binaries (Linux/ARM64)..."
-(cd vashandi && GOOS=linux GOARCH=arm64 go build -o paperclipai-go ./backend/cmd/paperclipai)
-(cd openbrain && GOOS=linux GOARCH=arm64 go build -o openbrain-go ./cmd/openbrain)
-
-# 3. Start Core Services
+# 2. Start Core Services
 echo "🐳 Starting core services (database, redis, CA)..."
 docker compose up -d ca db redis
 
-# 4. Wait for CA to generate fingerprint
+# 3. Wait for CA to generate fingerprint
 echo "⏳ Waiting for CA to initialize..."
 MAX_RETRIES=10
 COUNT=0
@@ -41,17 +36,17 @@ fi
 
 echo "🔑 Extracted Fingerprint: $FINGERPRINT"
 
-# 5. Update .env
+# 4. Update .env
 # Use a temporary file to avoid sed compatibility issues between macOS/Linux
 grep -v "STEP_CA_FINGERPRINT=" .env > .env.tmp || true
 echo "STEP_CA_FINGERPRINT=$FINGERPRINT" >> .env.tmp
 mv .env.tmp .env
 
-# 6. Start everything
-echo "🚀 Starting remaining services..."
+# 5. Start everything
+echo "🚀 Starting remaining services (building images)..."
 # Export it for this session to ensure immediate pick-up
 export STEP_CA_FINGERPRINT=$FINGERPRINT
-docker compose up -d --no-build vashandi-ca-sidecar vashandi openbrain vashandi-ui
+docker compose up -d --build vashandi-ca-sidecar vashandi openbrain vashandi-ui
 
 echo ""
 echo "✅ Vashandi is coming up!"
