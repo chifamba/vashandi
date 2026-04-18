@@ -50,7 +50,7 @@ RUN pnpm --filter @paperclipai/plugin-sdk build
 
 FROM golang:1.25.0 AS go-build
 WORKDIR /app
-COPY go.work go.work.sum ./
+COPY go.work go.work.sum go.mod ./
 COPY backend/ backend/
 COPY ui/ ui/
 RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/paperclipai ./backend/cmd/paperclipai
