@@ -602,20 +602,21 @@ export async function inspectMigrations(url: string): Promise<MigrationState> {
 
   try {
     const availableMigrations = await listMigrationFiles();
-    const tableCountResult = await sql<{ count: number }[]>`
+    const vashandiTableCheck = await sql<{ count: number }[]>`
       select count(*)::int as count
       from information_schema.tables
       where table_schema = 'public'
-        and table_type = 'BASE TABLE'
+        and table_name = 'companies'
     `;
-    const tableCount = tableCountResult[0]?.count ?? 0;
+    const vashandiTableExists = (vashandiTableCheck[0]?.count ?? 0) > 0;
+    const tableCount = vashandiTableExists ? 1 : 0;
 
     const migrationTableSchema = await discoverMigrationTableSchema(sql);
     if (!migrationTableSchema) {
-      if (tableCount > 0) {
+      if (vashandiTableExists) {
         return {
           status: "needsMigrations",
-          tableCount,
+          tableCount: 1, // At least 'companies' exists
           availableMigrations,
           appliedMigrations: [],
           pendingMigrations: availableMigrations,
@@ -625,7 +626,7 @@ export async function inspectMigrations(url: string): Promise<MigrationState> {
 
       return {
         status: "needsMigrations",
-        tableCount,
+        tableCount: 0, // No vashandi tables found
         availableMigrations,
         appliedMigrations: [],
         pendingMigrations: availableMigrations,
@@ -661,7 +662,15 @@ export async function applyPendingMigrations(url: string): Promise<void> {
   const initialState = await inspectMigrations(url);
   if (initialState.status === "upToDate") return;
 
-  if (initialState.reason === "no-migration-journal-empty-db") {
+  if (initialState.reason === "no-migration-journal-empty-db" || initialState.reason === "no-migration-journal-non-empty-db") {
+    if (initialState.reason === "no-migration-journal-non-empty-db") {
+      // We only reach this if 'companies' table exists but no journal.
+      // This is still dangerous, so we keep the error for this specific case.
+      throw new Error(
+        "Database has vashandi tables but no migration journal; automatic migration is unsafe. Initialize migration history manually.",
+      );
+    }
+
     const sql = createUtilitySql(url);
     try {
       const db = drizzlePg(sql);
@@ -688,13 +697,8 @@ export async function applyPendingMigrations(url: string): Promise<void> {
     );
   }
 
-  if (initialState.reason === "no-migration-journal-non-empty-db") {
-    throw new Error(
-      "Database has tables but no migration journal; automatic migration is unsafe. Initialize migration history manually.",
-    );
-  }
-
   let state = await inspectMigrations(url);
+
   if (state.status === "upToDate") return;
 
   const repair = await reconcilePendingMigrationHistory(url);
@@ -728,20 +732,21 @@ export async function migratePostgresIfEmpty(url: string): Promise<MigrationBoot
   try {
     const migrationTableSchema = await discoverMigrationTableSchema(sql);
 
-    const tableCountResult = await sql<{ count: number }[]>`
+    const vashandiTableCheck = await sql<{ count: number }[]>`
       select count(*)::int as count
       from information_schema.tables
       where table_schema = 'public'
-        and table_type = 'BASE TABLE'
+        and table_name = 'companies'
     `;
 
-    const tableCount = tableCountResult[0]?.count ?? 0;
+    const vashandiTableExists = (vashandiTableCheck[0]?.count ?? 0) > 0;
+    const tableCount = vashandiTableExists ? 1 : 0;
 
     if (migrationTableSchema) {
       return { migrated: false, reason: "already-migrated", tableCount };
     }
 
-    if (tableCount > 0) {
+    if (vashandiTableExists) {
       return { migrated: false, reason: "not-empty-no-migration-journal", tableCount };
     }
 
