@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - db-data:/var/lib/postgresql
+      - /System/Volumes/Data/storage/postgres/vashandi:/var/lib/postgresql
       - ./scripts/db/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
 
   redis:
@@ -27,7 +27,7 @@ services:
     build:
       context: ./vashandi
       dockerfile: Dockerfile
-    command: ["/app/paperclipai-go", "run"]
+    command: [ "/app/paperclipai-go", "run" ]
     ports:
       - "3100:3100"
     environment:
@@ -44,7 +44,7 @@ services:
       OPENBRAIN_CLIENT_KEY: "/certs/vashandi.key"
       OPENBRAIN_REST_URL: "https://openbrain:3101"
     volumes:
-      - vashandi-data:/paperclip
+      - /System/Volumes/Data/storage/vashandi:/paperclip
       - vashandi-certs:/certs:ro
       - ca-data:/home/step:ro
       - ./vashandi/paperclipai-go:/app/paperclipai-go:ro
@@ -68,7 +68,7 @@ services:
     build:
       context: ./openbrain
       dockerfile: Dockerfile
-    command: ["/app/openbrain-go"]
+    command: [ "/app/openbrain-go" ]
     ports:
       - "3101:3101"
       - "50051:50051"
