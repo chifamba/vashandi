@@ -13,12 +13,14 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - /System/Volumes/Data/storage/postgres/vashandi:/var/lib/postgresql
+      - db-data:/var/lib/postgresql
 
   redis:
     image: redis:8-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
 
   vashandi:
     build:
@@ -40,7 +42,7 @@ services:
       OPENBRAIN_CLIENT_KEY: "/certs/vashandi.key"
       OPENBRAIN_REST_URL: "https://openbrain:3101"
     volumes:
-      - /System/Volumes/Data/storage/vashandi:/paperclip
+      - vashandi-data:/paperclip
       - vashandi-certs:/certs:ro
       - ca-data:/home/step:ro
     depends_on:
@@ -48,7 +50,6 @@ services:
         condition: service_healthy
       vashandi-ca-sidecar:
         condition: service_started
-
 
   vashandi-ui:
     build:
@@ -87,18 +88,19 @@ services:
         condition: service_started
       ca:
         condition: service_healthy
+      vashandi:
+        condition: service_started
 
   ca:
     image: smallstep/step-ca
     command: >
       sh -c "if [ ! -f /home/step/config/ca.json ]; then
                echo \"$$DOCKER_STEPCA_INIT_PASSWORD\" > /tmp/password &&
-               /usr/local/bin/step ca init --name \"Vashandi Internal CA\" --dns ca,robertsacstudio,robertsacstudio.local,localhost,127.0.0.1 --address :9000 --provisioner admin@vashandi.local --password-file /tmp/password --provisioner-password-file /tmp/password --acme &&
+               /usr/local/bin/step ca init --name \"Vashandi Internal CA\" --dns ca,localhost,127.0.0.1 --address :9000 --provisioner admin@vashandi.local --password-file /tmp/password --provisioner-password-file /tmp/password --acme &&
                mkdir -p /home/step/secrets && mv /tmp/password /home/step/secrets/password;
              fi;
              chmod a+rx /home/step/certs && chmod a+r /home/step/certs/root_ca.crt;
              exec /usr/local/bin/step-ca /home/step/config/ca.json --password-file /home/step/secrets/password"
-
     ports:
       - "9000:9000"
     environment:
@@ -113,13 +115,17 @@ services:
 
   vashandi-ca-sidecar:
     image: smallstep/step-cli
+    user: root
     command: >
-      sh -c "step ca bootstrap --ca-url https://ca:9000 --fingerprint $STEP_CA_FINGERPRINT &&
+      sh -c "step ca bootstrap --ca-url https://ca:9000 --fingerprint $STEP_CA_FINGERPRINT --force &&
+             echo ${STEP_CA_PASSWORD:-dev_password} > /tmp/pass &&
              while true; do
-               step ca certificate vashandi-server /certs/vashandi.crt /certs/vashandi.key --provisioner admin@vashandi.local --provisioner-password ${STEP_CA_PASSWORD:-dev_password} --san vashandi --san localhost --not-after 24h --force &&
+               step ca certificate vashandi-server /certs/vashandi.crt /certs/vashandi.key --provisioner admin@vashandi.local --provisioner-password-file /tmp/pass --san vashandi --san localhost --not-after 24h --force &&
+               chmod 644 /certs/vashandi.crt /certs/vashandi.key &&
                sleep 12h;
              done"
     environment:
+      STEPPATH: /tmp/step
       STEP_CA_FINGERPRINT: "${STEP_CA_FINGERPRINT}"
       STEP_CA_PASSWORD: "${STEP_CA_PASSWORD:-dev_password}"
     volumes:
@@ -130,5 +136,8 @@ services:
         condition: service_healthy
 
 volumes:
+  db-data:
+  redis-data:
+  vashandi-data:
   ca-data:
   vashandi-certs:
