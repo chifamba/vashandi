@@ -323,10 +323,10 @@ func RemoveCompanyMemberHandler(db *gorm.DB) http.HandlerFunc {
 func GetInviteHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := chi.URLParam(r, "token")
-		// Hash the token to look it up
+		hash := hashToken(token)
 		var invites []models.Invite
 		db.WithContext(r.Context()).
-			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()", token).
+			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()", hash).
 			Find(&invites)
 		if len(invites) == 0 {
 			http.Error(w, "Invite not found or expired", http.StatusNotFound)
@@ -341,9 +341,10 @@ func GetInviteHandler(db *gorm.DB) http.HandlerFunc {
 func GetInviteOnboardingHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := chi.URLParam(r, "token")
+		hash := hashToken(token)
 		var invites []models.Invite
 		db.WithContext(r.Context()).
-			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()", token).
+			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()", hash).
 			Find(&invites)
 		if len(invites) == 0 {
 			http.Error(w, "Invite not found or expired", http.StatusNotFound)
