@@ -52,7 +52,9 @@ FROM golang:1.25.0 AS go-build
 WORKDIR /app
 COPY go.work go.work.sum go.mod ./
 COPY backend/ backend/
-COPY ui/ ui/
+# Copy the built UI assets from the 'build' stage
+COPY --from=build /app/ui/dist ./ui/dist
+COPY ui/go.mod ui/embed.go ./ui/
 RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/paperclipai ./backend/cmd/paperclipai
 
 FROM base AS production
