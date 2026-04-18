@@ -384,9 +384,10 @@ func RevokeCLIAuthCurrentHandler(db *gorm.DB) http.HandlerFunc {
 func GetInviteTestResolutionHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := chi.URLParam(r, "token")
+		hash := hashToken(token)
 		var invites []models.Invite
 		db.WithContext(r.Context()).
-			Where("token_hash = ? AND revoked_at IS NULL", token).
+			Where("token_hash = ? AND revoked_at IS NULL", hash).
 			Find(&invites)
 		if len(invites) == 0 {
 			w.Header().Set("Content-Type", "application/json")
@@ -397,7 +398,7 @@ func GetInviteTestResolutionHandler(db *gorm.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"valid":     true,
 			"invite":    invites[0],
-			"expired":   false,
+			"expired":   invites[0].ExpiresAt.Before(time.Now()),
 		})
 	}
 }
