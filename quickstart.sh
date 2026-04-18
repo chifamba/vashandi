@@ -51,7 +51,7 @@ mv .env.tmp .env
 echo "🚀 Starting remaining services..."
 # Export it for this session to ensure immediate pick-up
 export STEP_CA_FINGERPRINT=$FINGERPRINT
-docker compose up -d --no-build vashandi-ca-sidecar vashandi openbrain
+docker compose up -d --no-build vashandi-ca-sidecar vashandi openbrain vashandi-ui
 
 echo ""
 echo "✅ Vashandi is coming up!"

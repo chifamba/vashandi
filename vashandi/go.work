@@ -11,3 +11,5 @@ use ./backend/cmd/paperclipai
 use ./backend/adapters
 
 use ./backend/client
+
+use ./ui

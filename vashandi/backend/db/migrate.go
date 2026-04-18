@@ -56,6 +56,8 @@ func RunMigrations(db *gorm.DB) error {
 		&models.IssueWorkProduct{},
 		&models.Plugin{},
 		&models.PluginConfig{},
+		&models.PluginJob{},
+		&models.PluginJobRun{},
 		&models.PluginEntity{},
 		&models.PluginState{},
 		&models.PluginWebhookDelivery{},
