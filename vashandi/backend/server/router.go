@@ -434,6 +434,14 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/invites/{token}/onboarding", routes.GetInviteOnboardingHandler(db))
 		api.Get("/invites/{token}/onboarding.txt", routes.GetInviteOnboardingTextHandler(db))
 		api.Get("/invites/{token}/test-resolution", routes.GetInviteTestResolutionHandler(db))
+
+		// Legacy aliases for /api/access/invite (vashandi internal consistency)
+		api.Route("/access/invite/{token}", func(access chi.Router) {
+			access.Get("/", routes.GetInviteHandler(db))
+			access.Post("/accept", routes.InviteAcceptByPathHandler(db))
+			access.Get("/onboarding", routes.GetInviteOnboardingHandler(db))
+		})
+
 		api.Post("/invites/{inviteId}/revoke", routes.RevokeInviteHandler(db))
 		api.Post("/companies/{companyId}/invites", routes.CreateCompanyInviteHandler(db))
 		api.Post("/companies/{companyId}/openclaw/invite-prompt", routes.OpenClawInvitePromptHandler(db))
@@ -619,22 +627,6 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/heartbeat-runs/{runId}/events", routes.ListHeartbeatRunEventsHandler(db))
 	})
 
-	// If a Vite dev URL is provided, proxy all non-API requests to it.
-	// This makes development much easier as it removes the need to rebuild the UI.
-	if opts.ViteDevURL != "" {
-		target, err := url.Parse(opts.ViteDevURL)
-		if err != nil {
-			slog.Error("failed to parse ViteDevURL", "url", opts.ViteDevURL, "error", err)
-		} else {
-			proxy := httputil.NewSingleHostReverseProxy(target)
-			r.NotFound(func(w http.ResponseWriter, req *http.Request) {
-				proxy.ServeHTTP(w, req)
-			})
-			slog.Info("UI dev proxy enabled", "target", opts.ViteDevURL)
-			return r
-		}
-	}
-
 	// Serve static files from the UI dist directory.
 	// We prioritize the local filesystem for easier development (avoids rebuilding binary),
 	// but fall back to the embedded FS in production containers.
@@ -653,13 +645,14 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 				return
 			}
 
-			// If it's a request for an asset or has an extension, don't serve index.html.
+			// If it's a request for an asset, has an extension, or is an API route, don't serve index.html.
 			// This prevents "index.html served as JS" errors which crash SPAs.
-			if strings.HasPrefix(r.URL.Path, "/assets/") || (filepath.Ext(r.URL.Path) != "" && !strings.HasSuffix(r.URL.Path, ".html")) {
+			if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/assets/") || (filepath.Ext(r.URL.Path) != "" && !strings.HasSuffix(r.URL.Path, ".html")) {
 				http.NotFound(w, r)
 				return
 			}
 
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0")
 			http.ServeFile(w, r, filepath.Join(uiDistDir, "index.html"))
 		})
 	} else if sub, err := fs.Sub(ui.FS, "dist"); err == nil {
@@ -675,19 +668,41 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 				return
 			}
 
-			// If it's a request for an asset or has an extension, don't serve index.html.
-			if strings.HasPrefix(r.URL.Path, "/assets/") || (filepath.Ext(r.URL.Path) != "" && !strings.HasSuffix(r.URL.Path, ".html")) {
+			// If it's a request for an asset, has an extension, or is an API route, don't serve index.html.
+			if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/assets/") || (filepath.Ext(r.URL.Path) != "" && !strings.HasSuffix(r.URL.Path, ".html")) {
 				http.NotFound(w, r)
 				return
 			}
 
 			// Fallback to index.html
 			r.URL.Path = "/"
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0")
 			fileServer.ServeHTTP(w, r)
 		})
 	}
 
-	if staticHandler != nil {
+	// Handle UI serving via proxy or static files
+	if opts.ViteDevURL != "" {
+		target, err := url.Parse(opts.ViteDevURL)
+		if err != nil {
+			slog.Error("failed to parse ViteDevURL", "url", opts.ViteDevURL, "error", err)
+			if staticHandler != nil {
+				r.NotFound(staticHandler.ServeHTTP)
+			}
+		} else {
+			proxy := httputil.NewSingleHostReverseProxy(target)
+			proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
+				// If the proxy fails (e.g. connection refused), fall back to static files
+				if staticHandler != nil {
+					staticHandler.ServeHTTP(w, req)
+					return
+				}
+				http.Error(w, "UI Unavailable", http.StatusServiceUnavailable)
+			}
+			r.NotFound(proxy.ServeHTTP)
+			slog.Info("UI dev proxy enabled with static fallback", "target", opts.ViteDevURL)
+		}
+	} else if staticHandler != nil {
 		r.NotFound(staticHandler.ServeHTTP)
 	}
 

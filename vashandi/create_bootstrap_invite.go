@@ -33,6 +33,11 @@ func main() {
 		ExpiresAt:        time.Now().Add(24 * time.Hour),
 	}
 
+	// Delete any existing bootstrap invites to avoid duplicate key errors
+	if err := db.Unscoped().Where("invite_type = ?", "bootstrap_ceo").Delete(&models.Invite{}).Error; err != nil {
+		log.Fatalf("failed to delete existing bootstrap invites: %v", err)
+	}
+
 	if err := db.Create(&invite).Error; err != nil {
 		log.Fatalf("failed to create bootstrap invite: %v", err)
 	}

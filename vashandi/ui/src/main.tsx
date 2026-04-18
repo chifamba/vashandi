@@ -22,11 +22,13 @@ import "./index.css";
 
 initPluginBridge(React, ReactDOM);
 
+/*
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js");
   });
 }
+*/
 
 const queryClient = new QueryClient({
   defaultOptions: {

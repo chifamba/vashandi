@@ -40,6 +40,27 @@
         }
       })();
     </script>
+    <script>
+      window.addEventListener('error', function(e) {
+        var msg = document.createElement('div');
+        msg.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:red;color:white;padding:20px;z-index:99999;font-family:monospace;white-space:pre-wrap;';
+        msg.textContent = '[UNHANDLED ERROR] ' + e.message + '\nAt: ' + e.filename + ':' + e.lineno + ':' + e.colno + '\nStack: ' + (e.error ? e.error.stack : 'N/A');
+        document.body.appendChild(msg);
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        var msg = document.createElement('div');
+        msg.style.cssText = 'position:fixed;top:50px;left:0;width:100%;background:orange;color:black;padding:20px;z-index:99999;font-family:monospace;white-space:pre-wrap;';
+        msg.textContent = '[PROMISE REJECTION] ' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '\nStack: ' + (e.reason && e.reason.stack ? e.reason.stack : 'N/A');
+        document.body.appendChild(msg);
+      });
+    </script>
+    <script>
+      console.log("[Paperclip] index.html loaded, initializing JS bundle...");
+      window.__PAPERCLIP_HYDRATED__ = false;
+      document.addEventListener("DOMContentLoaded", () => {
+        document.body.setAttribute("data-html-ready", "true");
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -178,6 +178,8 @@ func (h *BetterAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleUnlinkAccount(w, r)
 	case method == http.MethodGet && strings.HasSuffix(path, "/accounts"):
 		h.handleListAccounts(w, r)
+	case method == http.MethodGet && (strings.HasSuffix(path, "/me") || strings.HasSuffix(path, "/session")):
+		h.handleMe(w, r)
 	default:
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
 	}
@@ -450,6 +452,33 @@ func (h *BetterAuthHandler) handleVerifyEmail(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": true,
 		"user":   nil,
+	})
+}
+
+func (h *BetterAuthHandler) handleMe(w http.ResponseWriter, r *http.Request) {
+	token, ok := resolveBetterAuthSessionToken(r, h.secret)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	var session models.Session
+	if err := h.db.Preload("User").Where("token = ?", token).First(&session).Error; err != nil {
+		h.clearSessionCookies(w)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	if session.ExpiresAt.Before(time.Now().UTC()) {
+		h.db.Delete(&session)
+		h.clearSessionCookies(w)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Session expired"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user":    buildBetterAuthUserPayload(session.User),
+		"session": buildBetterAuthSessionPayload(session),
 	})
 }
 
