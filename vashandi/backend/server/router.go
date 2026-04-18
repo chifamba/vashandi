@@ -197,52 +197,6 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		CompanyDeletionEnabled: true,
 	}))
 
-	// Serve static files from the UI dist directory.
-	// We prioritize the local filesystem for easier development (avoids rebuilding binary),
-	// but fall back to the embedded FS in production containers.
-	uiDistDir := os.Getenv("PAPERCLIP_UI_DIST")
-	if uiDistDir == "" {
-		uiDistDir = "./ui/dist"
-	}
-	
-	// Prepare static handler
-	var staticHandler http.Handler
-	if _, err := os.Stat(uiDistDir); err == nil {
-		staticHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fpath := filepath.Join(uiDistDir, filepath.Clean(r.URL.Path))
-			if info, err := os.Stat(fpath); err == nil && !info.IsDir() {
-				http.ServeFile(w, r, fpath)
-				return
-			}
-			http.ServeFile(w, r, filepath.Join(uiDistDir, "index.html"))
-		})
-	} else if sub, err := fs.Sub(ui.FS, "dist"); err == nil {
-		fileServer := http.FileServer(http.FS(sub))
-		staticHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// If the file exists in the embedded FS, serve it.
-			// Otherwise serve index.html (for client-side routing)
-			f, err := sub.Open(strings.TrimPrefix(filepath.Clean(r.URL.Path), "/"))
-			if err == nil {
-				f.Close()
-				fileServer.ServeHTTP(w, r)
-				return
-			}
-			// Fallback to index.html
-			r.URL.Path = "/"
-			fileServer.ServeHTTP(w, r)
-		})
-	}
-
-	if staticHandler != nil {
-		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api") || strings.HasPrefix(r.URL.Path, "/_plugins") || r.URL.Path == "/health" {
-				http.NotFound(w, r)
-				return
-			}
-			staticHandler.ServeHTTP(w, r)
-		}))
-	}
-
 	// API Routes - all routes under /api to match UI client expectations
 	r.Route("/api", func(api chi.Router) {
 		// Health check
@@ -658,6 +612,46 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		// Heartbeat Run Events (REST endpoint — returns stored events from DB)
 		api.Get("/heartbeat-runs/{runId}/events", routes.ListHeartbeatRunEventsHandler(db))
 	})
+
+	// Serve static files from the UI dist directory.
+	// We prioritize the local filesystem for easier development (avoids rebuilding binary),
+	// but fall back to the embedded FS in production containers.
+	uiDistDir := os.Getenv("PAPERCLIP_UI_DIST")
+	if uiDistDir == "" {
+		uiDistDir = "./ui/dist"
+	}
+
+	// Prepare static handler
+	var staticHandler http.Handler
+	if _, err := os.Stat(uiDistDir); err == nil {
+		staticHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fpath := filepath.Join(uiDistDir, filepath.Clean(r.URL.Path))
+			if info, err := os.Stat(fpath); err == nil && !info.IsDir() {
+				http.ServeFile(w, r, fpath)
+				return
+			}
+			http.ServeFile(w, r, filepath.Join(uiDistDir, "index.html"))
+		})
+	} else if sub, err := fs.Sub(ui.FS, "dist"); err == nil {
+		fileServer := http.FileServer(http.FS(sub))
+		staticHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// If the file exists in the embedded FS, serve it.
+			// Otherwise serve index.html (for client-side routing)
+			f, err := sub.Open(strings.TrimPrefix(filepath.Clean(r.URL.Path), "/"))
+			if err == nil {
+				f.Close()
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			// Fallback to index.html
+			r.URL.Path = "/"
+			fileServer.ServeHTTP(w, r)
+		})
+	}
+
+	if staticHandler != nil {
+		r.NotFound(staticHandler.ServeHTTP)
+	}
 
 	return r
 }
