@@ -9,7 +9,7 @@ import (
 )
 
 type WorkspaceOperation struct {
-	ID                   string         `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
+	ID                   string         `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
 	CompanyID            string         `gorm:"type:uuid;not null;index:workspace_operations_company_run_started_idx;index:workspace_operations_company_workspace_started_idx"`
 	ExecutionWorkspaceID *string        `gorm:"type:uuid;index:workspace_operations_company_workspace_started_idx"`
 	HeartbeatRunID       *string        `gorm:"type:uuid;index:workspace_operations_company_run_started_idx"`

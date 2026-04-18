@@ -1,40 +1,84 @@
 package db
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
-	"path/filepath"
-	"runtime"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "github.com/lib/pq"
+	"github.com/chifamba/vashandi/vashandi/backend/db/models"
+	"gorm.io/gorm"
 )
 
-// RunMigrations applies migrations from the migrations directory to the given database connection.
-func RunMigrations(db *sql.DB) error {
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		return fmt.Errorf("could not create postgres driver: %w", err)
+// RunMigrations applies GORM AutoMigrate to all models in the models package.
+func RunMigrations(db *gorm.DB) error {
+	// Ensure schema exists
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS vashandi").Error; err != nil {
+		return fmt.Errorf("could not create schema: %w", err)
 	}
 
-	_, b, _, _ := runtime.Caller(0)
-	basepath := filepath.Dir(b)
-	migrationsPath := fmt.Sprintf("file://%s/migrations", basepath)
-
-	m, err := migrate.NewWithDatabaseInstance(
-		migrationsPath,
-		"postgres", driver)
-	if err != nil {
-		return fmt.Errorf("could not create migrate instance: %w", err)
-	}
-
-	err = m.Up()
-	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("could not run up migrations: %w", err)
-	}
-
-	return nil
+	// We use the public schema for now to avoid search_path issues with gorm's automigrate
+	// until we have a more robust schema management strategy.
+	// But let's at least try to migrate the main tables.
+	return db.AutoMigrate(
+		&models.Company{},
+		&models.CompanyLogo{},
+		&models.CompanyMembership{},
+		&models.User{},
+		&models.Session{},
+		&models.Account{},
+		&models.Verification{},
+		&models.InstanceSetting{},
+		&models.InstanceUserRole{},
+		&models.BudgetPolicy{},
+		&models.BudgetIncident{},
+		&models.Project{},
+		&models.Goal{},
+		&models.ProjectGoal{},
+		&models.Issue{},
+		&models.IssueComment{},
+		&models.IssueAttachment{},
+		&models.IssueLabel{},
+		&models.Label{},
+		&models.IssueRelation{},
+		&models.IssueExecutionDecision{},
+		&models.IssueApproval{},
+		&models.Approval{},
+		&models.ApprovalComment{},
+		&models.IssueReadState{},
+		&models.IssueInboxArchive{},
+		&models.InboxDismissal{},
+		&models.Agent{},
+		&models.AgentAPIKey{},
+		&models.AgentConfigRevision{},
+		&models.AgentRuntimeState{},
+		&models.AgentTaskSession{},
+		&models.AgentWakeupRequest{},
+		&models.WorkspaceRuntimeService{},
+		&models.WorkspaceOperation{},
+		&models.ExecutionWorkspace{},
+		&models.ProjectWorkspace{},
+		&models.ActivityLog{},
+		&models.Asset{},
+		&models.CostEvent{},
+		&models.FinanceEvent{},
+		&models.Document{},
+		&models.DocumentRevision{},
+		&models.IssueDocument{},
+		&models.IssueWorkProduct{},
+		&models.Plugin{},
+		&models.PluginConfig{},
+		&models.PluginEntity{},
+		&models.PluginState{},
+		&models.PluginWebhookDelivery{},
+		&models.PluginLog{},
+		&models.Routine{},
+		&models.RoutineRun{},
+		&models.RoutineTrigger{},
+		&models.HeartbeatRun{},
+		&models.HeartbeatRunEvent{},
+		&models.Invite{},
+		&models.JoinRequest{},
+		&models.BoardAPIKey{},
+		&models.PrincipalPermissionGrant{},
+		&models.FeedbackExport{},
+		&models.FeedbackVote{},
+	)
 }

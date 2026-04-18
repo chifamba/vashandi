@@ -14,6 +14,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	db_package "github.com/chifamba/vashandi/vashandi/backend/db"
 	"github.com/chifamba/vashandi/vashandi/backend/server/realtime"
 	"github.com/chifamba/vashandi/vashandi/backend/server/services"
 	"github.com/chifamba/vashandi/vashandi/backend/shared"
@@ -183,8 +184,22 @@ func LoadConfig() (*shared.PaperclipConfig, error) {
 func Run() {
 	cfg, err := LoadConfig()
 	if err != nil {
-		slog.Error("Failed to load config", "error", err)
-		os.Exit(1)
+		slog.Warn("Failed to load config file, using environment variables and defaults", "error", err)
+		// Provide a minimal default config if loading fails
+		cfg = &shared.PaperclipConfig{
+			Server: shared.ServerConfig{
+				Port:           3100,
+				DeploymentMode: "authenticated",
+				Exposure:       "private",
+			},
+		}
+	}
+
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		var p int
+		if _, err := fmt.Sscanf(envPort, "%d", &p); err == nil {
+			cfg.Server.Port = p
+		}
 	}
 
 	InitTelemetry(cfg.Telemetry)
@@ -201,6 +216,11 @@ func Run() {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
+	}
+
+	if err := db_package.RunMigrations(db); err != nil {
+		slog.Error("Failed to run database migrations", "error", err)
 		os.Exit(1)
 	}
 

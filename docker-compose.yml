@@ -26,16 +26,16 @@ services:
     build:
       context: ./vashandi
       dockerfile: Dockerfile
+    command: ["/app/paperclipai-go", "run"]
     ports:
       - "3100:3100"
     environment:
-      DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
+      DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip?search_path=vashandi
       PORT: "3100"
       PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
-      PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
       # mTLS Configuration (Node.js sidecar)
       OPENBRAIN_MTLS_ENABLED: "true"
       OPENBRAIN_CA_CERT: "/home/step/certs/root_ca.crt"
@@ -46,7 +46,8 @@ services:
       - vashandi-data:/paperclip
       - vashandi-certs:/certs:ro
       - ca-data:/home/step:ro
-      - ./vashandi/packages/db/src:/app/packages/db/src:ro
+      - ./vashandi/paperclipai-go:/app/paperclipai-go:ro
+      - ./vashandi/backend/db/migrations:/app/backend/db/migrations:ro
     depends_on:
       db:
         condition: service_healthy
