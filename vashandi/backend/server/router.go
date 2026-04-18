@@ -3,7 +3,10 @@ package server
 import (
 	"encoding/json"
 	"io/fs"
+	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +94,9 @@ type RouterOptions struct {
 
 	// RuntimeManager manages workspace runtime services and startup rehydration.
 	RuntimeManager *services.WorkspaceRuntimeManager
+	// ViteDevURL is the URL of the Vite development server (e.g. http://localhost:5173).
+	// When set, all non-API requests are proxied to this URL.
+	ViteDevURL string
 }
 
 // SetupRouter initializes the chi router with common middleware and routes
@@ -613,6 +619,22 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		api.Get("/heartbeat-runs/{runId}/events", routes.ListHeartbeatRunEventsHandler(db))
 	})
 
+	// If a Vite dev URL is provided, proxy all non-API requests to it.
+	// This makes development much easier as it removes the need to rebuild the UI.
+	if opts.ViteDevURL != "" {
+		target, err := url.Parse(opts.ViteDevURL)
+		if err != nil {
+			slog.Error("failed to parse ViteDevURL", "url", opts.ViteDevURL, "error", err)
+		} else {
+			proxy := httputil.NewSingleHostReverseProxy(target)
+			r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+				proxy.ServeHTTP(w, req)
+			})
+			slog.Info("UI dev proxy enabled", "target", opts.ViteDevURL)
+			return r
+		}
+	}
+
 	// Serve static files from the UI dist directory.
 	// We prioritize the local filesystem for easier development (avoids rebuilding binary),
 	// but fall back to the embedded FS in production containers.
@@ -630,6 +652,14 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 				http.ServeFile(w, r, fpath)
 				return
 			}
+
+			// If it's a request for an asset or has an extension, don't serve index.html.
+			// This prevents "index.html served as JS" errors which crash SPAs.
+			if strings.HasPrefix(r.URL.Path, "/assets/") || (filepath.Ext(r.URL.Path) != "" && !strings.HasSuffix(r.URL.Path, ".html")) {
+				http.NotFound(w, r)
+				return
+			}
+
 			http.ServeFile(w, r, filepath.Join(uiDistDir, "index.html"))
 		})
 	} else if sub, err := fs.Sub(ui.FS, "dist"); err == nil {
@@ -637,12 +667,20 @@ func SetupRouter(db *gorm.DB, activitySvc *services.ActivityService, secretsSvc 
 		staticHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// If the file exists in the embedded FS, serve it.
 			// Otherwise serve index.html (for client-side routing)
-			f, err := sub.Open(strings.TrimPrefix(filepath.Clean(r.URL.Path), "/"))
+			fpath := strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")
+			f, err := sub.Open(fpath)
 			if err == nil {
 				f.Close()
 				fileServer.ServeHTTP(w, r)
 				return
 			}
+
+			// If it's a request for an asset or has an extension, don't serve index.html.
+			if strings.HasPrefix(r.URL.Path, "/assets/") || (filepath.Ext(r.URL.Path) != "" && !strings.HasSuffix(r.URL.Path, ".html")) {
+				http.NotFound(w, r)
+				return
+			}
+
 			// Fallback to index.html
 			r.URL.Path = "/"
 			fileServer.ServeHTTP(w, r)

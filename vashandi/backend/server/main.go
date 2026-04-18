@@ -244,6 +244,7 @@ func Run() {
 		AuthHandler:        authHandler,
 		Telemetry:          GetTelemetryClient(),
 		DatabaseBackup:     cfg.Database.Backup,
+		ViteDevURL:         os.Getenv("PAPERCLIP_UI_DEV_URL"),
 	})
 
 	// Startup Recovery

@@ -35,8 +35,9 @@ services:
       PORT: "3100"
       PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
-      PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
+      PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:8080}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      PAPERCLIP_UI_DEV_URL: "${PAPERCLIP_UI_DEV_URL:-http://host.docker.internal:5173}"
       # mTLS Configuration (Node.js sidecar)
       OPENBRAIN_MTLS_ENABLED: "true"
       OPENBRAIN_CA_CERT: "/home/step/certs/root_ca.crt"
