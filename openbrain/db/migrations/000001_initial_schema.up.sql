@@ -1,5 +1,5 @@
--- Enable pgvector extension for vector similarity search
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Enable pgvector extension for vector similarity search (handled in init-db.sql)
+-- CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Namespaces (1:1 with Vashandi companies)
 CREATE TABLE IF NOT EXISTS namespaces (
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS memory_entities (
     title            text,
     text             text NOT NULL,
     -- Embedding stored as pgvector; NULL until async embedding job populates it
-    embedding        vector(1536),
+    embedding        public.vector(1536),
     provenance       jsonb NOT NULL DEFAULT '{}',
     identity         jsonb NOT NULL DEFAULT '{}',
     metadata         jsonb NOT NULL DEFAULT '{}',
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS memory_entity_versions (
     version       integer NOT NULL,
     title         text,
     text          text NOT NULL,
-    embedding     vector(1536),
+    embedding     public.vector(1536),
     metadata      jsonb NOT NULL DEFAULT '{}',
     provenance    jsonb NOT NULL DEFAULT '{}',
     identity      jsonb NOT NULL DEFAULT '{}',

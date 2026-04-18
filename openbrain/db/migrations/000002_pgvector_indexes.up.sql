@@ -11,9 +11,9 @@
 -- Rows written before embeddings are computed remain reachable via keyword search.
 
 CREATE INDEX IF NOT EXISTS idx_memory_entities_embedding_ivfflat
-    ON memory_entities USING ivfflat (embedding vector_cosine_ops)
+    ON memory_entities USING ivfflat (embedding public.vector_cosine_ops)
     WITH (lists = 100);
 
 CREATE INDEX IF NOT EXISTS idx_memory_versions_embedding_ivfflat
-    ON memory_entity_versions USING ivfflat (embedding vector_cosine_ops)
+    ON memory_entity_versions USING ivfflat (embedding public.vector_cosine_ops)
     WITH (lists = 100);

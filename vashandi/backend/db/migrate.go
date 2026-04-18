@@ -1,22 +1,13 @@
 package db
 
 import (
-	"fmt"
-
 	"github.com/chifamba/vashandi/vashandi/backend/db/models"
 	"gorm.io/gorm"
 )
 
 // RunMigrations applies GORM AutoMigrate to all models in the models package.
 func RunMigrations(db *gorm.DB) error {
-	// Ensure schema exists
-	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS vashandi").Error; err != nil {
-		return fmt.Errorf("could not create schema: %w", err)
-	}
-
-	// We use the public schema for now to avoid search_path issues with gorm's automigrate
-	// until we have a more robust schema management strategy.
-	// But let's at least try to migrate the main tables.
+	// We use the search_path provided in the DSN to target the correct schema.
 	return db.AutoMigrate(
 		&models.Company{},
 		&models.CompanyLogo{},

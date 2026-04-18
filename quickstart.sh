@@ -9,10 +9,10 @@ if [ ! -f .env ]; then
     cp .env.example .env
 fi
 
-# 2. Build Go Backend (for Linux/ARM64 as used in Docker)
-# This is required because we mount the binary via volume to avoid Docker build restrictions
-echo "🔨 Building Go backend binary (Linux/ARM64)..."
+# 2. Build Go Backends (for Linux/ARM64 as used in Docker)
+echo "🔨 Building Go backend binaries (Linux/ARM64)..."
 (cd vashandi && GOOS=linux GOARCH=arm64 go build -o paperclipai-go ./backend/cmd/paperclipai)
+(cd openbrain && GOOS=linux GOARCH=arm64 go build -o openbrain-go ./cmd/openbrain)
 
 # 3. Start Core Services
 echo "🐳 Starting core services (database, redis, CA)..."

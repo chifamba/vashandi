@@ -214,11 +214,7 @@ func (s *Service) isPostgres() bool {
 func (s *Service) AutoMigrate() error {
 	// Enable pgvector extension on Postgres before AutoMigrate so that the
 	// vector(1536) column type is recognised. On SQLite this is a no-op.
-	if s.isPostgres() {
-		if err := s.DB.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
-			return fmt.Errorf("enabling pgvector extension: %w", err)
-		}
-	}
+	// Extension creation is handled in init-db.sql.
 	if err := s.DB.AutoMigrate(
 		&models.Namespace{},
 		&models.Memory{},
